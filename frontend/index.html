@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Elimu Analytics - walking skeleton</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 40rem; margin: 2rem auto; padding: 0 1rem; }
+  table { border-collapse: collapse; margin-top: 1rem; }
+  th, td { border: 1px solid #999; padding: .4rem .8rem; text-align: left; }
+  button { margin-right: .5rem; padding: .4rem .8rem; }
+  .note { color: #555; font-size: .9rem; }
+</style>
+</head>
+<body>
+<h1>Elimu Analytics</h1>
+<p class="note">Phase 1 walking skeleton. Hardcoded responses, real 2-PL calibration.</p>
+
+<p id="strand" class="note">loading...</p>
+<div id="buttons"></div>
+<div id="result"></div>
+
+<script>
+async function api(path) {
+  const r = await fetch(path);
+  if (!r.ok) throw new Error(await r.text());
+  return r.json();
+}
+
+async function show(id) {
+  const d = await api(`/api/diagnose/${id}`);
+  document.getElementById("result").innerHTML = `
+    <table>
+      <tr><th>Learner</th><td>${d.learner}</td></tr>
+      <tr><th>Sub-strand</th><td>${d.sub_strand}</td></tr>
+      <tr><th>Items answered</th><td>${d.answered}</td></tr>
+      <tr><th>Ability (theta)</th><td>${d.theta === null ? "not shown" : d.theta}</td></tr>
+      <tr><th>KICD tier</th><td>${d.tier === null ? "not shown" : d.tier}</td></tr>
+      <tr><th>Confident</th><td>${d.confident}</td></tr>
+      <tr><th>Flaggable</th><td>${d.flaggable}</td></tr>
+    </table>
+    <p class="note">${d.message}</p>`;
+}
+
+(async () => {
+  const h = await api("/api/health");
+  document.getElementById("strand").textContent =
+    `${h.strand} / ${h.sub_strand} - ${h.items} items, ${h.students} learners`;
+  const learners = await api("/api/learners");
+  document.getElementById("buttons").innerHTML = learners
+    .map(l => `<button onclick="show(${l.id})">${l.name}</button>`).join("");
+  show(learners[0].id);
+})();
+</script>
+</body>
+</html>

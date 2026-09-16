@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+*.egg-info/
+.pytest_cache/
+
+# Secrets - the API key lives in the environment, never in the repo
+.env
+*.key
+*.pem
+
+# Data - Riiid train.csv is 5.5GB and the samples are regenerable
+data/
+*.csv
+*.parquet
+
+# Spike outputs
+day5_results_*.json
+day5_transcript_*.txt
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

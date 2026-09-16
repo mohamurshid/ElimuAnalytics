@@ -1,0 +1,95 @@
+ELIMU ANALYTICS - DAY 5 RAG SPIKE (hardened)
+run: 2026-09-13T10:11:28
+chunks: 8  model: claude-haiku-4-5-20251001  top_k: 2
+Loading all-MiniLM-L6-v2 (first run downloads ~90MB)...
+embedder: all-MiniLM-L6-v2 (sentence-transformers)
+
+==========================================================================
+PART A - RETRIEVAL ROBUSTNESS (24 queries, 3 phrasings x 8 sub-strands)
+==========================================================================
+heading = the chunk's own wording (the original, near-tautological test)
+teacher = how a teacher would describe the gap
+item    = text of a failed quiz item, curriculum vocabulary avoided
+
+--------------------------------------------------------------------------
+STYLE: heading
+--------------------------------------------------------------------------
+expected                        retrieved #1                       sim  margin  ok
+1.1 Classification of plants    1.1 Classification of plants     0.543   0.205  OK
+1.2 Vertebrates                 1.2 Vertebrates                  0.557   0.300  OK
+1.3 The Human Breathing System  1.3 The Human Breathing System   0.512   0.215  OK
+2.1 Mixtures                    2.1 Mixtures                     0.429   0.283  OK
+2.2 Water Pollution             2.2 Water Pollution              0.553   0.302  OK
+3.1 Floating and Sinking        3.1 Floating and Sinking         0.436   0.296  OK
+3.2 Sound Energy                3.2 Sound Energy                 0.471   0.376  OK
+3.3 Heat Transfer               3.3 Heat Transfer                0.366   0.263  OK
+
+  top-1 accuracy: 100.0%   mean margin: 0.280
+--------------------------------------------------------------------------
+STYLE: teacher
+--------------------------------------------------------------------------
+expected                        retrieved #1                       sim  margin  ok
+1.1 Classification of plants    1.1 Classification of plants     0.590   0.399  OK
+1.2 Vertebrates                 1.2 Vertebrates                  0.548   0.190  OK
+1.3 The Human Breathing System  1.3 The Human Breathing System   0.485   0.213  OK
+2.1 Mixtures                    2.1 Mixtures                     0.394   0.068  OK
+2.2 Water Pollution             2.2 Water Pollution              0.510   0.241  OK
+3.1 Floating and Sinking        3.1 Floating and Sinking         0.471   0.225  OK
+3.2 Sound Energy                3.2 Sound Energy                 0.481   0.322  OK
+3.3 Heat Transfer               3.3 Heat Transfer                0.391   0.214  OK
+
+  top-1 accuracy: 100.0%   mean margin: 0.234
+--------------------------------------------------------------------------
+STYLE: item
+--------------------------------------------------------------------------
+expected                        retrieved #1                       sim  margin  ok
+1.1 Classification of plants    1.1 Classification of plants     0.359   0.233  OK
+1.2 Vertebrates                 1.2 Vertebrates                  0.422   0.172  OK
+1.3 The Human Breathing System  1.3 The Human Breathing System   0.489   0.290  OK
+2.1 Mixtures                    2.1 Mixtures                     0.391   0.183  OK
+2.2 Water Pollution             2.2 Water Pollution              0.575   0.270  OK
+3.1 Floating and Sinking        3.1 Floating and Sinking         0.310   0.148  OK
+3.2 Sound Energy                3.2 Sound Energy                 0.633   0.318  OK
+3.3 Heat Transfer               3.3 Heat Transfer                0.355   0.222  OK
+
+  top-1 accuracy: 100.0%   mean margin: 0.230
+
+==========================================================================
+PART B - HARD NEGATIVES (same parent strand, 3.0 Force and Energy)
+==========================================================================
+The realistic failure is not 'plants beat heat transfer'. It is a
+neighbouring sub-strand under the SAME strand winning. Full ranking
+for the flagged learner, using the quiz-item phrasing:
+
+  query: A cooking pot is made of metal but its handle is covered with plastic. Explain why the handle is made of a different material, and name a material that would keep food warm for longer.
+
+    1. 0.355  3.3 Heat Transfer  <-- TARGET
+    2. 0.133  1.1 Classification of plants
+    3. 0.127  3.2 Sound Energy [same strand]
+    4. 0.123  2.1 Mixtures
+    5. 0.113  3.1 Floating and Sinking [same strand]
+    6. 0.089  2.2 Water Pollution
+    7. 0.089  1.3 The Human Breathing System
+    8. 0.053  1.2 Vertebrates
+
+==========================================================================
+PART C - CROSS-CHUNK CONTAMINATION RISK (top_k = 2)
+==========================================================================
+  in prompt: [0.355] 3.3 Heat Transfer
+  in prompt: [0.133] 1.1 Classification of plants
+
+  The prompt therefore also contains Suggested Learning Experiences for 1.1 Classification of plants
+  Part D checks whether the report cites activities from those chunks.
+
+==========================================================================
+PART D SKIPPED (--no-api)
+==========================================================================
+
+==========================================================================
+PASTE THIS BACK
+==========================================================================
+  retrieval heading  top-1 100.0%  mean margin 0.280
+  retrieval teacher  top-1 100.0%  mean margin 0.234
+  retrieval item     top-1 100.0%  mean margin 0.230
+
+  files: day5_results_20260913_101128.json / day5_transcript_20260913_101128.txt

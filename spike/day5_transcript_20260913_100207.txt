@@ -1,0 +1,3 @@
+ELIMU ANALYTICS - DAY 5 RAG SPIKE (hardened)
+run: 2026-09-13T10:02:07
+chunks: 8  model: claude-haiku-4-5-20251001  top_k: 2

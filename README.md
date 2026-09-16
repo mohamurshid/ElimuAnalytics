@@ -18,15 +18,24 @@ It proves one thing: **the chain connects.** Browser → FastAPI → girth → b
 Windows, from the repo root:
 
 ```cmd
-python -m venv .venv
-.venv\Scripts\activate
-pip install -r backend\requirements.txt
-cd backend
-python -m pytest -q
-python -m uvicorn app.main:app --reload --port 8000
+tasks setup
+tasks run
 ```
 
 Then open <http://127.0.0.1:8000>.
+
+Other tasks: `tasks test`, `tasks lint`, `tasks fix`, `tasks ci`.
+`tasks ci` runs exactly what GitHub Actions runs, before you push.
+
+Manual equivalent, if you prefer:
+
+```cmd
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r backend\requirements-dev.txt
+pytest
+cd backend && python -m uvicorn app.main:app --reload --port 8000
+```
 
 The venv matters. Three dependency collisions occurred during Phase 0 on a shared global interpreter — a Brotli decoder mismatch that surfaced as a fake connection error, an `h11` downgrade that broke the API client while installing an embedder, and a torch/transformers version conflict. One environment per project makes those impossible.
 
@@ -46,6 +55,12 @@ Otieno is the important row. He answered three items, which is below the evidenc
 
 ```
 elimu-analytics/
+├── .github/workflows/ci.yml    lint + tests on every push
+├── spike/                      Phase 0 validation scripts and results
+├── data/README.md              data provenance and regeneration
+├── docs/SPRINT1.md             sprint evidence
+├── pyproject.toml              ruff + pytest config
+├── tasks.bat                   task runner
 ├── backend/
 │   ├── app/
 │   │   ├── irt.py      girth wrapper - all Phase 0 rules enforced here

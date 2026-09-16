@@ -1,0 +1,277 @@
+ELIMU ANALYTICS - DAY 5 RAG SPIKE (hardened)
+run: 2026-09-13T10:20:45
+chunks: 8  model: claude-haiku-4-5-20251001  top_k: 2
+Loading all-MiniLM-L6-v2 (first run downloads ~90MB)...
+embedder: all-MiniLM-L6-v2 (sentence-transformers)
+
+==========================================================================
+PART A - RETRIEVAL ROBUSTNESS (24 queries, 3 phrasings x 8 sub-strands)
+==========================================================================
+heading = the chunk's own wording (the original, near-tautological test)
+teacher = how a teacher would describe the gap
+item    = text of a failed quiz item, curriculum vocabulary avoided
+
+--------------------------------------------------------------------------
+STYLE: heading
+--------------------------------------------------------------------------
+expected                        retrieved #1                       sim  margin  ok
+1.1 Classification of plants    1.1 Classification of plants     0.543   0.205  OK
+1.2 Vertebrates                 1.2 Vertebrates                  0.557   0.300  OK
+1.3 The Human Breathing System  1.3 The Human Breathing System   0.512   0.215  OK
+2.1 Mixtures                    2.1 Mixtures                     0.429   0.283  OK
+2.2 Water Pollution             2.2 Water Pollution              0.553   0.302  OK
+3.1 Floating and Sinking        3.1 Floating and Sinking         0.436   0.296  OK
+3.2 Sound Energy                3.2 Sound Energy                 0.471   0.376  OK
+3.3 Heat Transfer               3.3 Heat Transfer                0.366   0.263  OK
+
+  top-1 accuracy: 100.0%   mean margin: 0.280
+--------------------------------------------------------------------------
+STYLE: teacher
+--------------------------------------------------------------------------
+expected                        retrieved #1                       sim  margin  ok
+1.1 Classification of plants    1.1 Classification of plants     0.590   0.399  OK
+1.2 Vertebrates                 1.2 Vertebrates                  0.548   0.190  OK
+1.3 The Human Breathing System  1.3 The Human Breathing System   0.485   0.213  OK
+2.1 Mixtures                    2.1 Mixtures                     0.394   0.068  OK
+2.2 Water Pollution             2.2 Water Pollution              0.510   0.241  OK
+3.1 Floating and Sinking        3.1 Floating and Sinking         0.471   0.225  OK
+3.2 Sound Energy                3.2 Sound Energy                 0.481   0.322  OK
+3.3 Heat Transfer               3.3 Heat Transfer                0.391   0.214  OK
+
+  top-1 accuracy: 100.0%   mean margin: 0.234
+--------------------------------------------------------------------------
+STYLE: item
+--------------------------------------------------------------------------
+expected                        retrieved #1                       sim  margin  ok
+1.1 Classification of plants    1.1 Classification of plants     0.359   0.233  OK
+1.2 Vertebrates                 1.2 Vertebrates                  0.422   0.172  OK
+1.3 The Human Breathing System  1.3 The Human Breathing System   0.489   0.290  OK
+2.1 Mixtures                    2.1 Mixtures                     0.391   0.183  OK
+2.2 Water Pollution             2.2 Water Pollution              0.575   0.270  OK
+3.1 Floating and Sinking        3.1 Floating and Sinking         0.310   0.148  OK
+3.2 Sound Energy                3.2 Sound Energy                 0.633   0.318  OK
+3.3 Heat Transfer               3.3 Heat Transfer                0.355   0.222  OK
+
+  top-1 accuracy: 100.0%   mean margin: 0.230
+
+==========================================================================
+PART B - HARD NEGATIVES (same parent strand, 3.0 Force and Energy)
+==========================================================================
+The realistic failure is not 'plants beat heat transfer'. It is a
+neighbouring sub-strand under the SAME strand winning. Full ranking
+for the flagged learner, using the quiz-item phrasing:
+
+  query: A cooking pot is made of metal but its handle is covered with plastic. Explain why the handle is made of a different material, and name a material that would keep food warm for longer.
+
+    1. 0.355  3.3 Heat Transfer  <-- TARGET
+    2. 0.133  1.1 Classification of plants
+    3. 0.127  3.2 Sound Energy [same strand]
+    4. 0.123  2.1 Mixtures
+    5. 0.113  3.1 Floating and Sinking [same strand]
+    6. 0.089  2.2 Water Pollution
+    7. 0.089  1.3 The Human Breathing System
+    8. 0.053  1.2 Vertebrates
+
+==========================================================================
+PART C - CROSS-CHUNK CONTAMINATION AND SIMILARITY FLOOR (top_k = 2)
+==========================================================================
+Naive top_k, no floor:
+  [0.355] 3.3 Heat Transfer
+  [0.133] 1.1 Classification of plants
+  -> prompt also carries Suggested Learning Experiences for 1.1 Classification of plants
+
+With floor (abs 0.25, rel 0.5 x top = 0.178):
+  [0.355] 3.3 Heat Transfer
+  dropped: 1.1 Classification of plants
+
+==========================================================================
+PART D - GENERATION UNDER SIX CONDITIONS
+==========================================================================
+Condition 1 vs 2 isolates the prompt change; 3 vs 4 isolates the model;
+5 is the control that exposed the broken v2 measurement; 6 tests refusal.
+
+
+--------------------------------------------------------------------------
+1. GROUNDED / EN / loose prompt (v2 wording)
+--------------------------------------------------------------------------
+**DIAGNOSTIC REPORT: CHEBET K. – HEAT TRANSFER SUB-STRAND**
+
+Chebet K. is currently performing **below the expected standard** for Grade 5 Heat Transfer. With an estimated ability score of -1.8 and classification at "Below expectation" on the KICD rubric, the learner is not yet demonstrating the competencies required at this level. This below-expectation placement across two consecutive assessments indicates a consistent pattern requiring targeted intervention.
+
+Analysis of Chebet's performance suggests gaps in understanding the **fundamental modes of heat transfer** and their practical applications. Specifically, the learner has not yet demonstrated proficiency in outcome (a): demonstrating the modes of heat transfer in nature, nor in outcome (b): classifying conductors as good or poor conductors. These foundational concepts underpin all subsequent learning in this sub-strand.
+
+**Recommended intervention:** Facilitate **guided experimentation on heat conduction** using locally available materials (metal spoons, wooden sticks, plastic handles, cloth). Have Chebet physically place these objects in hot water and observe which materials heat up quickly versus slowly. Follow this with structured discussion to build vocabulary around "good conductors" and "poor conductors." This hands-on approach aligns directly with the curriculum's emphasis on experimentation and will consolidate Chebet's understanding before progressing to convection and radiation concepts.
+
+[559 in / 305 out | $0.002084]
+  verdict: GROUNDED
+  DISTINCTIVE KICD anchors (count as evidence): ['poor conductors', 'locally available materials']
+  generic science terms (prove nothing):        ['conduction', 'convection', 'radiation']
+  verbatim quotes verified in context:          none
+  verbatim quotes NOT in context (fabricated):  none
+  wrong-chunk anchors: none
+  vague phrases: none
+  lexical overlap with supplied context: 0.211
+
+--------------------------------------------------------------------------
+2. GROUNDED / EN / STRICT verbatim-citation prompt
+--------------------------------------------------------------------------
+# Diagnostic Report: Chebet K. — Heat Transfer (Grade 5)
+
+Chebet K. is currently performing **Below expectation** on the Heat Transfer sub-strand, with an estimated ability measure of -1.8. This places the learner significantly below the Grade 5 standard for this content area. The learner has been flagged as at-risk across two consecutive assessments, indicating a persistent difficulty rather than a temporary setback. Immediate, targeted intervention is needed to prevent further learning gaps.
+
+Analysis of the learner's performance against the Specific Learning Outcomes reveals gaps in foundational understanding. Chebet K. appears to struggle with demonstrating the modes of heat transfer in nature (Outcome a) and classifying conductors into good or poor categories (Outcome b). These are prerequisite concepts for understanding the practical applications addressed in Outcome c. The learner may benefit from concrete, hands-on exploration rather than abstract explanations.
+
+**Recommended intervention:** Implement the project **"Learners to make oven gloves using locally available materials."** Have Chebet K. work through selecting different locally available materials (cloth, paper, foam, leaves) and testing which ones resist heat transfer effectively. Ask the learner to predict, test with warm water, and classify materials as good or poor insulators. This directly engages Outcomes a and b through tactile experience and builds confidence before progressing to more complex applications.
+
+[639 in / 311 out | $0.002194]
+  verdict: GROUNDED
+  DISTINCTIVE KICD anchors (count as evidence): ['oven gloves', 'locally available materials']
+  generic science terms (prove nothing):        none
+  verbatim quotes verified in context:          ['Learners to make oven gloves using locally available materials.']
+  verbatim quotes NOT in context (fabricated):  none
+  wrong-chunk anchors: none
+  vague phrases: none
+  lexical overlap with supplied context: 0.239
+
+--------------------------------------------------------------------------
+3. GROUNDED / KISWAHILI / Haiku
+--------------------------------------------------------------------------
+# RIPOTI YA TATHMINI YA MWANAFUNZI
+
+**Kwa: Mwalimu wa Daraja la 5**
+
+**Re: Tathmini ya Chebet K. katika Sub-strand 3.3 Heat Transfer**
+
+---
+
+Chebet K. anapatikana **chini ya matajiri** katika sub-strand ya Heat Transfer kulingana na kiwango cha KICD. Kwa kuwa mwanafunzi huyu amekuwa chini ya matajiri kwa tathmini mbili zinazofuatana, inaonyesha kwamba anahitaji msaada wa haraka na wa maalum ili kuimarisha uelewa wake wa mada hii muhimu.
+
+Pengo kuu linaloonekana ni kwamba Chebet bado hajaweza **kuonyesha modi za kuhamishwa kwa joto katika asili** wala **kuainisha waendeshaji joto kuwa waendeshaji mazuri au waendeshaji dhaifu wa joto**. Hizi ni matokeo muhimu ya kujifunza katika sub-strand hii.
+
+Tunashauri kwamba mwalimu akamata shughuli hii ya moja kwa moja: **"perform experiments to demonstrate the modes of heat transfer"**. Mwalimu akina kuandaa jaribio rahisi linaloonyesha conduction (kwa kutumia kijiko katika maji moto), convection (kwa kupigia maji), na radiation (kwa kumkabili joto la moto). Chebet akina kujihusisha moja kwa moja katika jaribio hili, kuandika matokeo yake, na kutaja ni nini alionelea.
+
+[741 in / 434 out | $0.002911]
+  verdict: WEAK
+  DISTINCTIVE KICD anchors (count as evidence): none
+  generic science terms (prove nothing):        ['conduction', 'convection', 'radiation']
+  verbatim quotes verified in context:          ['perform experiments to demonstrate the modes of heat transfer']
+  verbatim quotes NOT in context (fabricated):  none
+  wrong-chunk anchors: none
+  vague phrases: none
+  lexical overlap with supplied context: 0.148
+
+--------------------------------------------------------------------------
+4. GROUNDED / KISWAHILI / Sonnet (quality comparison)
+--------------------------------------------------------------------------
+**Ripoti ya Uchunguzi: Chebet K., Darasa la 5**
+
+**Kwa: Mwalimu wa Darasa**
+
+Chebet K. yupo katika kiwango cha "Below expectation" kulingana na kipimo cha KICD katika sub-strand ya Uhamisho wa Joto (Heat Transfer). Uchunguzi wake wa IRT theta (-1.8) na kuonyeshwa kama mwanafunzi anayeweza kuwa hatarini katika tathmini mbili zilizofuatana kunaonyesha kuwa anahitaji msaada wa ziada katika eneo hili la masomo. Hii inamaanisha Chebet bado hajafikia kiwango kinachohitajika katika Strand ya Nguvu na Nishati.
+
+Pengo mahususi linaonekana katika malengo manne ya kujifunza: (a) kuonyesha njia za uhamisho wa joto asilia, (b) kugawanya vihamisho vya joto kuwa vizuri au vibaya, (c) kueleza matumizi ya uhamisho wa joto maishani ya kila siku, na (d) kutambua tahadhari za usalama wakati wa kushughulikia joto. Chebet anahitaji uzoefu wa vitendo zaidi ili kuelewa dhana hizi.
+
+Ninapendekeza mwalimu amuongoze Chebet katika mradi maalum: **"Learners to make a fireless cooker."** Mradi huu wa kufanya jiko lisilo na moto utamsaidia Chebet kuelewa insulation na matumizi ya uhamisho wa joto kwa njia ya vitendo. Mwalimu anapaswa kumsaidia kukusanya vifaa vya kienyeji, kumuongoza hatua kwa hatua, na kuzungumzia jinsi jiko hili linavyotumia kanuni za kuzuia j
+
+[741 in / 500 out | $0.009723]
+  verdict: GROUNDED
+  DISTINCTIVE KICD anchors (count as evidence): ['fireless cooker']
+  generic science terms (prove nothing):        ['insulation']
+  verbatim quotes verified in context:          ['Learners to make a fireless cooker.']
+  verbatim quotes NOT in context (fabricated):  none
+  wrong-chunk anchors: none
+  vague phrases: none
+  lexical overlap with supplied context: 0.057
+
+--------------------------------------------------------------------------
+5. ABLATION - NO CURRICULUM CONTEXT
+--------------------------------------------------------------------------
+# Diagnostic Report: Chebet K. – Heat Transfer (Grade 5)
+
+**Current Performance Standing**
+
+Chebet K. is currently performing below the KICD rubric expectation in Strand 3.0 (Force and Energy), specifically in Sub-strand 3.3 (Heat Transfer). With an estimated ability score of -1.8, Chebet is significantly below grade-level benchmarks. The fact that this Below Expectation rating has been flagged across two consecutive assessments indicates a consistent pattern rather than an isolated difficulty, warranting immediate intervention.
+
+**Identified Learning Gap**
+
+The data suggests Chebet struggles with foundational concepts in heat transfer. This may include difficulty understanding heat as energy transfer between objects, distinguishing between heat and temperature, or identifying practical examples of conduction, convection, and radiation. Without mastery of these core concepts, Chebet will face cumulative challenges progressing to more complex energy topics.
+
+**Recommended Intervention**
+
+Implement a structured **"Heat Journey" hands-on activity**: Provide Chebet with three stations using everyday materials (a metal spoon in hot water, a candle heating air, and sunlight on dark paper). Guide her to observe, feel, and record heat movement in each scenario. Use scaffolded questioning: "Where does the heat start? Where does it go? How does it travel?" This multisensory, concrete approach will build intuitive understanding before introducing abstract terminology, supporting her progression toward grade-level expectations.
+
+[219 in / 328 out | $0.001859]
+  verdict: FABRICATED
+  DISTINCTIVE KICD anchors (count as evidence): none
+  generic science terms (prove nothing):        ['conduction', 'convection', 'radiation']
+  verbatim quotes verified in context:          none
+  verbatim quotes NOT in context (fabricated):  ['Where does the heat start? Where does it go? How does it travel?']
+  wrong-chunk anchors: none
+  vague phrases: none
+  lexical overlap with supplied context: 0.0
+
+--------------------------------------------------------------------------
+6. CONTROL - WRONG CONTEXT (plants for a heat learner)
+--------------------------------------------------------------------------
+# Diagnostic Report: Chebet K., Grade 5
+
+**Current Standing**
+
+Chebet K. is currently performing **Below expectation** on the KICD rubric for the Heat Transfer sub-strand (3.3). With an estimated ability of -1.8 and performance on 12 items in this sub-strand, the learner's achievement falls significantly below the expected Grade 5 standard. The consecutive at-risk flags across two assessments indicate a persistent challenge requiring targeted intervention.
+
+**Specific Learning Gap**
+
+Unfortunately, the curriculum context provided covers the "Classification of Plants" sub-strand from the Living Things and their Environment strand. The learner's assessed sub-strand—Heat Transfer (3.3) from Force and Energy—is not included in the available curriculum documentation. Therefore, I cannot identify specific gaps by referencing the Specific Learning Outcomes for Heat Transfer.
+
+**Recommendation**
+
+To provide an accurate and evidence-based recommendation for addressing Chebet K.'s performance in Heat Transfer, please supply the KICD curriculum content for Strand 3.0 (Force and Energy), Sub-strand 3.3 (Heat Transfer). This will enable me to identify the precise learning outcomes the learner has not yet mastered and suggest a concrete classroom activity aligned with the official Suggested Learning Experiences for this sub-strand.
+
+[602 in / 294 out | $0.002072]
+  verdict: UNGROUNDED
+  DISTINCTIVE KICD anchors (count as evidence): none
+  generic science terms (prove nothing):        none
+  verbatim quotes verified in context:          none
+  verbatim quotes NOT in context (fabricated):  none
+  wrong-chunk anchors: none
+  vague phrases: none
+  lexical overlap with supplied context: 0.252
+
+==========================================================================
+SUMMARY
+==========================================================================
+condition                                       verdict      dist quote  gen  vague
+1. GROUNDED / EN / loose prompt (v2 wording)    GROUNDED        2     0    3      0
+2. GROUNDED / EN / STRICT verbatim-citation pr  GROUNDED        2     1    0      0
+3. GROUNDED / KISWAHILI / Haiku                 WEAK            0     1    3      0
+4. GROUNDED / KISWAHILI / Sonnet (quality comp  GROUNDED        1     1    1      0
+5. ABLATION - NO CURRICULUM CONTEXT             FABRICATED      0     0    3      0
+6. CONTROL - WRONG CONTEXT (plants for a heat   UNGROUNDED      0     0    0      0
+
+dist  = distinctive KICD anchors (real evidence of grounding)
+quote = verbatim citations verified against the supplied context
+gen   = generic science vocabulary (the v2 false-positive source)
+
+KISWAHILI REVIEW - read conditions 3 and 4 as a Kiswahili speaker, not
+as a score. Check: is any phrasing demeaning about the child? Are the
+technical terms the ones a Kenyan teacher uses? Is it fit to send home?
+
+Total this run (6 calls): $0.02084
+Bilingual report (EN + SW): $0.00511 = 0.51 cents
+Projected 60 UAT bilingual reports: $0.31
+
+==========================================================================
+PASTE THIS BACK
+==========================================================================
+  retrieval heading  top-1 100.0%  mean margin 0.280
+  retrieval teacher  top-1 100.0%  mean margin 0.234
+  retrieval item     top-1 100.0%  mean margin 0.230
+  1. GROUNDED / EN / loose prompt (v2 wording)   GROUNDED    dist=2 quote=0 gen=3 vague=0
+  2. GROUNDED / EN / STRICT verbatim-citation    GROUNDED    dist=2 quote=1 gen=0 vague=0
+  3. GROUNDED / KISWAHILI / Haiku                WEAK        dist=0 quote=1 gen=3 vague=0
+  4. GROUNDED / KISWAHILI / Sonnet (quality co   GROUNDED    dist=1 quote=1 gen=1 vague=0
+  5. ABLATION - NO CURRICULUM CONTEXT            FABRICATED  dist=0 quote=0 gen=3 vague=0
+  6. CONTROL - WRONG CONTEXT (plants for a hea   UNGROUNDED  dist=0 quote=0 gen=0 vague=0
+  cost this run: $0.02084
+
+  files: day5_results_20260913_102045.json / day5_transcript_20260913_102045.txt

@@ -12,14 +12,15 @@ env/
 *.key
 *.pem
 
-# Data - Riiid train.csv is 5.5GB and the samples are regenerable
-data/
+# Data - Riiid train.csv is 5.5GB and the samples are regenerable.
+# The provenance README is kept.
+data/*
+!data/README.md
 *.csv
 *.parquet
 
-# Spike outputs
-day5_results_*.json
-day5_transcript_*.txt
+# Spike results ARE committed - they are the evidence behind ten Chapter 3
+# amendments. Only the large regenerable datasets are excluded, above.
 
 # OS / editor
 .DS_Store

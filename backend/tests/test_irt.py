@@ -10,8 +10,6 @@ numbers rather than errors.
 
 import numpy as np
 import pytest
-from girth import INVALID_RESPONSE
-
 from app import data
 from app.irt import (
     MIN_RESPONSES,
@@ -21,6 +19,7 @@ from app.irt import (
     tier_for,
     validate_matrix,
 )
+from girth import INVALID_RESPONSE
 
 N_ITEMS, N_STUDENTS = data.N_ITEMS, data.N_STUDENTS
 

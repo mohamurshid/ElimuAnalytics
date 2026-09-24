@@ -12,14 +12,25 @@ env/
 *.key
 *.pem
 
-# Data - Riiid train.csv is 5.5GB and the samples are regenerable.
+# Data - the Riiid dataset is 5.5GB and the samples are regenerable.
 # The provenance README is kept.
 data/*
 !data/README.md
+
+# The extracted curriculum corpus and its coverage report ARE committed -
+# they are evidence for the Chapter 1 scope claim and the Chapter 3 method.
+# The source PDFs (110MB, freely redistributable) are not.
+# data/kicd must be re-included before files inside it can be: git cannot
+# re-include a file whose parent directory is excluded.
+!data/kicd/
+data/kicd/*
+!data/kicd/kicd_curriculum_chunks_full.json
+!data/kicd/coverage_report.md
+
 *.csv
 *.parquet
 
-# Spike results ARE committed - they are the evidence behind ten Chapter 3
+# Spike results ARE committed - they are the evidence behind the Chapter 3
 # amendments. Only the large regenerable datasets are excluded, above.
 
 # OS / editor

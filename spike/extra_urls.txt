@@ -1,0 +1,31 @@
+# Manual additions to the curriculum manifest.
+#
+# Format:  URL | FILENAME.pdf
+# The filename is required for Google Drive links, whose URLs carry no name.
+# Name files so the grade and learning area can be read from them, e.g.
+# GRADE.5.MATHEMATICS.pdf - that is how the script assigns grade and subject.
+#
+# Google Drive viewer links (.../file/d/<ID>/view) are download-restricted.
+# The direct form below is not:
+#     https://drive.google.com/uc?export=download&id=<ID>
+#
+# Verified links from Teachers Arena (arena.co.ke/curriculum-designs), useful
+# for anything cbcelimu.com is missing. Uncomment what you need.
+
+# https://drive.google.com/uc?export=download&id=1Yp7jzCNlpyqTD8OtLsIIZ8jTVKfBZZMw | GRADE.1.CREATIVE.ARTS.pdf
+# https://drive.google.com/uc?export=download&id=1eOkIM8YZVkT5aesBfYJyOihYS1n538gt | GRADE.1.ENVIRONMENTAL.ACTIVITIES.pdf
+# https://drive.google.com/uc?export=download&id=1cmh4jNVcDT2cFH5l3OPs30HW6xg5wM2g | GRADE.2.CREATIVE.ARTS.pdf
+# https://drive.google.com/uc?export=download&id=14gW7qHjLSfcdMmDMcToU6NyA3E6Lgt5Z | GRADE.2.ENVIRONMENTAL.ACTIVITIES.pdf
+# https://drive.google.com/uc?export=download&id=17m3CRnjN9ZpeIgi7CxeyYb8k7FckZPaa | GRADE.3.CREATIVE.ARTS.pdf
+# https://drive.google.com/uc?export=download&id=1-6a2RI1sOxYnlHVyiQtNNKXXOzXYOz98 | GRADE.3.ENVIRONMENTAL.ACTIVITIES.pdf
+# https://drive.google.com/uc?export=download&id=1fCeZA2MZc7zCpCeWdCIov-1AdIaGjKfh | GRADE.4.CREATIVE.ARTS.pdf
+# https://drive.google.com/uc?export=download&id=1SkI3Vn88LxDdsXgwI3n7_LWhTdWEMQEO | GRADE.4.AGRICULTURE.NUTRITION.pdf
+# https://drive.google.com/uc?export=download&id=1xN-sdnW9k9spcrZRET55CevLx2aocKyc | GRADE.5.CREATIVE.ARTS.pdf
+# https://drive.google.com/uc?export=download&id=1yqpLV5wRzCct_LVuMrOC6TfSS_2q5iBl | GRADE.5.AGRICULTURE.NUTRITION.pdf
+# https://drive.google.com/uc?export=download&id=1SyCGR53CMAL7GazGk68eNhMbM74h3RM0 | GRADE.6.CREATIVE.ARTS.pdf
+# https://drive.google.com/uc?export=download&id=1ny7Y-YjGl6BtJRuCXwZpGSPlkfgDZEvY | GRADE.6.AGRICULTURE.NUTRITION.pdf
+
+# Known direct PDFs on cbcelimu.com (these are found automatically by
+# --discover, listed here only as examples of the URL shape):
+# https://cbcelimu.com/wp-content/uploads/2024/12/GRADE.5.SCIENCE.pdf | GRADE.5.SCIENCE.pdf
+# https://cbcelimu.com/wp-content/uploads/2024/12/GRADE.4.SCIENCE.pdf | GRADE.4.SCIENCE.pdf

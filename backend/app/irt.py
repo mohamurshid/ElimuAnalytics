@@ -100,6 +100,52 @@ def tier_for(theta: float) -> str:
     return TIER_CUTS[-1][1]
 
 
+def diagnose_all(responses: np.ndarray, n_items: int, n_students: int) -> list[dict]:
+    """Diagnose every learner from ONE calibration.
+
+    `diagnose` calibrates the strand each time it is called, which is correct
+    for a single learner and quadratic for a class: assessing forty learners ran
+    forty calibrations of the same matrix. Calibration is a property of the
+    strand, not of the learner, so it happens once here and the EAP step is
+    vectorised across the class.
+    """
+    matrix = validate_matrix(responses, n_items, n_students)
+    params = calibrate(matrix, n_items, n_students)
+    abilities = np.asarray(
+        ability_eap(matrix, params["difficulty"], params["discrimination"]), dtype=float
+    )
+
+    out = []
+    for idx in range(n_students):
+        answered = responses_answered(matrix, idx)
+        if answered < MIN_RESPONSES:
+            out.append({
+                "theta": None, "tier": None, "answered": answered,
+                "confident": False, "flaggable": False,
+                "message": (
+                    f"{answered} item(s) answered. At least {MIN_RESPONSES} are "
+                    "needed before an ability estimate means anything."
+                ),
+            })
+            continue
+        theta = float(abilities[idx])
+        confident = answered >= CONFIDENT_RESPONSES
+        out.append({
+            "theta": round(theta, 3),
+            "tier": tier_for(theta),
+            "answered": answered,
+            "confident": confident,
+            "flaggable": bool(confident and theta < 0.0),
+            "message": (
+                "Estimate is provisional: "
+                f"{answered} of {CONFIDENT_RESPONSES} items needed for confidence."
+                if not confident
+                else f"Based on {answered} answered items."
+            ),
+        })
+    return out
+
+
 def diagnose(
     responses: np.ndarray, n_items: int, n_students: int, student_index: int
 ) -> dict:

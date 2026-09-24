@@ -12,6 +12,12 @@ extend-exclude = [".venv", "spike"]
 [tool.ruff.lint]
 # E/W pycodestyle, F pyflakes, I import sorting, UP pyupgrade, B bugbear
 select = ["E", "W", "F", "I", "UP", "B"]
+# B008 fires on FastAPI's Depends() in argument defaults, which is the
+# framework's documented dependency-injection idiom, not a mutable default.
+[tool.ruff.lint.per-file-ignores]
+"backend/app/main.py" = ["B008"]
+"backend/app/auth.py" = ["B008"]
+"backend/app/items.py" = ["B008"]
 
 [tool.pytest.ini_options]
 testpaths = ["backend/tests"]

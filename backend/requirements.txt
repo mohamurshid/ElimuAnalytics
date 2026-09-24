@@ -3,3 +3,10 @@ uvicorn[standard]
 girth
 numpy
 scipy
+sqlalchemy>=2.0
+psycopg[binary]
+pgvector
+alembic
+pyjwt
+bcrypt
+email-validator

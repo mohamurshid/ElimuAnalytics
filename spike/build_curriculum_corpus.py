@@ -51,7 +51,7 @@ import urllib.request
 from collections import Counter, defaultdict
 from pathlib import Path
 
-VERSION = "v2.1 (content-hash dedupe + per-page recovery)"
+VERSION = "v3 (separates curriculum rows from assessment rubric rows)"
 
 MEDIA_API = "https://cbcelimu.com/wp-json/wp/v2/media"
 USER_AGENT = "Mozilla/5.0 (compatible; ElimuAnalytics-Research/1.0; academic use)"
@@ -275,13 +275,27 @@ def clean(cell) -> str:
     return re.sub(r"\s+", " ", str(cell)).strip()
 
 
-def row_to_chunk(cells: list[str], grade: int, area: str, index: int) -> dict | None:
-    """Turn one curriculum table row into a chunk in the Day 4 format.
+# A curriculum row is identified by a numbered strand or sub-strand
+# ("3.3 Heat transfer"). KICD's assessment rubric tables have the same column
+# count, so without this test they parse as sub-strands: the indicator lands in
+# `strand`, the "exceeds expectation" descriptor lands in `sub_strand`, and the
+# remaining performance levels are mislabelled as learning outcomes and
+# activities. In the first full run that produced 923 fake sub-strands out of
+# 2,540 chunks - 64% of Mathematics, 67% of Social Studies.
+NUMBERED_RE = re.compile(r"^\s*\d+\.\d")
 
-    KICD rows run: Strand | Sub Strand | Specific Learning Outcomes |
+
+def parse_row(cells: list[str], grade: int, area: str, index: int):
+    """Classify one table row and return ("curriculum"|"rubric", record).
+
+    KICD curriculum rows run: Strand | Sub Strand | Specific Learning Outcomes |
     Suggested Learning Experiences | Key Inquiry Question(s).
-    Column counts vary between learning areas, so the parse is positional with
-    a length check rather than a fixed schema.
+    KICD rubric rows run: Indicator | Exceeds | Meets | Approaches | Below.
+
+    Both are five columns of prose, so the numbering test is what separates
+    them. Rubric rows are kept rather than discarded - they carry KICD's own
+    four-level performance descriptors, which are exactly the wording the
+    report generator should use when describing a learner's tier.
     """
     cells = [clean(c) for c in cells]
     if len(cells) < 4:
@@ -295,6 +309,28 @@ def row_to_chunk(cells: list[str], grade: int, area: str, index: int) -> dict | 
         return None
     if SECTION_PATTERNS["outcomes"].search(strand):  # this row IS the header
         return None
+
+    if not (NUMBERED_RE.match(strand) or NUMBERED_RE.match(sub_strand)):
+        levels = (cells + ["", "", "", ""])[1:5]
+        return (
+            "rubric",
+            {
+                "id": f"g{grade}_{re.sub(r'[^a-z]', '', area.lower())[:8]}_rub{index}",
+                "grade": f"Grade {grade}",
+                "subject": area,
+                "indicator": strand,
+                "exceeds": levels[0],
+                "meets": levels[1],
+                "approaches": levels[2],
+                "below": levels[3],
+                "text": (
+                    f"INDICATOR: {strand}. EXCEEDS EXPECTATION: {levels[0]} "
+                    f"MEETS EXPECTATION: {levels[1]} "
+                    f"APPROACHES EXPECTATION: {levels[2]} "
+                    f"BELOW EXPECTATION: {levels[3]}"
+                ),
+            },
+        )
 
     # The lesson count usually sits inside the sub-strand cell. Pull it out into
     # its own field and strip it from the label, so the chunk matches the Day 4
@@ -323,21 +359,25 @@ def row_to_chunk(cells: list[str], grade: int, area: str, index: int) -> dict | 
         + (f" KEY INQUIRY QUESTION: {inquiry}" if inquiry else "")
     )
 
-    return {
-        "id": f"g{grade}_{re.sub(r'[^a-z]', '', area.lower())[:8]}_{index}",
-        "grade": f"Grade {grade}",
-        "subject": area,
-        "strand": strand,
-        "sub_strand": sub_strand,
-        "lessons": lessons,
-        "text": re.sub(r"\s+", " ", text).strip(),
-    }
+    return (
+        "curriculum",
+        {
+            "id": f"g{grade}_{re.sub(r'[^a-z]', '', area.lower())[:8]}_{index}",
+            "grade": f"Grade {grade}",
+            "subject": area,
+            "strand": strand,
+            "sub_strand": sub_strand,
+            "lessons": lessons,
+            "text": re.sub(r"\s+", " ", text).strip(),
+        },
+    )
 
 
-def extract_one(path: Path, grade: int, area: str) -> tuple[list[dict], dict]:
+def extract_one(path: Path, grade: int, area: str):
     import pdfplumber
 
     chunks: list[dict] = []
+    rubrics: list[dict] = []
     pages = chars = tables = 0
 
     page_errors = 0
@@ -354,9 +394,13 @@ def extract_one(path: Path, grade: int, area: str) -> tuple[list[dict], dict]:
                 for table in page.extract_tables() or []:
                     tables += 1
                     for row in table:
-                        chunk = row_to_chunk(row, grade, area, len(chunks) + 1)
-                        if chunk:
-                            chunks.append(chunk)
+                        parsed = parse_row(
+                            row, grade, area, len(chunks) + len(rubrics) + 1
+                        )
+                        if not parsed:
+                            continue
+                        kind, record = parsed
+                        (chunks if kind == "curriculum" else rubrics).append(record)
             except Exception:  # noqa: BLE001 - pdfminer raises many shapes
                 page_errors += 1
                 continue
@@ -381,12 +425,15 @@ def extract_one(path: Path, grade: int, area: str) -> tuple[list[dict], dict]:
         "chars_per_page": round(chars_per_page),
         "tables": tables,
         "chunks": len(chunks),
+        "rubrics": len(rubrics),
         "page_errors": page_errors,
         "status": status,
     }
     for c in chunks:
         c["extraction_status"] = status
-    return chunks, stats
+    for r in rubrics:
+        r["extraction_status"] = status
+    return chunks, rubrics, stats
 
 
 def extract(outdir: Path, limit: int | None) -> None:
@@ -432,6 +479,7 @@ def extract(outdir: Path, limit: int | None) -> None:
         sys.exit(f"No PDFs in {pdf_dir}. Run --download first.")
 
     all_chunks: list[dict] = []
+    all_rubrics: list[dict] = []
     all_stats: list[dict] = []
 
     for i, path in enumerate(files, 1):
@@ -439,33 +487,38 @@ def extract(outdir: Path, limit: int | None) -> None:
         grade = entry.get("grade", 0)
         area = entry.get("learning_area", "Unclassified")
         try:
-            chunks, stats = extract_one(path, grade, area)
+            chunks, rubrics, stats = extract_one(path, grade, area)
         except Exception as exc:  # noqa: BLE001
             stats = {
                 "file": path.name, "grade": grade, "learning_area": area,
                 "pages": 0, "chars_per_page": 0, "tables": 0, "chunks": 0,
-                "status": f"FAILED: {exc}",
+                "rubrics": 0, "status": f"FAILED: {exc}",
             }
-            chunks = []
+            chunks, rubrics = [], []
         all_chunks.extend(chunks)
+        all_rubrics.extend(rubrics)
         all_stats.append(stats)
         print(f"  [{i}/{len(files)}] {path.name:<50} {stats['status']:<13} "
-              f"{stats['chunks']:>4} chunks")
+              f"{stats['chunks']:>4} chunks  {stats.get('rubrics', 0):>4} rubrics")
 
-    # Second dedup pass, on chunk text. Catches the same sub-strand appearing in
-    # two differently-named files, which filename matching cannot see.
-    seen_text: set[str] = set()
-    deduped: list[dict] = []
-    for c in all_chunks:
-        key = re.sub(r"\W+", "", c["text"].lower())[:400]
-        if key in seen_text:
-            continue
-        seen_text.add(key)
-        deduped.append(c)
-    dup_chunks = len(all_chunks) - len(deduped)
-    if dup_chunks:
-        print(f"\nRemoved {dup_chunks} duplicate chunks by content.")
-    all_chunks = deduped
+    # Second dedup pass, on text. Catches the same row appearing in two
+    # differently-named files, which filename matching cannot see.
+    def dedupe(records: list[dict]) -> tuple[list[dict], int]:
+        seen: set[str] = set()
+        out: list[dict] = []
+        for r in records:
+            key = re.sub(r"\W+", "", r["text"].lower())[:400]
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(r)
+        return out, len(records) - len(out)
+
+    all_chunks, dup_chunks = dedupe(all_chunks)
+    all_rubrics, dup_rubrics = dedupe(all_rubrics)
+    if dup_chunks or dup_rubrics:
+        print(f"\nRemoved {dup_chunks} duplicate chunks and "
+              f"{dup_rubrics} duplicate rubric rows by content.")
 
     out_json = outdir / "kicd_curriculum_chunks_full.json"
     out_json.write_text(
@@ -478,6 +531,7 @@ def extract(outdir: Path, limit: int | None) -> None:
                     "Approaches expectation", "Below expectation",
                 ],
                 "chunks": all_chunks,
+                "rubrics": all_rubrics,
             },
             indent=2, ensure_ascii=False,
         ),
@@ -495,7 +549,8 @@ def extract(outdir: Path, limit: int | None) -> None:
 
     lines = ["# KICD curriculum corpus — coverage report", ""]
     lines.append(f"- Files processed: **{len(all_stats)}**")
-    lines.append(f"- Chunks extracted: **{len(all_chunks)}**")
+    lines.append(f"- Curriculum sub-strand chunks: **{len(all_chunks)}**")
+    lines.append(f"- Assessment rubric rows: **{len(all_rubrics)}**")
     lines.append("")
     lines.append("## Extraction status")
     lines.append("")
@@ -541,7 +596,7 @@ def extract(outdir: Path, limit: int | None) -> None:
 
     (outdir / "coverage_report.md").write_text("\n".join(lines), encoding="utf-8")
 
-    print(f"\n{len(all_chunks)} chunks -> {out_json}")
+    print(f"\n{len(all_chunks)} curriculum chunks + {len(all_rubrics)} rubric rows -> {out_json}")
     print(f"Coverage report -> {outdir / 'coverage_report.md'}")
     print("\nStatus summary:")
     for st, n in status_counts.most_common():

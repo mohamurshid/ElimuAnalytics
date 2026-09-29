@@ -14,6 +14,8 @@ Then open http://127.0.0.1:8000
 from __future__ import annotations
 
 import uuid
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException
@@ -32,18 +34,24 @@ from .security import secret_is_default
 
 FRONTEND = Path(__file__).resolve().parents[2] / "frontend"
 
-app = FastAPI(title="Elimu Analytics", version="0.3.0")
-app.include_router(auth_router)
-app.include_router(items_router)
+@asynccontextmanager
+async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    """Startup and shutdown.
 
-
-@app.on_event("startup")
-def warn_about_dev_secret() -> None:
+    Replaces the deprecated `@app.on_event("startup")`. Everything before the
+    `yield` runs once at startup, everything after it at shutdown.
+    """
     if secret_is_default():
         print(
             "WARNING: JWT_SECRET is unset, so tokens are signed with the published "
             "development key. Set JWT_SECRET before any deployment."
         )
+    yield
+
+
+app = FastAPI(title="Elimu Analytics", version="0.3.1", lifespan=lifespan)
+app.include_router(auth_router)
+app.include_router(items_router)
 
 
 @app.get("/api/health")

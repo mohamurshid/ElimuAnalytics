@@ -13,12 +13,13 @@ from __future__ import annotations
 import uuid
 
 import jwt
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, EmailStr
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from . import throttle
 from .db import get_session
 from .models import Teacher
 from .security import (
@@ -52,16 +53,36 @@ class ProfileResponse(BaseModel):
 
 
 @router.post("/login", response_model=TokenResponse)
-def login(body: LoginRequest, session: Session = Depends(get_session)) -> TokenResponse:
+def login(
+    body: LoginRequest,
+    request: Request,
+    session: Session = Depends(get_session),
+) -> TokenResponse:
+    key = throttle.key_for(body.email, request)
+
+    # Checked before the password, deliberately. Verifying first and letting a
+    # correct password through would waive the limit on exactly the attempt
+    # that matters - an attacker's successful guess.
+    wait = throttle.retry_after(key)
+    if wait is not None:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many failed sign-in attempts. Try again later.",
+            headers={"Retry-After": str(wait)},
+        )
+
     teacher = session.scalar(select(Teacher).where(Teacher.email == body.email))
     # One message for both "no such account" and "wrong password": distinguishing
     # them tells an attacker which addresses are registered.
     if teacher is None or not verify_password(body.password, teacher.password_hash):
+        throttle.record_failure(key)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
+
+    throttle.clear(key)
     return TokenResponse(
         access_token=create_token(teacher.teacher_id, teacher.role, teacher.email),
         role=teacher.role,

@@ -160,8 +160,59 @@ application prints a warning at startup when it is in use. Set `JWT_SECRET`
 before any deployment - a default signing key is not a weak secret, it is a
 published one.
 
+## Step 4 — login throttling
+
+`POST /api/auth/login` was unlimited. bcrypt is deliberately slow, so guessing
+one password online was already expensive, but an unthrottled endpoint still
+allows thousands of attempts overnight against a weak password - and these
+accounts hold children's assessment records.
+
+`app/throttle.py` refuses a key holding five failures inside fifteen minutes
+and answers **429** with a `Retry-After` header. It is a sliding window rather
+than a lockout timer: failures age out on their own, so nothing has to schedule
+an unlock.
+
+Four decisions, each closing a way throttles usually go wrong:
+
+**Keyed by account *and* source address.** Keying on the address alone would
+lock out a whole school sharing one connection. Keying on the account alone
+would let anyone deny a named teacher access by failing five logins against
+their address. The pair means an attacker throttles only themselves.
+
+**Checked before the password, not after.** Verifying first and waiving the
+limit on success would let through exactly the attempt that matters - the
+attacker's correct guess. A correct password is refused while throttled.
+
+**`X-Forwarded-For` is ignored unless `TRUST_PROXY_HEADER` is set.** That header
+comes from the client. Trusting it by default would let an attacker send a new
+address each attempt and never be throttled at all. Turn it on deliberately,
+behind a proxy that sets it.
+
+**Stale keys are swept.** Otherwise an attacker cycling addresses grows the
+counter dictionary without bound.
+
+Two limits, stated rather than hidden: the state is in-process, so it is lost
+on restart and N workers mean N times the allowance - acceptable on a single
+instance, not acceptable behind a load balancer, where it belongs in Redis. And
+it raises the cost of an attack rather than stopping one, since an attacker with
+many source addresses gets an allowance per address.
+
+Tunable by environment: `LOGIN_MAX_ATTEMPTS`, `LOGIN_WINDOW_SECONDS`,
+`TRUST_PROXY_HEADER`.
+
+Nine tests cover it, including window expiry with an advanced clock rather than
+a real sleep, and isolation between accounts and between addresses.
+
+## Step 5 — lifespan handler
+
+`@app.on_event("startup")` is deprecated in FastAPI. The development-secret
+warning now runs inside an `asynccontextmanager` passed as `lifespan=`, which
+removes four deprecation warnings from the test run and leaves a place for
+shutdown work to go later.
+
 ## Still to do in Phase 2
 
 - Classroom and student CRUD (teachers currently come from the seed)
-- Rate limiting on login
+- Row-level scoping on those endpoints, so a teacher cannot read another
+  school's learners - the first place children's data crosses a trust boundary
 - Refresh tokens, if session length becomes a usability problem in UAT

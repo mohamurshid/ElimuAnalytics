@@ -26,6 +26,7 @@ from . import repository as repo
 from .auth import current_teacher
 from .auth import router as auth_router
 from .calibration import assess_strand, calibrate_strand, open_flags
+from .classrooms import router as classrooms_router
 from .db import get_session, healthcheck
 from .irt import ResponseMatrixError
 from .items import router as items_router
@@ -49,9 +50,10 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     yield
 
 
-app = FastAPI(title="Elimu Analytics", version="0.3.1", lifespan=lifespan)
+app = FastAPI(title="Elimu Analytics", version="0.4.0", lifespan=lifespan)
 app.include_router(auth_router)
 app.include_router(items_router)
+app.include_router(classrooms_router)
 
 
 @app.get("/api/health")

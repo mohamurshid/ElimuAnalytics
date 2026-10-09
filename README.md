@@ -20,12 +20,12 @@ and Kiswahili.
 |---|---|
 | **0 — Technical spike** | Complete. Decision: GO |
 | **1 — Walking skeleton** | Complete |
-| **2 — Backend core** | Persistence, calibration, auth and item bank done; classroom/student CRUD outstanding |
+| **2 — Backend core** | Complete. Persistence, calibration, auth, item bank, login throttling, classroom and learner records with school-level scoping |
 | 3 — Frontend | Not started |
 | 4 — Offline sync | Not started |
 | 5 — RAG + reports | Not started (retrieval validated in Phase 0) |
 
-**42 tests**, lint clean, CI on every push.
+**69 tests**, lint clean, CI on every push.
 
 ---
 
@@ -34,11 +34,10 @@ and Kiswahili.
 Windows, from the repo root. Requires Docker Desktop.
 
 ```cmd
-tasks setup                             venv + dependencies
+tasks setup                             venv + dependencies, once
 docker compose up -d                    PostgreSQL 16 + pgvector
-cd backend
-python -m app.seed --reset              schema + demonstration data
-python -m uvicorn app.main:app --reload --port 8000
+tasks seed --reset                      schema + demonstration data
+tasks run                               the development server
 ```
 
 - <http://127.0.0.1:8000> — the page
@@ -54,6 +53,13 @@ Demonstration accounts, password `elimu-demo`:
 Other tasks: `tasks test`, `tasks lint`, `tasks fix`, `tasks ci`.
 `tasks ci` runs exactly what GitHub Actions runs, before you push. The test
 suite uses SQLite, so it needs no Docker.
+
+**Use the `tasks` targets rather than calling Python directly.** Each one
+activates the virtual environment first. Without it the commands run against
+the system interpreter and fail with `No module named 'girth'`, which names a
+package rather than the cause and looks exactly like a broken install.
+`docs/RUNBOOK.md` has the expected output of every step and the four failure
+modes that actually occur.
 
 **The venv matters.** Three dependency collisions occurred during Phase 0 on a
 shared global interpreter — a Brotli decoder mismatch that surfaced as a fake
@@ -207,8 +213,6 @@ the app warns at startup when it is in use. Set it before any deployment.
 
 ## Next
 
-**Phase 2 remainder** — classroom and student CRUD, login rate limiting.
-
 **Phase 3** — React/Next.js frontend: dashboard, competency heatmap,
 intervention queue, quiz interface, built against this backend rather than mocks.
 
@@ -218,4 +222,9 @@ intervention queue, quiz interface, built against this backend rather than mocks
 with the grade-and-learning-area filter, generate bilingual reports with the
 strict citation prompt, export PDFs.
 
-See `docs/ARCHITECTURE.md` for how the current system works.
+Refresh tokens remain open from Phase 2, deliberately: whether a 60-minute
+session is inconvenient on a classroom tablet is a question UAT answers, not
+one to build against speculatively.
+
+See `docs/ARCHITECTURE.md` for how the current system works and
+`docs/RUNBOOK.md` for how to run it.

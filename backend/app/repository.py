@@ -19,7 +19,7 @@ import uuid
 
 import numpy as np
 from girth import INVALID_RESPONSE
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .irt import diagnose as irt_diagnose
@@ -61,7 +61,12 @@ def build_response_matrix(
             .order_by(Item.item_id)
         )
     )
-    student_stmt = select(Student).order_by(Student.student_id)
+    # Withdrawn learners leave the calibration pool for the same reason
+    # deactivated items do: their past responses stay on record, but they no
+    # longer contribute to estimates for the learners still in the class.
+    student_stmt = select(Student).where(Student.is_active.is_(True)).order_by(
+        Student.student_id
+    )
     if class_id:
         student_stmt = student_stmt.where(Student.class_id == class_id)
     students = list(session.scalars(student_stmt))
@@ -146,3 +151,83 @@ def consecutive_low_assessments(
         else:
             break
     return run
+
+
+# ---------------------------------------------------------------------------
+# School-level scoping
+#
+# Every classroom and learner lookup goes through these. A teacher sees the
+# classrooms and learners of their own school and nothing else.
+#
+# Out-of-scope records return None, and the API turns that into 404 rather
+# than 403. 403 would confirm that a record exists and merely belongs to
+# someone else, which is itself a disclosure: an attacker enumerating UUIDs
+# learns which ones are real. 404 says only "not yours to know about".
+# ---------------------------------------------------------------------------
+
+
+def school_classrooms(
+    session: Session, school_id: uuid.UUID, include_inactive: bool = False
+) -> list[Classroom]:
+    stmt = select(Classroom).where(Classroom.school_id == school_id)
+    if not include_inactive:
+        stmt = stmt.where(Classroom.is_active.is_(True))
+    return list(session.scalars(stmt.order_by(Classroom.grade, Classroom.name)))
+
+
+def classroom_in_school(
+    session: Session, class_id: uuid.UUID, school_id: uuid.UUID
+) -> Classroom | None:
+    """The classroom, or None if it does not exist OR belongs to another school.
+
+    The two cases are deliberately indistinguishable to the caller.
+    """
+    classroom = session.get(Classroom, class_id)
+    if classroom is None or classroom.school_id != school_id:
+        return None
+    return classroom
+
+
+def student_in_school(
+    session: Session, student_id: uuid.UUID, school_id: uuid.UUID
+) -> Student | None:
+    student = session.get(Student, student_id)
+    if student is None:
+        return None
+    classroom = session.get(Classroom, student.class_id)
+    if classroom is None or classroom.school_id != school_id:
+        return None
+    return student
+
+
+def classroom_students(
+    session: Session, class_id: uuid.UUID, include_inactive: bool = False
+) -> list[Student]:
+    stmt = select(Student).where(Student.class_id == class_id)
+    if not include_inactive:
+        stmt = stmt.where(Student.is_active.is_(True))
+    return list(session.scalars(stmt.order_by(Student.name)))
+
+
+def student_response_count(session: Session, student_id: uuid.UUID) -> int:
+    return int(
+        session.scalar(
+            select(func.count())
+            .select_from(Response)
+            .where(Response.student_id == student_id)
+        )
+        or 0
+    )
+
+
+def classroom_response_count(session: Session, class_id: uuid.UUID) -> int:
+    """Responses recorded by any learner in this classroom, active or not."""
+    return int(
+        session.scalar(
+            select(func.count())
+            .select_from(Response)
+            .join(Student, Student.student_id == Response.student_id)
+            .where(Student.class_id == class_id)
+        )
+        or 0
+    )

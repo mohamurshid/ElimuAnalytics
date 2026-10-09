@@ -1,4 +1,4 @@
-# Presentation brief — five-hour crash course
+# Presentation brief
 
 Everything you need to present Elimu Analytics confidently, in the order you
 should learn it. Read section 1 twice, run the demo in section 5 three times,
@@ -6,16 +6,45 @@ and skim the rest.
 
 ---
 
-## 0. How to spend the time
+## 0. The night before, and the morning of
 
-| Time | Do this |
-|---|---|
-| 0:00–0:45 | Read sections 1–4. Don't take notes yet, just read |
-| 0:45–1:30 | Get the system running (section 5) and click through the demo twice |
-| 1:30–2:30 | Re-read sections 2 and 3, out loud. These are the parts you'll be questioned on |
-| 2:30–3:30 | Run the demo again, narrating it as if presenting. Time yourself |
-| 3:30–4:30 | Read section 7 (likely questions) and answer each aloud without looking |
-| 4:30–5:00 | Section 8 (numbers), then stop. Don't cram new material |
+**Tonight, in this order:**
+
+| Do this |
+|---|
+| Read sections 1–4 once, without notes |
+| Get the system running (section 5) and click through the demo twice |
+| Re-read sections 2 and 3 **out loud**. These are what you'll be questioned on |
+| Run the demo again, narrating as if presenting. Time it |
+| Answer every question in section 7 aloud, without looking |
+| Skim section 8 (numbers), then **stop**. Don't cram new material late |
+| **Run `python -m app.seed --reset` and close everything** — see below |
+
+**Rehearsing contaminates the demo.** Each `Run assessment` click is recorded.
+If you rehearse the two-consecutive-assessment moment tonight and don't reset,
+tomorrow Chebet is *already* flagged, the intervention queue isn't empty, and
+the most persuasive thirty seconds of your demo silently doesn't happen. So the
+last thing you do tonight, and again tomorrow before you walk in, is:
+
+```cmd
+cd /d C:\dev\elimu-analytics\backend
+python -m app.seed --reset
+```
+
+**Tomorrow morning, the pre-flight (do this before anyone is watching):**
+
+1. Start Docker Desktop. Wait for it to say running
+2. `docker compose up -d`, wait ten seconds
+3. `python -m app.seed --reset` from `backend`
+4. Start uvicorn
+5. Open `http://127.0.0.1:8000` — confirm three learners appear
+6. Open `http://127.0.0.1:8000/docs` in a second tab
+7. Run `tasks ci` **now**, and leave the passing output in a spare terminal
+
+Do **not** log in to `/docs` during pre-flight. Tokens last 60 minutes; if you
+authorize while setting up and then sit through two other presentations, your
+token expires and Step 3 dies with a 401 in front of the room. Log in during
+the demo, as part of the demo.
 
 ---
 
@@ -232,19 +261,41 @@ Log in as `head@example.school`, re-authorize, delete the same item →
 > responses, which would silently change every ability estimate ever derived
 > from them. So it's withdrawn from future calibration and the history is kept."
 
+### Step 3b — login throttling (ten seconds, same tab)
+
+Call `POST /api/auth/login` six times with a wrong password.
+
+> "Six failed sign-ins and it stops answering — 429, with a Retry-After header
+> saying when to come back. Two decisions in there. It's keyed by account *and*
+> source address, because keying on address alone would lock out a whole school
+> sharing one connection, and keying on account alone would let anyone lock a
+> named teacher out of her own account. And the limit is checked *before* the
+> password is verified, so even the correct password is refused while throttled
+> — otherwise you'd wave through exactly the attempt that matters, the
+> attacker's successful guess."
+
+If asked whether that's production-ready, say no, and say why before they do:
+the counter is in-process, so it's lost on restart and N workers mean N times
+the allowance. Fine on one instance, wrong behind a load balancer, where it
+belongs in Redis. Naming your own limit is the difference between a considered
+decision and an oversight.
+
 ### Step 4 — the engineering (terminal)
 
-```cmd
-tasks ci
-```
+Show the `tasks ci` output you ran during pre-flight. **Don't run it live** — it
+takes about 77 seconds, which is an extremely long silence in front of a room.
 
-> "Lint plus 42 tests. These aren't testing that the IRT library works —
+> "Lint plus 51 tests. These aren't testing that the IRT library works —
 > they're testing that this codebase cannot reintroduce the mistakes I found
 > during the technical spike. Three of those mistakes produce wrong numbers
 > rather than errors, which is exactly why they're automated rather than
 > remembered."
 
-Then show the GitHub Actions tab: green runs on every push.
+If someone notices the suite is slow: the nine login-throttle tests do real
+bcrypt hashing, and bcrypt is deliberately slow. That's the mechanism working,
+not a performance problem.
+
+Then show the GitHub Actions tab: green runs on every push, Python 3.10 and 3.12.
 
 ---
 
@@ -354,7 +405,8 @@ the control arm first next time, rather than adding it after a suspicious result
 | **64.3% → 100%** | Retrieval accuracy without / with grade + area filtering |
 | **26%** | Share of sub-strand titles repeating across grades |
 | **1.19 cents** | Per bilingual report |
-| **42** | Tests passing |
+| **51** | Tests passing |
+| **5 in 15 minutes** | Failed logins before the throttle refuses |
 
 ---
 
@@ -379,8 +431,38 @@ deliberate rather than careless.
   `docker compose up -d`
 - **503, database unreachable** — `docker compose up -d`, wait ten seconds
 - **No learners** — `python -m app.seed --reset` from `backend`
+- **Port 8000 already in use** — an earlier uvicorn is still alive. Close that
+  terminal, or run on `--port 8001` and use that in the browser
+- **401 in `/docs` mid-demo** — your token expired. Log in again, re-authorize.
+  Don't explain it as a bug; it's a 60-minute token doing its job
+- **Chebet already flagged on the first assessment** — you rehearsed without
+  resetting. `python -m app.seed --reset`, restart uvicorn, reload the page
+- **429 on a login you meant to work** — you tripped your own throttle while
+  demonstrating Step 3b. Wait, or restart uvicorn: the counter is in memory, so
+  a restart clears it. Worth saying out loud if it happens — it proves the
+  in-process limitation you already admitted to
 - **Anything else** — show `tasks ci` passing and the GitHub Actions tab
   instead. Tests and CI are evidence too
 
 Have a screen recording of a working demo as a backup. Five minutes to make,
 and it removes the worst scenario entirely.
+
+---
+
+## 11. Two questions this week's work opened up
+
+**"Have you trained a model?"** No, and the distinction matters. IRT is a
+statistical measurement model, not a learned one — there are no weights, and
+no saved model file anywhere in the repository. Item parameters are re-estimated
+by marginal maximum likelihood every time a strand is calibrated, because
+difficulty is a property of an item *relative to the cohort sitting it*.
+Freezing one cohort's estimates and applying them to the next would
+misestimate ability with false confidence. The Riiid work validated the
+estimation *method*; it produced nothing that ships.
+
+**"Why not a neural knowledge-tracing model?"** Interpretability. A teacher can
+be shown exactly why a learner was flagged: this item, this difficulty, this
+ability estimate, this threshold, twice in a row. A neural model would likely
+predict the next answer better and could not justify an intervention decision
+about a specific child. The users are teachers acting on these outputs, so
+explicability outranks predictive accuracy.

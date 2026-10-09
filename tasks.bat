@@ -4,6 +4,7 @@ REM   tasks setup   create the venv and install dependencies
 REM   tasks test    run the test suite
 REM   tasks lint    run ruff
 REM   tasks fix     run ruff with autofix
+REM   tasks seed    rebuild the schema and demonstration data (--reset to drop first)
 REM   tasks run     start the development server
 REM   tasks ci      everything CI runs, locally, before you push
 
@@ -35,6 +36,12 @@ call .venv\Scripts\activate
 ruff check --fix .
 goto end
 
+:seed
+call .venv\Scripts\activate
+cd backend
+python -m app.seed %2 %3
+goto end
+
 :run
 call .venv\Scripts\activate
 cd backend
@@ -55,7 +62,7 @@ echo CI checks FAILED. Fix before pushing.
 exit /b 1
 
 :help
-echo Usage: tasks [setup^|test^|lint^|fix^|run^|ci]
+echo Usage: tasks [setup^|test^|lint^|fix^|seed^|run^|ci]
 goto end
 
 :end

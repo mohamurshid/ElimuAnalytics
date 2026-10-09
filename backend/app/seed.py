@@ -94,7 +94,7 @@ def seed(session: Session) -> None:
         role=ROLE_SCHOOL_ADMIN,
         school=school,
     )
-    classroom = Classroom(grade="Grade 5", school=school, teacher=teacher)
+    classroom = Classroom(grade="Grade 5", name="Blue", school=school, teacher=teacher)
     strand = Strand(name=STRAND_NAME, level="Upper Primary")
 
     items = [Item(question_text=q, strand=strand) for q in QUESTIONS]

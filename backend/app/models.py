@@ -81,6 +81,18 @@ class Classroom(Base):
 
     class_id: Mapped[uuid.UUID] = _pk()
     grade: Mapped[str] = mapped_column(String(20), nullable=False)  # "Grade 5"
+    # Not in the Chapter 4 diagram. Most primary schools run more than one
+    # stream per grade, and grade alone cannot tell them apart - "Grade 5 Blue"
+    # and "Grade 5 Green" would be the same row.
+    name: Mapped[str] = mapped_column(
+        String(100), nullable=False, default="", server_default=""
+    )
+    # A classroom that has ever held learners is deactivated rather than
+    # deleted, for the same reason an answered item is: the cascade would
+    # reach their responses and silently change other learners' estimates.
+    is_active: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="true"
+    )
     school_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("school.school_id", ondelete="CASCADE"), nullable=False
     )
@@ -100,6 +112,12 @@ class Student(Base):
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     class_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("classroom.class_id", ondelete="CASCADE"), nullable=False
+    )
+    # A learner who has answered anything is withdrawn, never deleted. Deleting
+    # cascades to their responses, and every item they answered is recalibrated
+    # without them - which moves other learners' ability estimates.
+    is_active: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="true"
     )
 
     classroom: Mapped[Classroom] = relationship(back_populates="students")

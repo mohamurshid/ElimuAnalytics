@@ -18,6 +18,19 @@
 <h1>Elimu Analytics</h1>
 <p class="note">Phase 2. PostgreSQL persistence, real 2-PL calibration.</p>
 
+<div class="bar" id="signin" style="margin-top:0;border-top:none;padding-top:0">
+  <input id="email" value="head@example.school" size="24">
+  <input id="password" type="password" value="elimu-demo" size="14">
+  <button onclick="signIn()">Sign in</button>
+  <button onclick="signOut()">Sign out</button>
+  <span id="who" class="note">not signed in</span>
+  <p class="note">Calibration, assessment and the intervention queue require a
+     signed-in account. The access token is held in memory only - never in
+     localStorage, which any injected script could read. A page reload loses
+     it, and the page silently exchanges the httpOnly refresh cookie for a new
+     one, so you stay signed in. Sign out revokes the cookie server-side.</p>
+</div>
+
 <p id="strand" class="note">loading...</p>
 <div id="buttons"></div>
 <div id="result"></div>
@@ -34,11 +47,63 @@
 
 <script>
 let STRAND_ID = null;
+let TOKEN = null;   // in memory only, never persisted
 
-async function api(path, method = "GET") {
-  const r = await fetch(path, { method });
-  if (!r.ok) throw new Error((await r.json()).detail || r.statusText);
+async function api(path, method = "GET", body = null) {
+  const headers = {};
+  if (TOKEN) headers["Authorization"] = "Bearer " + TOKEN;
+  if (body) headers["Content-Type"] = "application/json";
+  const r = await fetch(path, {
+    method, headers, body: body ? JSON.stringify(body) : undefined,
+  });
+  if (!r.ok) {
+    let detail = r.statusText;
+    try { detail = (await r.json()).detail || detail; } catch (e) { /* no body */ }
+    if (r.status === 401) detail = "Sign in first (or the token expired).";
+    throw new Error(typeof detail === "string" ? detail : JSON.stringify(detail));
+  }
   return r.json();
+}
+
+async function tryRefresh() {
+  // On load: the access token died with the page, but the refresh cookie did
+  // not. The browser attaches it automatically; JavaScript cannot read it.
+  const who = document.getElementById("who");
+  try {
+    const r = await api("/api/auth/refresh", "POST");
+    TOKEN = r.access_token;
+    who.textContent = `signed in as ${r.name} (${r.role}) - resumed`;
+    return true;
+  } catch (e) {
+    // No cookie yet, or it expired: ordinary, say nothing. Anything else is
+    // a fault worth showing - swallowing it hid a 403 from the CSRF origin
+    // check for an embarrassingly long time.
+    who.textContent = /Sign in first|No refresh token|expired/i.test(e.message)
+      ? "not signed in"
+      : "could not resume session: " + e.message;
+    return false;
+  }
+}
+
+async function signOut() {
+  try { await api("/api/auth/logout", "POST"); } catch (e) { /* already gone */ }
+  TOKEN = null;
+  document.getElementById("who").textContent = "signed out";
+}
+
+async function signIn() {
+  const who = document.getElementById("who");
+  try {
+    const r = await api("/api/auth/login", "POST", {
+      email: document.getElementById("email").value,
+      password: document.getElementById("password").value,
+    });
+    TOKEN = r.access_token;
+    who.textContent = `signed in as ${r.name} (${r.role})`;
+  } catch (e) {
+    TOKEN = null;
+    who.textContent = "sign-in failed: " + e.message;
+  }
 }
 
 async function show(id) {
@@ -74,6 +139,7 @@ async function showFlags() {
 }
 
 (async () => {
+  await tryRefresh();
   try {
     const h = await api("/api/health");
     STRAND_ID = h.strands.length ? h.strands[0].id : null;

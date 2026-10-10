@@ -3,8 +3,9 @@
 How to start the system, what each step should print, and what the four
 failure modes look like when it does not.
 
-Every command below is Windows `cmd` from the repository root,
-`C:\dev\elimu-analytics`. The transcript in section 2 is a real run, not an
+Every command below is Windows `cmd` **from the repository root**,
+`C:\dev\elimu-analytics`. The `tasks` targets only resolve there, since
+`tasks.bat` sits in that directory. The transcript in section 2 is a real run, not an
 illustration.
 
 ---
@@ -143,6 +144,24 @@ it appears identical to a broken install. It is not one.
 An error naming a column such as `classroom.name` or `student.is_active` means
 the database predates a schema change. `tasks seed --reset` rebuilds it.
 
+### "'tasks' is not recognized"
+
+```
+'tasks' is not recognized as an internal or external command,
+operable program or batch file.
+```
+
+**You are not in the repository root.** `tasks.bat` lives at
+`C:\dev\elimu-analytics`, and Windows looks for it in the current directory.
+Running it from `backend\` or anywhere else fails.
+
+```cmd
+cd /d C:\dev\elimu-analytics
+```
+
+Every `tasks` command is run from the root. The targets change directory
+themselves where they need to.
+
 ### Port 8000 already in use
 
 An earlier `uvicorn` is still running in another window. Close that window, or
@@ -198,3 +217,39 @@ Two deprecation warnings are expected, both from `starlette` and `anyio`
 rather than from this codebase. The `httpx2` suggestion in the first is best
 ignored: that package was the source of three dependency collisions during
 Phase 0.
+
+### A test passes here and fails there
+
+If `tasks ci` fails on a test that passed elsewhere, suspect the test before
+the code. The cause is usually a library behaving differently between
+versions - `httpx`'s cookie jar did exactly this to two refresh-token tests.
+Reproduce it in isolation (`pytest backend/tests/test_x.py -q`), and prefer a
+test that depends on nothing version-specific over one that happens to pass.
+
+---
+
+## 6. Line endings
+
+`git add` prints a warning for most files:
+
+```
+warning: in the working copy of 'README.md', LF will be replaced by CRLF
+the next time Git touches it
+```
+
+This is normal and needs no action. Git stores LF in the repository and hands
+Windows a CRLF working copy, which is the standard `core.autocrlf` behaviour.
+
+It is **not** the same as the phantom diff that appeared once during Phase 2,
+where eleven files showed 29,097 insertions and 29,097 deletions — identical
+counts, meaning no line had actually changed. That was CRLF having reached the
+index itself, and it was cleared with:
+
+```cmd
+git checkout -- <paths>
+```
+
+If that reappears and does not clear, the permanent fix is a `.gitattributes`
+file pinning the repository to LF. It is not committed yet, deliberately:
+adding one triggers a one-time renormalisation that rewrites every file, which
+is not something to do casually mid-project.

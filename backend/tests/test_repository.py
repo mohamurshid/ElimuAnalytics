@@ -40,8 +40,9 @@ from sqlalchemy.pool import StaticPool
 PORTABLE_TABLES = [
     Base.metadata.tables[n]
     for n in (
-        "school", "teacher", "classroom", "student", "strand",
-        "item", "response", "ability_score", "gap_flag", "report",
+        "school", "teacher", "refresh_token", "classroom", "student", "strand",
+        "item", "assessment_batch", "response", "ability_score",
+        "gap_flag", "report",
     )
 ]
 

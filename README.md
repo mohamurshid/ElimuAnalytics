@@ -21,11 +21,12 @@ and Kiswahili.
 | **0 — Technical spike** | Complete. Decision: GO |
 | **1 — Walking skeleton** | Complete |
 | **2 — Backend core** | Complete. Persistence, calibration, auth, item bank, login throttling, classroom and learner records with school-level scoping |
+| **2.5 — API for the interface** | Complete. Assessment recording with idempotency, strands, per-learner diagnostics, class heatmap, scoped intervention queue, rotating refresh tokens |
 | 3 — Frontend | Not started |
 | 4 — Offline sync | Not started |
 | 5 — RAG + reports | Not started (retrieval validated in Phase 0) |
 
-**69 tests**, lint clean, CI on every push.
+**110 tests**, lint clean, CI on every push.
 
 ---
 
@@ -58,7 +59,7 @@ suite uses SQLite, so it needs no Docker.
 activates the virtual environment first. Without it the commands run against
 the system interpreter and fail with `No module named 'girth'`, which names a
 package rather than the cause and looks exactly like a broken install.
-`docs/RUNBOOK.md` has the expected output of every step and the four failure
+`docs/RUNBOOK.md` has the expected output of every step and the six failure
 modes that actually occur.
 
 **The venv matters.** Three dependency collisions occurred during Phase 0 on a
@@ -111,6 +112,9 @@ elimu-analytics/
 │   │   ├── security.py         bcrypt, JWT, role ranking
 │   │   ├── auth.py             login, current_teacher, require_role
 │   │   ├── items.py            item bank CRUD and its safeguards
+│   │   ├── classrooms.py       classroom and learner records, school-scoped
+│   │   ├── assessments.py      idempotent response recording
+│   │   ├── diagnostics.py      strands, learner results, heatmap, flag queue
 │   │   └── seed.py             schema creation + demonstration classroom
 │   ├── alembic/                migration environment
 │   └── tests/                  42 tests, SQLite-backed
@@ -213,18 +217,15 @@ the app warns at startup when it is in use. Set it before any deployment.
 
 ## Next
 
-**Phase 3** — React/Next.js frontend: dashboard, competency heatmap,
-intervention queue, quiz interface, built against this backend rather than mocks.
+**Phase 3** — Next.js frontend in `frontend/`: login, classrooms and learners,
+dashboard, competency heatmap, intervention queue, quiz interface — built
+against the Phase 2.5 endpoints rather than mocks.
 
 **Phase 4** — IndexedDB caching and sync.
 
 **Phase 5** — RAG pipeline: embed the corpus into `curriculum_chunk`, retrieve
 with the grade-and-learning-area filter, generate bilingual reports with the
 strict citation prompt, export PDFs.
-
-Refresh tokens remain open from Phase 2, deliberately: whether a 60-minute
-session is inconvenient on a classroom tablet is a question UAT answers, not
-one to build against speculatively.
 
 See `docs/ARCHITECTURE.md` for how the current system works and
 `docs/RUNBOOK.md` for how to run it.

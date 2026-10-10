@@ -1,8 +1,10 @@
 """
 Database schema, as designed in Chapter 4 section 4.4.1.
 
-Eleven tables: SCHOOL, TEACHER, CLASSROOM, STUDENT, STRAND, ITEM, RESPONSE,
-ABILITY_SCORE, GAP_FLAG, REPORT, CURRICULUM_CHUNK.
+Eleven tables as designed: SCHOOL, TEACHER, CLASSROOM, STUDENT, STRAND, ITEM,
+RESPONSE, ABILITY_SCORE, GAP_FLAG, REPORT, CURRICULUM_CHUNK - plus
+ASSESSMENT_BATCH, which the diagram does not contain and offline submission
+requires (see its docstring).
 
 Two design points carried over from Phase 0 rather than re-decided here:
 
@@ -26,6 +28,7 @@ from sqlalchemy import (
     DateTime,
     Float,
     ForeignKey,
+    Integer,
     String,
     Text,
     UniqueConstraint,
@@ -166,6 +169,11 @@ class Response(Base):
         ForeignKey("item.item_id", ondelete="CASCADE"), nullable=False
     )
     correctness: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    # Nullable: responses seeded for demonstration, and those recorded before
+    # batching existed, belong to no submission.
+    batch_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("assessment_batch.batch_id", ondelete="SET NULL"), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -189,6 +197,92 @@ class AbilityScore(Base):
     # cannot be enforced downstream without it.
     items_answered: Mapped[int] = mapped_column(nullable=False, default=0)
     assessed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class RefreshToken(Base):
+    """A long-lived credential that buys short-lived access tokens.
+
+    Not in the Chapter 4 diagram. It exists because the browser holds the
+    access token in memory only - a deliberate choice, since anything in
+    `localStorage` is readable by any script that gets injected into the page -
+    and memory does not survive a page reload. Without this, every refresh
+    would sign a teacher out.
+
+    Three decisions worth defending:
+
+    **The token is opaque, not a JWT.** A JWT is valid until it expires and
+    cannot be withdrawn. A stored token can be revoked the moment a teacher
+    logs out or a theft is suspected, which is the entire point of separating
+    it from the access token.
+
+    **Only a SHA-256 hash is stored.** A database disclosure then yields
+    nothing usable. bcrypt is unnecessary here and would be worse: the token
+    is 256 bits of randomness rather than a guessable password, and hashing
+    must be fast enough to look up by index on every refresh.
+
+    **Tokens are grouped into a family and rotated.** Each refresh issues a
+    new token and retires the old one. If a retired token is ever presented
+    again, either the legitimate client replayed it or someone stole it - and
+    the server cannot tell which. The safe response is to revoke the whole
+    family, forcing a fresh sign-in.
+    """
+
+    __tablename__ = "refresh_token"
+    __table_args__ = (UniqueConstraint("token_hash", name="uq_refresh_token_hash"),)
+
+    token_id: Mapped[uuid.UUID] = _pk()
+    teacher_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("teacher.teacher_id", ondelete="CASCADE"), nullable=False
+    )
+    token_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    # Every token descended from one sign-in shares a family id.
+    family_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    issued_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    revoked: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+
+    teacher: Mapped[Teacher] = relationship()
+
+
+class AssessmentBatch(Base):
+    """One submission of learner responses, from one device, at one moment.
+
+    Not in the Chapter 4 diagram. It exists for idempotency: a tablet that
+    submits offline work and loses the connection before seeing a reply will
+    retry, and without a key to recognise the retry by, the same responses are
+    recorded twice. A duplicated response is not a visible error - it silently
+    overwrites a cell in the response matrix and moves ability estimates.
+
+    `client_batch_id` is generated on the device, not here, because the server
+    cannot tell two identical submissions apart after the fact. It is unique,
+    so the retry is recognised by the database rather than by a race-prone
+    check in application code.
+    """
+
+    __tablename__ = "assessment_batch"
+    __table_args__ = (
+        UniqueConstraint("client_batch_id", name="uq_assessment_batch_client_id"),
+    )
+
+    batch_id: Mapped[uuid.UUID] = _pk()
+    client_batch_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    class_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("classroom.class_id", ondelete="CASCADE"), nullable=False
+    )
+    strand_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("strand.strand_id", ondelete="CASCADE"), nullable=False
+    )
+    teacher_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("teacher.teacher_id", ondelete="SET NULL"), nullable=True
+    )
+    response_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    submitted_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 

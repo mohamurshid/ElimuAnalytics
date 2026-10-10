@@ -19,19 +19,22 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from . import repository as repo
+from .assessments import router as assessments_router
 from .auth import current_teacher
 from .auth import router as auth_router
-from .calibration import assess_strand, calibrate_strand, open_flags
+from .calibration import assess_strand, calibrate_strand
 from .classrooms import router as classrooms_router
 from .db import get_session, healthcheck
+from .diagnostics import router as diagnostics_router
 from .irt import ResponseMatrixError
 from .items import router as items_router
 from .models import Teacher
-from .security import secret_is_default
+from .security import ALLOWED_ORIGINS, secret_is_default
 
 FRONTEND = Path(__file__).resolve().parents[2] / "frontend"
 
@@ -50,10 +53,23 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     yield
 
 
-app = FastAPI(title="Elimu Analytics", version="0.4.0", lifespan=lifespan)
+app = FastAPI(title="Elimu Analytics", version="0.6.0", lifespan=lifespan)
+# Credentialed CORS: the refresh cookie only travels if the browser is told
+# to send it, and a wildcard origin is forbidden once credentials are allowed -
+# which is the specification protecting us from ourselves.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=ALLOWED_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 app.include_router(auth_router)
 app.include_router(items_router)
 app.include_router(classrooms_router)
+app.include_router(assessments_router)
+app.include_router(diagnostics_router)
 
 
 @app.get("/api/health")
@@ -74,15 +90,24 @@ def health(session: Session = Depends(get_session)) -> dict:
     }
 
 
-@app.get("/api/learners")
+@app.get("/api/learners", deprecated=True)
 def learners(session: Session = Depends(get_session)) -> list[dict]:
-    """The three named learners from the demonstration classroom."""
+    """The three named learners from the demonstration classroom.
+
+    Superseded by `GET /api/classrooms/{id}/students`, which is authenticated,
+    school-scoped and returns the whole roll. Kept so the plain HTML page
+    continues to work; Phase 3 should not call it.
+    """
     named = [s for s in repo.list_students(session) if not s.name.startswith("Learner ")]
     return [{"id": str(s.student_id), "name": s.name} for s in named]
 
 
-@app.get("/api/diagnose/{student_id}")
+@app.get("/api/diagnose/{student_id}", deprecated=True)
 def diagnose(student_id: str, session: Session = Depends(get_session)) -> dict:
+    """Superseded by `GET /api/students/{id}/diagnostics`, which is
+    authenticated, school-scoped and takes an explicit strand. This one uses
+    whichever strand sorts first, which is invisible with one strand and wrong
+    with six."""
     strands = repo.list_strands(session)
     if not strands:
         raise HTTPException(status_code=503, detail="No strands. Run `python -m app.seed`.")
@@ -132,25 +157,6 @@ def assess(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except ResponseMatrixError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
-
-
-@app.get("/api/flags")
-def flags(
-    session: Session = Depends(get_session),
-    _: Teacher = Depends(current_teacher),
-) -> list[dict]:
-    """The intervention queue: learners flagged and not yet resolved."""
-    out = []
-    for f in open_flags(session):
-        student = repo.list_students(session)
-        name = next((s.name for s in student if s.student_id == f.student_id), "?")
-        out.append({
-            "flag_id": str(f.flag_id),
-            "learner": name,
-            "severity": f.severity,
-            "flagged_at": f.flagged_at.isoformat() if f.flagged_at else None,
-        })
-    return out
 
 
 @app.get("/")

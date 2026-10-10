@@ -164,3 +164,10 @@ export async function logout(): Promise<void> {
 }
 
 export const getProfile = () => api.get<Profile>("/api/auth/me");
+
+/** Human-readable text for anything thrown by the client. */
+export function errorMessage(error: unknown, fallback: string): string {
+  if (error instanceof ApiError) return error.message;
+  if (error instanceof Error && error.message) return error.message;
+  return fallback;
+}

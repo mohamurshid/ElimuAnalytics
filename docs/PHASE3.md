@@ -9,7 +9,7 @@ placeholder dashboard that proves the chain works end to end.
 | Stage | What | Done when |
 |---|---|---|
 | **1** | Scaffold, login, protected routes, token refresh | Sign in, reload, stay signed in ✅ |
-| 2 | Classrooms and learners: list, create, enrol, withdraw | A class created through the UI appears in the API |
+| **2** | Classrooms and learners: list, create, enrol, withdraw | A class created through the UI appears in the API ✅ |
 | 3 | Learner detail, competency heatmap, intervention queue | Otieno renders as "insufficient evidence", not a blank |
 | 4 | Quiz administration: present items, capture, submit | A response recorded in the UI changes θ |
 
@@ -137,6 +137,62 @@ The Phase 1 page moved from `frontend/index.html` to `frontend/legacy/` so
 that Next.js could take `frontend/` as its project root; `main.py` points at
 the new path. It is kept deliberately: it exercises the API with no build
 step, which is useful precisely when the frontend is broken.
+
+---
+
+## Stage 2 — classrooms and learners
+
+Two pages: `/classrooms` lists the school's classes, `/classrooms/[id]` is one
+class's roll. Between them they drive every endpoint from the scoping work.
+
+**There is no school filter, because there is nothing to filter.** The API
+returns the caller's own school and nothing else, so the interface has no
+control for it and no way to ask for another. Scoping that is invisible in the
+UI is scoping that cannot be got around by the UI.
+
+**Create and withdraw are hidden from a plain teacher.** Hiding is cosmetic -
+the server enforces the role regardless - and the code says so, because an
+interface that only hides is not access control.
+
+**Removal reports the server's own words.** The API decides whether a record
+is deleted or withdrawn and explains why; the page prints that `detail`
+verbatim rather than paraphrasing it. A paraphrase drifts, and "deleted" when
+the record was actually kept is exactly the kind of quiet untruth this project
+is built to avoid.
+
+**The roll shows response counts, with "kept on removal" beside any learner
+who has answered something.** That count is what decides deletion versus
+withdrawal, so a teacher can see the consequence before clicking rather than
+discover it in a notice afterwards.
+
+### A React 19 rule worth knowing
+
+`react-hooks/set-state-in-effect` rejects an effect that calls a function
+which sets state - including an async one, and including a `useCallback`
+several lines away. The accepted shape is an async IIFE inside the effect,
+with a `cancelled` flag, owning its own `setState` calls:
+
+```tsx
+const fetchRows = useCallback(() => api.get<Classroom[]>(url), [url]);
+
+useEffect(() => {
+  let cancelled = false;
+  (async () => {
+    try {
+      const data = await fetchRows();
+      if (!cancelled) setRows(data);
+    } catch (e) {
+      if (!cancelled) setError(errorMessage(e, "..."));
+    }
+  })();
+  return () => { cancelled = true; };
+}, [fetchRows]);
+```
+
+Fetching and storing are therefore kept apart in both pages, with a separate
+`reload()` for event handlers, which the rule does not police. The `cancelled`
+flag is not ceremony: without it a response arriving after the component
+unmounts sets state on something that no longer exists.
 
 ---
 

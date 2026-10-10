@@ -22,7 +22,7 @@ and Kiswahili.
 | **1 — Walking skeleton** | Complete |
 | **2 — Backend core** | Complete. Persistence, calibration, auth, item bank, login throttling, classroom and learner records with school-level scoping |
 | **2.5 — API for the interface** | Complete. Assessment recording with idempotency, strands, per-learner diagnostics, class heatmap, scoped intervention queue, rotating refresh tokens |
-| **3 — Frontend** | Stage 1 complete: Next.js shell, login, protected routes, token refresh |
+| **3 — Frontend** | Stages 1–2 complete: Next.js shell, login, protected routes, token refresh, classroom and learner management |
 | 4 — Offline sync | Not started |
 | 5 — RAG + reports | Not started (retrieval validated in Phase 0) |
 

@@ -92,3 +92,19 @@ export type Flag = {
   severity: string;
   flagged_at: string | null;
 };
+
+/**
+ * What the API says happened when you asked for something to be removed.
+ *
+ * Two outcomes, and the difference matters to the person doing it: a record
+ * with learner responses attached is withdrawn, because deleting it would
+ * cascade to those responses and change ability estimates derived from them.
+ * `detail` carries the server's explanation, which the interface shows rather
+ * than paraphrasing.
+ */
+export type Removal = {
+  deleted: boolean;
+  deactivated: boolean;
+  response_count: number;
+  detail: string;
+};

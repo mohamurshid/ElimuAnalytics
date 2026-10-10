@@ -33,6 +33,14 @@ data/kicd/*
 # Spike results ARE committed - they are the evidence behind the Chapter 3
 # amendments. Only the large regenerable datasets are excluded, above.
 
+# Node / Next.js. The lockfile IS committed: CI installs from it with
+# `npm ci`, which is the only way a build is reproducible.
+node_modules/
+.next/
+next-env.d.ts
+*.tsbuildinfo
+.env*.local
+
 # OS / editor
 .DS_Store
 Thumbs.db

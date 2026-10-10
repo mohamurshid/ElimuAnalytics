@@ -5,7 +5,9 @@ REM   tasks test    run the test suite
 REM   tasks lint    run ruff
 REM   tasks fix     run ruff with autofix
 REM   tasks seed    rebuild the schema and demonstration data (--reset to drop first)
-REM   tasks run     start the development server
+REM   tasks run     start the backend development server
+REM   tasks web     start the Next.js frontend (http://localhost:3000)
+REM   tasks webci   frontend lint, typecheck and build
 REM   tasks ci      everything CI runs, locally, before you push
 
 setlocal
@@ -48,6 +50,20 @@ cd backend
 python -m uvicorn app.main:app --reload --port 8000
 goto end
 
+:web
+cd frontend
+npm run dev
+goto end
+
+:webci
+cd frontend
+call npm run lint || goto fail
+call npm run typecheck || goto fail
+call npm run build || goto fail
+echo.
+echo Frontend checks passed.
+goto end
+
 :ci
 call .venv\Scripts\activate
 ruff check . || goto fail
@@ -62,7 +78,7 @@ echo CI checks FAILED. Fix before pushing.
 exit /b 1
 
 :help
-echo Usage: tasks [setup^|test^|lint^|fix^|seed^|run^|ci]
+echo Usage: tasks [setup^|test^|lint^|fix^|seed^|run^|web^|webci^|ci]
 goto end
 
 :end

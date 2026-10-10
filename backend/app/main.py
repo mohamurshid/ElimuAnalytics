@@ -36,7 +36,10 @@ from .items import router as items_router
 from .models import Teacher
 from .security import ALLOWED_ORIGINS, secret_is_default
 
-FRONTEND = Path(__file__).resolve().parents[2] / "frontend"
+# The Phase 1 page moved under frontend/legacy/ when the Next.js app took
+# frontend/ as its project root. It is kept because it exercises the API with
+# no build step, which is a useful thing to have when the frontend is broken.
+FRONTEND = Path(__file__).resolve().parents[2] / "frontend" / "legacy"
 
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:

@@ -10,7 +10,7 @@ placeholder dashboard that proves the chain works end to end.
 |---|---|---|
 | **1** | Scaffold, login, protected routes, token refresh | Sign in, reload, stay signed in ✅ |
 | **2** | Classrooms and learners: list, create, enrol, withdraw | A class created through the UI appears in the API ✅ |
-| 3 | Learner detail, competency heatmap, intervention queue | Otieno renders as "insufficient evidence", not a blank |
+| **3** | Learner detail, competency heatmap, intervention queue | Otieno renders as "insufficient evidence", not a blank ✅ |
 | 4 | Quiz administration: present items, capture, submit | A response recorded in the UI changes θ |
 
 ---
@@ -193,6 +193,94 @@ Fetching and storing are therefore kept apart in both pages, with a separate
 `reload()` for event handlers, which the rule does not police. The `cancelled`
 flag is not ceremony: without it a response arriving after the component
 unmounts sets state on something that no longer exists.
+
+---
+
+## Stage 3 — diagnostics
+
+Three pages. `/classrooms/[id]` is now the competency heatmap and the default
+view of a class, with the roll moved to `/classrooms/[id]/roll`;
+`/students/[id]` is one learner across every strand; `/flags` is the
+intervention queue.
+
+The heatmap leads rather than sitting behind the queue because **the queue is
+a conclusion and the heatmap is the evidence for it.** A teacher who only ever
+sees the queue has to take the flagging on trust.
+
+### How a cell is drawn, and why
+
+Each cell is a faint tint of the tier colour, a solid 4px band at its left
+edge, and the tier written in words with θ beneath.
+
+**The text never sits on the ramp colour.** Contrast is the surface's, so it
+cannot fail at any step of the ramp - a problem that filled heatmap cells
+usually have at one end or the other.
+
+**Darker means more need, not more ability.** Encoding ability would put the
+heaviest ink on the learners who need nothing. The cells a teacher must act on
+are the ones that carry weight on the page.
+
+**One hue, four ordinal steps, validated.** The ramp was checked against the
+light surface and separately against the dark one: monotone lightness, every
+adjacent step clearing the gap floor, and the lightest step still separating
+from the surface. The dark mode is its own set of steps from the same hue,
+re-ordered so that "most need stands out most" still holds when prominence
+runs the other way.
+
+**Deliberately not red-amber-green.** These are children's competency levels,
+not alarms. Colouring a learner red is a framing this project should not
+adopt, and a status palette would also collide with the convention that red
+means "error" elsewhere in the interface.
+
+**It survives greyscale.** In print and under `forced-colors`, the tints drop
+out and the band widens; the ordinal signal is carried by band darkness and
+the tier name, never by hue alone. A thesis page printed in black and white
+still ranks correctly.
+
+### The refusal is a first-class state
+
+A learner below the evidence threshold gets a hatched neutral cell reading
+"no estimate" and "3 of 5 items" - never a blank, which would read as a
+rendering fault. The learner page prints the server's own sentence explaining
+why, rather than paraphrasing it.
+
+This is the behaviour the type system was arranged to force: `theta` is
+`number | null`, so a component cannot render it without deciding what to show
+when there is nothing to show.
+
+### Withdrawal is reversible, and the reversal is exact
+
+Removing a classroom withdraws its learners too, so restoring it has to bring
+them back - but only the ones that action took. A learner a teacher withdrew
+deliberately beforehand must stay withdrawn, or restoring a classroom silently
+reverses a decision somebody made about a child.
+
+`Student.withdrawn_with_class` records which of the two happened, so the undo
+reverses what the action did rather than approximating it. Restoring a learner
+individually clears the flag, so a later class restore does not reach for them
+again. Six tests cover it, including the asymmetry.
+
+An action that is easy to do and hard to undo is the wrong shape, particularly
+behind a button labelled "Remove".
+
+### Assessment runs from the page that shows its results
+
+The heatmap has **Recalibrate** and **Run assessment**, which do different
+things and are deliberately separate from each other and from viewing.
+Calibration re-estimates item parameters; assessment records an ability
+estimate per learner and is an event in that learner's record, not a side
+effect of opening a page.
+
+The notice afterwards reports estimates recorded, learners skipped for too
+little evidence, and flags raised - and when none were raised, says why: a
+flag needs two consecutive below-threshold assessments, so the first run never
+produces one. Without that, an empty queue after an assessment looks broken.
+
+### The queue says what an empty queue means
+
+"Nobody is flagged" is ambiguous and could be read as reassurance, so the
+empty state says that a flag needs two consecutive below-threshold assessments
+and that an empty queue early in a term is expected rather than comforting.
 
 ---
 

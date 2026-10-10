@@ -1,17 +1,65 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #f9f9f7;
+  --surface: #fcfcfb;
+  --foreground: #0b0b0b;
+  --muted: #52514e;
+
+  /* KICD tier ramp - one hue, ordinal, darker = more need for intervention.
+     Validated against the light surface: monotone lightness, every adjacent
+     step clears the gap floor, and the lightest step still separates from the
+     surface. "Darker = more need" is deliberate: the cells a teacher must act
+     on are the ones that carry weight on the page.
+
+     Deliberately NOT a red-amber-green status palette. These are children's
+     competency levels, not alarms, and colouring a learner red is a framing
+     this project should not adopt. */
+  --tier-exceeds: #86b6ef;
+  --tier-meets: #3987e5;
+  --tier-approaches: #1c5cab;
+  --tier-below: #0d366b;
+  --tier-none: #c3c2b7;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) {
+    --background: #0d0d0d;
+    --surface: #1a1a19;
+    --foreground: #f0efec;
+    --muted: #c3c2b7;
+
+    /* Same hue, stepped for the dark surface rather than flipped. On dark,
+       prominence runs the other way, so the ordering inverts to keep
+       "most need stands out most". */
+    --tier-exceeds: #184f95;
+    --tier-meets: #2a78d6;
+    --tier-approaches: #6da7ec;
+    --tier-below: #b7d3f6;
+    --tier-none: #383835;
+  }
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
   font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+/* A cell is a tint plus a solid band. The text never sits on the ramp colour,
+   so contrast is the surface's and cannot fail at any step; the band carries
+   the ordinal signal and survives a greyscale print, where the tints alone
+   would not. */
+.tier-cell {
+  background: color-mix(in oklab, var(--tier) 14%, var(--surface));
+  border-left: 4px solid var(--tier);
+}
+
+/* Forced colours and print: tints disappear, so the band does the work and
+   the written tier name carries the rest. */
+@media print, (forced-colors: active) {
+  .tier-cell {
+    background: transparent;
+    border-left-width: 6px;
+  }
 }

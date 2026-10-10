@@ -19,6 +19,14 @@ items. Withdrawn learners leave the calibration pool and keep their history.
 A classroom whose learners have answered anything is withdrawn on the same
 grounds. Only a record nobody has answered against is deleted outright, and
 the response says which happened.
+
+**Withdrawal is reversible, and the reversal is exact.** Withdrawing a
+classroom also withdraws its learners, so restoring it has to bring them
+back - but only the ones that action took, never a learner a teacher had
+already withdrawn on purpose. `Student.withdrawn_with_class` records which,
+so the undo reverses what the action did rather than approximating it. An
+action that is easy to do and hard to undo is the wrong shape, particularly
+behind a button labelled "Remove".
 """
 
 from __future__ import annotations
@@ -27,6 +35,7 @@ import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from . import repository as repo
@@ -82,6 +91,12 @@ class RemovalOut(BaseModel):
     deleted: bool
     deactivated: bool
     response_count: int
+    detail: str
+
+
+class RestoreOut(BaseModel):
+    restored: bool
+    learners_restored: int
     detail: str
 
 
@@ -168,10 +183,57 @@ def update_classroom(
     if body.name is not None:
         classroom.name = body.name
     if body.is_active is not None:
+        reactivating = body.is_active and not classroom.is_active
         classroom.is_active = body.is_active
+        if reactivating:
+            _restore_learners(session, class_id)
     session.commit()
     session.refresh(classroom)
     return _classroom_out(session, classroom)
+
+
+def _restore_learners(session: Session, class_id: uuid.UUID) -> int:
+    """Reactivate exactly the learners this classroom's withdrawal took."""
+    taken = list(
+        session.scalars(
+            select(Student).where(
+                Student.class_id == class_id,
+                Student.withdrawn_with_class.is_(True),
+            )
+        )
+    )
+    for student in taken:
+        student.is_active = True
+        student.withdrawn_with_class = False
+    return len(taken)
+
+
+@router.post("/classrooms/{class_id}/restore", response_model=RestoreOut)
+def restore_classroom(
+    class_id: uuid.UUID,
+    session: Session = Depends(get_session),
+    teacher: Teacher = Depends(require_school_admin),
+) -> RestoreOut:
+    """Undo a withdrawal, including the learners it took with it."""
+    classroom = _classroom_or_404(session, class_id, teacher)
+    if classroom.is_active:
+        return RestoreOut(
+            restored=False,
+            learners_restored=0,
+            detail="This classroom is already active.",
+        )
+    classroom.is_active = True
+    restored = _restore_learners(session, class_id)
+    session.commit()
+    return RestoreOut(
+        restored=True,
+        learners_restored=restored,
+        detail=(
+            f"Classroom restored, with {restored} learner(s) that its "
+            "withdrawal had taken. Learners withdrawn individually before "
+            "that stay withdrawn."
+        ),
+    )
 
 
 @router.delete("/classrooms/{class_id}", response_model=RemovalOut)
@@ -186,7 +248,10 @@ def remove_classroom(
     if answered:
         classroom.is_active = False
         for student in repo.classroom_students(session, class_id):
+            # Marked, not merely deactivated: a restore has to be able to tell
+            # these apart from learners withdrawn individually beforehand.
             student.is_active = False
+            student.withdrawn_with_class = True
         session.commit()
         return RemovalOut(
             deleted=False,
@@ -270,6 +335,9 @@ def update_student(
         student.class_id = body.class_id
     if body.is_active is not None:
         student.is_active = body.is_active
+        if body.is_active:
+            # Restored on their own: no longer owed back by a class restore.
+            student.withdrawn_with_class = False
     session.commit()
     session.refresh(student)
     return _student_out(session, student)
@@ -286,6 +354,7 @@ def remove_student(
 
     if answered:
         student.is_active = False
+        student.withdrawn_with_class = False  # a deliberate, individual act
         session.commit()
         return RemovalOut(
             deleted=False,

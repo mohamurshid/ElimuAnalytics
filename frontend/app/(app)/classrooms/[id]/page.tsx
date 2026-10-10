@@ -1,66 +1,40 @@
 "use client";
 
 /**
- * One classroom's roll.
+ * A classroom's competency heatmap — the default view of a class.
  *
- * The page a teacher spends time on, so two things are made explicit that an
- * API client would have to infer.
- *
- * **Response counts are shown next to every learner.** They are what decides
- * whether removing that learner deletes the record or withdraws it, and a
- * teacher should be able to see that before clicking rather than discover it
- * afterwards.
- *
- * **A withdrawal explains itself in the server's words.** "Withdrawn, not
- * deleted, because 12 responses are attached" is a different fact from
- * "deleted", and paraphrasing it in the interface would eventually drift from
- * what the backend actually did.
+ * It leads rather than hiding behind the intervention queue because the
+ * queue is a conclusion and this is the evidence for it. A teacher who only
+ * ever sees the queue has to take the flagging on trust.
  */
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
+import { Heatmap, Legend } from "@/components/Heatmap";
+import { Button, Empty, Loading, Note } from "@/components/ui";
 import { api, ApiError, errorMessage } from "@/lib/api";
-import { useAuth } from "@/lib/auth";
-import type { Classroom, Removal, Student } from "@/lib/types";
-import { Button, Empty, Field, Loading, Note } from "@/components/ui";
+import type { Assessment, Heatmap as HeatmapData } from "@/lib/types";
 
-export default function ClassRollPage() {
-  const params = useParams<{ id: string }>();
-  const classId = params.id;
+export default function ClassHeatmapPage() {
+  const { id: classId } = useParams<{ id: string }>();
 
-  const { profile } = useAuth();
-  const isAdmin = profile?.role !== "teacher";
-
-  const [classroom, setClassroom] = useState<Classroom | null>(null);
-  const [roll, setRoll] = useState<Student[] | null>(null);
-  const [showWithdrawn, setShowWithdrawn] = useState(false);
+  const [data, setData] = useState<HeatmapData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [name, setName] = useState("");
 
-  // Fetching and storing are kept apart, as in the list page: the effect
-  // owns its own setState, and this only returns data.
-  const fetchRoll = useCallback(
-    () =>
-      // The classroom list is already school-scoped, so finding this class in
-      // it doubles as the permission check: another school's id is not there.
-      Promise.all([
-        api.get<Classroom[]>("/api/classrooms?include_inactive=true"),
-        api.get<Student[]>(
-          `/api/classrooms/${classId}/students?include_inactive=${showWithdrawn}`,
-        ),
-      ]),
-    [classId, showWithdrawn],
+  const fetchHeatmap = useCallback(
+    () => api.get<HeatmapData>(`/api/classrooms/${classId}/heatmap`),
+    [classId],
   );
 
   const failure = useCallback(
     (e: unknown) =>
       e instanceof ApiError && e.status === 404
         ? "No such classroom at your school."
-        : errorMessage(e, "Could not load the roll"),
+        : errorMessage(e, "Could not load the heatmap"),
     [],
   );
 
@@ -68,70 +42,103 @@ export default function ClassRollPage() {
     let cancelled = false;
     (async () => {
       try {
-        const [classes, learners] = await fetchRoll();
-        if (cancelled) return;
-        setClassroom(classes.find((c) => c.class_id === classId) ?? null);
-        setRoll(learners);
-        setError(null);
+        const next = await fetchHeatmap();
+        if (!cancelled) {
+          setData(next);
+          setError(null);
+        }
       } catch (e) {
-        if (cancelled) return;
-        setError(failure(e));
-        setRoll([]);
+        if (!cancelled) setError(failure(e));
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [fetchRoll, failure, classId]);
+  }, [fetchHeatmap, failure]);
 
-  /** Re-read after a change. Called from handlers, never from an effect. */
   const reload = useCallback(async () => {
     try {
-      const [classes, learners] = await fetchRoll();
-      setClassroom(classes.find((c) => c.class_id === classId) ?? null);
-      setRoll(learners);
+      setData(await fetchHeatmap());
       setError(null);
     } catch (e) {
       setError(failure(e));
-      setRoll([]);
     }
-  }, [fetchRoll, failure, classId]);
+  }, [fetchHeatmap, failure]);
 
-  async function enrol(event: React.FormEvent) {
-    event.preventDefault();
+  /** Recalibrate every strand, then re-read. */
+  async function calibrate() {
+    if (!data) return;
     setBusy(true);
     setError(null);
     setNotice(null);
     try {
-      await api.post<Student>(`/api/classrooms/${classId}/students`, { name });
-      setName("");
-      await reload();
-    } catch (e) {
-      setError(errorMessage(e, "Could not enrol"));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function remove(learner: Student) {
-    setBusy(true);
-    setError(null);
-    setNotice(null);
-    try {
-      const result = await api.del<Removal>(
-        `/api/students/${learner.student_id}`,
+      const results = await Promise.all(
+        data.strands.map((s) =>
+          api.post<{ items_calibrated: number }>(
+            `/api/strands/${s.strand_id}/calibrate`,
+          ),
+        ),
       );
-      setNotice(`${learner.name}: ${result.detail}`);
+      const items = results.reduce((n, r) => n + r.items_calibrated, 0);
+      setNotice(
+        `Calibrated ${items} items across ${results.length} strand(s). ` +
+          "Item difficulty and discrimination are re-estimated from the " +
+          "responses recorded so far.",
+      );
       await reload();
     } catch (e) {
-      setError(errorMessage(e, "Could not remove"));
+      setError(errorMessage(e, "Calibration failed"));
     } finally {
       setBusy(false);
     }
   }
 
-  const title = classroom
-    ? `${classroom.grade}${classroom.name ? ` ${classroom.name}` : ""}`
+  /**
+   * Record an ability estimate for every learner, in every strand.
+   *
+   * Separate from calibration on purpose, and separate from viewing: an
+   * assessment is an event in a learner's record, not a side effect of
+   * opening a page. It is also the only way a flag can ever be raised, and a
+   * flag needs two of these — so the notice says how many were recorded and
+   * how many learners were skipped for want of evidence, which is usually the
+   * question a teacher has next.
+   */
+  async function assess() {
+    if (!data) return;
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const results = await Promise.all(
+        data.strands.map((s) =>
+          api.post<Assessment>(`/api/strands/${s.strand_id}/assess`),
+        ),
+      );
+      const recorded = results.reduce((n, r) => n + r.estimates_recorded, 0);
+      const skipped = results.reduce(
+        (n, r) => n + r.skipped_insufficient_evidence,
+        0,
+      );
+      const flags = results.reduce((n, r) => n + r.new_flags, 0);
+      setNotice(
+        `Recorded ${recorded} estimate(s). ` +
+          `${skipped} learner(s) were skipped for too little evidence — no ` +
+          "number is stored for them, so they can never accumulate a flag. " +
+          (flags > 0
+            ? `${flags} new flag(s) raised; see the intervention queue.`
+            : "No new flags: a flag needs two consecutive below-threshold " +
+              "assessments, so run this again to see one."),
+      );
+      await reload();
+    } catch (e) {
+      setError(errorMessage(e, "Assessment failed"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const title = data
+    ? `${data.grade}${data.name ? ` ${data.name}` : ""}`
     : "Classroom";
 
   return (
@@ -143,107 +150,73 @@ export default function ClassRollPage() {
         ← All classrooms
       </Link>
 
-      <div className="mt-2 flex items-baseline justify-between">
+      <div className="mt-2 flex flex-wrap items-baseline justify-between gap-3">
         <h1 className="text-2xl font-semibold">{title}</h1>
-        <label className="flex items-center gap-2 text-sm text-neutral-600">
-          <input
-            type="checkbox"
-            checked={showWithdrawn}
-            onChange={(e) => setShowWithdrawn(e.target.checked)}
-          />
-          Show withdrawn
-        </label>
+        <div className="flex items-center gap-3">
+          <Link
+            href={`/classrooms/${classId}/roll`}
+            className="text-sm underline underline-offset-2
+                       hover:text-neutral-500"
+          >
+            Roll
+          </Link>
+          <Button variant="secondary" disabled={busy || !data} onClick={calibrate}>
+            Recalibrate
+          </Button>
+          <Button disabled={busy || !data} onClick={assess}>
+            Run assessment
+          </Button>
+        </div>
       </div>
-      {classroom && !classroom.is_active && (
-        <p className="mt-1 text-sm text-neutral-500">
-          This class has been withdrawn. Learners cannot be enrolled into it.
-        </p>
-      )}
+
+      <p className="mt-1 max-w-3xl text-sm text-neutral-600">
+        Estimated competency per learner, per strand. A learner who has
+        answered fewer than {data?.minimum_responses ?? 5} items in a strand
+        gets no estimate at all — that is the system refusing to report a
+        number derived from too little evidence, not missing data.
+      </p>
 
       <div className="mt-4 space-y-3">
         <Note tone="error">{error}</Note>
         <Note>{notice}</Note>
       </div>
 
-      {classroom?.is_active && (
-        <form
-          onSubmit={enrol}
-          className="mt-6 flex flex-wrap items-end gap-3 rounded border
-                     border-neutral-200 bg-white p-4"
-        >
-          <div className="w-72">
-            <Field
-              label="Learner name"
-              required
-              placeholder="Wanjiru A."
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-            />
-          </div>
-          <Button type="submit" disabled={busy}>
-            Enrol
-          </Button>
-        </form>
+      {!data && !error && (
+        <div className="mt-6">
+          <Loading what="the heatmap" />
+        </div>
       )}
 
-      <section className="mt-6">
-        {!roll && !error && <Loading what="the roll" />}
+      {data && data.learners.length === 0 && (
+        <div className="mt-6">
+          <Empty>
+            No learners enrolled.{" "}
+            <Link
+              href={`/classrooms/${classId}/roll`}
+              className="underline underline-offset-2"
+            >
+              Enrol some on the roll
+            </Link>
+            .
+          </Empty>
+        </div>
+      )}
 
-        {roll && roll.length === 0 && !error && (
-          <Empty>No learners enrolled yet.</Empty>
-        )}
-
-        {roll && roll.length > 0 && (
-          <table className="w-full border-collapse text-sm">
-            <thead>
-              <tr className="border-b border-neutral-300 text-left">
-                <th className="py-2 pr-4 font-medium">Learner</th>
-                <th className="py-2 pr-4 font-medium">Responses</th>
-                <th className="py-2 pr-4 font-medium">Status</th>
-                <th className="py-2 font-medium" />
-              </tr>
-            </thead>
-            <tbody>
-              {roll.map((learner) => (
-                <tr key={learner.student_id} className="border-b border-neutral-200">
-                  <td className="py-2 pr-4">{learner.name}</td>
-                  <td className="py-2 pr-4">
-                    {learner.response_count}
-                    {learner.response_count > 0 && (
-                      <span
-                        className="ml-2 text-xs text-neutral-500"
-                        title="Removing this learner will withdraw the record
-                               rather than delete it, because deleting would
-                               cascade to these responses."
-                      >
-                        kept on removal
-                      </span>
-                    )}
-                  </td>
-                  <td className="py-2 pr-4">
-                    {learner.is_active ? (
-                      <span className="text-neutral-600">active</span>
-                    ) : (
-                      <span className="text-neutral-400">withdrawn</span>
-                    )}
-                  </td>
-                  <td className="py-2 text-right">
-                    {isAdmin && learner.is_active && (
-                      <Button
-                        variant="danger"
-                        disabled={busy}
-                        onClick={() => remove(learner)}
-                      >
-                        Remove
-                      </Button>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </section>
+      {data && data.learners.length > 0 && (
+        <>
+          <div className="mt-6">
+            <Legend minimum={data.minimum_responses} />
+          </div>
+          <div className="mt-3">
+            <Heatmap data={data} />
+          </div>
+          <p className="mt-4 text-xs text-neutral-500">
+            θ is the latent ability estimate for that strand. An estimate from
+            fewer than {data.confident_responses} items is marked provisional:
+            usable, but not yet firm enough to act on alone.
+          </p>
+        </>
+      )}
     </>
   );
 }

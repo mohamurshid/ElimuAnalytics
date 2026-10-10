@@ -108,3 +108,21 @@ export type Removal = {
   response_count: number;
   detail: string;
 };
+
+/** The answer to undoing a withdrawal. */
+export type Restore = {
+  restored: boolean;
+  learners_restored: number;
+  detail: string;
+};
+
+/** What one assessment cycle did. */
+export type Assessment = {
+  strand: string;
+  learners: number;
+  estimates_recorded: number;
+  skipped_insufficient_evidence: number;
+  minimum_responses: number;
+  confident_responses: number;
+  new_flags: number;
+};

@@ -271,3 +271,96 @@ def test_a_teacher_cannot_withdraw_a_learner(client, session, head):  # noqa: F8
 
     r = client.delete(f"/api/students/{learner.student_id}", headers=auth(head))
     assert r.status_code == 403
+
+
+# --- restore ---------------------------------------------------------------
+def test_restoring_a_classroom_brings_back_the_learners_it_took(
+    client, head, session  # noqa: F811
+):
+    """Withdrawal cascades to learners, so the undo has to as well. A restore
+    that left forty learners withdrawn would be an undo in name only."""
+    cid = only_classroom(client, head)["class_id"]
+    before = len(client.get(f"/api/classrooms/{cid}/students", headers=auth(head)).json())
+    assert before > 0
+
+    client.delete(f"/api/classrooms/{cid}", headers=auth(head))
+    assert client.get(f"/api/classrooms/{cid}/students", headers=auth(head)).json() == []
+
+    r = client.post(f"/api/classrooms/{cid}/restore", headers=auth(head))
+    assert r.status_code == 200
+    body = r.json()
+    assert body["restored"] is True
+    assert body["learners_restored"] == before
+
+    after = client.get(f"/api/classrooms/{cid}/students", headers=auth(head)).json()
+    assert len(after) == before
+
+
+def test_restoring_does_not_undo_a_deliberate_withdrawal(client, head, session):  # noqa: F811
+    """The asymmetry that makes the flag necessary.
+
+    A learner withdrawn on purpose before the class was withdrawn must stay
+    withdrawn when the class comes back - otherwise restoring a classroom
+    silently reverses a decision somebody made about a child.
+    """
+    cid = only_classroom(client, head)["class_id"]
+    deliberate = session.scalar(select(Student).order_by(Student.name))
+    client.delete(f"/api/students/{deliberate.student_id}", headers=auth(head))
+    session.refresh(deliberate)
+    assert deliberate.is_active is False
+
+    client.delete(f"/api/classrooms/{cid}", headers=auth(head))
+    client.post(f"/api/classrooms/{cid}/restore", headers=auth(head))
+
+    session.refresh(deliberate)
+    assert deliberate.is_active is False, "an individual withdrawal was undone"
+
+    roll = client.get(f"/api/classrooms/{cid}/students", headers=auth(head)).json()
+    assert deliberate.name not in [s["name"] for s in roll]
+
+
+def test_a_restored_learner_is_not_owed_back_twice(client, head, session):  # noqa: F811
+    """Restoring a learner individually clears the debt, so a later class
+    restore does not reach for them again."""
+    cid = only_classroom(client, head)["class_id"]
+    client.delete(f"/api/classrooms/{cid}", headers=auth(head))
+
+    learner = session.scalar(select(Student).order_by(Student.name))
+    assert learner.withdrawn_with_class is True
+    client.patch(
+        f"/api/students/{learner.student_id}",
+        headers=auth(head),
+        json={"is_active": True},
+    )
+    session.refresh(learner)
+    assert learner.withdrawn_with_class is False
+
+    r = client.post(f"/api/classrooms/{cid}/restore", headers=auth(head))
+    assert r.json()["learners_restored"] == 39  # the other 39, not this one
+
+
+def test_restoring_an_active_classroom_changes_nothing(client, head):
+    cid = only_classroom(client, head)["class_id"]
+    r = client.post(f"/api/classrooms/{cid}/restore", headers=auth(head))
+    assert r.json() == {
+        "restored": False,
+        "learners_restored": 0,
+        "detail": "This classroom is already active.",
+    }
+
+
+def test_a_teacher_cannot_restore(client, session, head):  # noqa: F811
+    cid = only_classroom(client, head)["class_id"]
+    client.delete(f"/api/classrooms/{cid}", headers=auth(head))
+    head.role = ROLE_TEACHER
+    session.commit()
+
+    r = client.post(f"/api/classrooms/{cid}/restore", headers=auth(head))
+    assert r.status_code == 403
+
+
+def test_another_schools_classroom_cannot_be_restored(client, head, rival):
+    r = client.post(
+        f"/api/classrooms/{rival['classroom'].class_id}/restore", headers=auth(head)
+    )
+    assert r.status_code == 404

@@ -8,6 +8,7 @@ import { useAuth } from "@/lib/auth";
 const LINKS = [
   { href: "/dashboard", label: "Dashboard" },
   { href: "/classrooms", label: "Classrooms" },
+  { href: "/flags", label: "Intervention queue" },
 ];
 
 export function TopBar() {

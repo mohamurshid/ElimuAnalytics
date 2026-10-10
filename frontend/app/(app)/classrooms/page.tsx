@@ -18,7 +18,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { api, errorMessage } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import type { Classroom, Removal } from "@/lib/types";
+import type { Classroom, Removal, Restore } from "@/lib/types";
 import { Button, Empty, Field, Loading, Note } from "@/components/ui";
 
 export default function ClassroomsPage() {
@@ -105,6 +105,23 @@ export default function ClassroomsPage() {
     }
   }
 
+  async function restore(row: Classroom) {
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const result = await api.post<Restore>(
+        `/api/classrooms/${row.class_id}/restore`,
+      );
+      setNotice(result.detail);
+      await reload();
+    } catch (e) {
+      setError(errorMessage(e, "Could not restore the class"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <>
       <div className="flex items-baseline justify-between">
@@ -120,7 +137,9 @@ export default function ClassroomsPage() {
       </div>
       <p className="mt-1 text-sm text-neutral-600">
         Classes at your school. Other schools&apos; classes are not returned by
-        the API and cannot be reached from here.
+        the API and cannot be reached from here. Removing a class withdraws it
+        rather than deleting it when learners have answered anything — tick
+        <em> Show withdrawn</em> to find and restore one.
       </p>
 
       <div className="mt-4 space-y-3">
@@ -215,6 +234,15 @@ export default function ClassroomsPage() {
                         onClick={() => remove(row)}
                       >
                         Remove
+                      </Button>
+                    )}
+                    {isAdmin && !row.is_active && (
+                      <Button
+                        variant="secondary"
+                        disabled={busy}
+                        onClick={() => restore(row)}
+                      >
+                        Restore
                       </Button>
                     )}
                   </td>

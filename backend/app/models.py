@@ -122,6 +122,17 @@ class Student(Base):
     is_active: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True, server_default="true"
     )
+    # Set when this learner was deactivated *by* their classroom being
+    # withdrawn, rather than individually.
+    #
+    # Without it, restoring a classroom cannot be done correctly: reactivating
+    # every learner in it would also undo withdrawals a teacher made
+    # deliberately beforehand, and reactivating none would make the restore
+    # useless. The flag records which of the two happened, so the undo
+    # reverses exactly what the action did.
+    withdrawn_with_class: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
 
     classroom: Mapped[Classroom] = relationship(back_populates="students")
     responses: Mapped[list[Response]] = relationship(back_populates="student")

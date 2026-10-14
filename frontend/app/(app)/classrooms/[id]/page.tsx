@@ -160,6 +160,20 @@ export default function ClassHeatmapPage() {
           >
             Roll
           </Link>
+          <Link
+            href={`/classrooms/${classId}/quiz`}
+            className="text-sm underline underline-offset-2
+                       hover:text-neutral-500"
+          >
+            Mark a quiz
+          </Link>
+          <Link
+            href={`/classrooms/${classId}/administer`}
+            className="text-sm underline underline-offset-2
+                       hover:text-neutral-500"
+          >
+            Administer
+          </Link>
           <Button variant="secondary" disabled={busy || !data} onClick={calibrate}>
             Recalibrate
           </Button>

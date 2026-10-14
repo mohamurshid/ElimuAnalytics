@@ -126,3 +126,48 @@ export type Assessment = {
   confident_responses: number;
   new_flags: number;
 };
+
+export type Item = {
+  item_id: string;
+  strand_id: string;
+  question_text: string;
+  difficulty_b: number | null;
+  discrimination_a: number | null;
+  is_active: boolean;
+  response_count: number;
+};
+
+/** Which learner-item pairs already have a response, as "studentId:itemId". */
+export type AnsweredPairs = {
+  class_id: string;
+  strand_id: string;
+  answered: string[];
+};
+
+export type AssessmentReceipt = {
+  batch_id: string;
+  client_batch_id: string;
+  class_id: string;
+  strand_id: string;
+  responses_recorded: number;
+  duplicate: boolean;
+  detail: string;
+};
+
+/** What a learner's device is allowed to know about an item. */
+export type QuizItem = {
+  item_id: string;
+  question_text: string;
+  options: string[];
+  // There is deliberately no correct_option here, and no field for one on the
+  // server's response model either. The device is never told the answer: a
+  // client that can mark answers has necessarily been given the key, and a
+  // key in the browser is a key a learner can read.
+};
+
+export type Quiz = {
+  class_id: string;
+  strand_id: string;
+  strand: string;
+  items: QuizItem[];
+};

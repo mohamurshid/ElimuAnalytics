@@ -31,7 +31,7 @@ from app.repository import (
     consecutive_low_assessments,
     diagnose_student,
 )
-from app.seed import NAMED, QUESTIONS, simulated_responses
+from app.seed import NAMED, QUESTION_BANK, simulated_responses
 from girth import INVALID_RESPONSE
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
@@ -63,7 +63,15 @@ def session() -> Session:
         teacher = Teacher(name="T", email="t@x.y", password_hash="x", school=school)
         classroom = Classroom(grade="Grade 5", school=school, teacher=teacher)
         strand = Strand(name="3.3 Heat Transfer", level="Upper Primary")
-        items = [Item(question_text=q, strand=strand) for q in QUESTIONS]
+        items = [
+            Item(
+                question_text=question,
+                options=options,
+                correct_option=key,
+                strand=strand,
+            )
+            for question, options, key in QUESTION_BANK
+        ]
         students = [
             Student(name=NAMED.get(i, f"Learner {i + 1:02d}"), classroom=classroom)
             for i in range(40)

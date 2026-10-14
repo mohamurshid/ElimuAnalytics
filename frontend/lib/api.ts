@@ -53,7 +53,24 @@ async function readError(response: globalThis.Response): Promise<string> {
     const body = await response.json();
     const detail = body?.detail;
     if (typeof detail === "string") return detail;
-    if (detail) return JSON.stringify(detail);
+
+    // The batch endpoints answer with {problems: [...], reason?: "..."}. The
+    // list can run to dozens of entries naming UUIDs, which is useful in a
+    // log and unreadable on screen, so the reason leads and the problems are
+    // summarised. Dumping the raw JSON into the interface - which this did -
+    // tells a teacher nothing they can act on.
+    if (detail && typeof detail === "object") {
+      const problems: string[] = Array.isArray(detail.problems)
+        ? detail.problems
+        : [];
+      const reason: string | undefined = detail.reason;
+      if (reason || problems.length) {
+        const count =
+          problems.length > 1 ? ` (${problems.length} items affected)` : "";
+        return [reason ?? problems[0], count].filter(Boolean).join("").trim();
+      }
+      return JSON.stringify(detail);
+    }
   } catch {
     // no JSON body; fall through to the status text
   }

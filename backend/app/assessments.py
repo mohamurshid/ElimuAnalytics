@@ -36,7 +36,7 @@ from __future__ import annotations
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -52,9 +52,32 @@ MAX_RESPONSES_PER_BATCH = 2000
 
 
 class ResponseIn(BaseModel):
+    """One answer, reported one of two ways.
+
+    `correct` is a teacher's judgement: they ran the quiz on paper or aloud
+    and know the outcome. `selected_option` is a learner's tap on a device,
+    and the server decides whether it was right.
+
+    The distinction is not cosmetic. A client that reports its own
+    correctness can report whatever it likes, and a client that can mark
+    answers has necessarily been told the key - which means the key is in the
+    browser, where a curious learner can read it. So a learner's device sends
+    only the option chosen, and never learns whether it was right.
+    """
+
     student_id: uuid.UUID
     item_id: uuid.UUID
-    correct: bool
+    correct: bool | None = None
+    selected_option: int | None = Field(default=None, ge=0)
+
+    @model_validator(mode="after")
+    def exactly_one(self) -> ResponseIn:
+        if (self.correct is None) == (self.selected_option is None):
+            raise ValueError(
+                "give either correct (a teacher's marking) or selected_option "
+                "(a learner's answer), not both and not neither"
+            )
+        return self
 
 
 class AssessmentIn(BaseModel):
@@ -132,6 +155,18 @@ def record_assessment(
             problems.append(f"item {r.item_id} is not in this strand")
         elif not item.is_active:
             problems.append(f"item {r.item_id} has been withdrawn from the bank")
+        if r.selected_option is not None and item is not None:
+            if item.correct_option is None or not item.options:
+                problems.append(
+                    f"item {r.item_id} has no answer options, so an answer "
+                    "cannot be marked - a teacher must mark it"
+                )
+            elif r.selected_option >= len(item.options):
+                problems.append(
+                    f"item {r.item_id} has {len(item.options)} options; "
+                    f"option {r.selected_option} does not exist"
+                )
+
         pair = (r.student_id, r.item_id)
         if pair in seen:
             problems.append(f"learner {r.student_id} answers item {r.item_id} twice in this batch")
@@ -198,7 +233,15 @@ def record_assessment(
         Response(
             student_id=r.student_id,
             item_id=r.item_id,
-            correctness=r.correct,
+            # Marked here, not on the device. For a teacher's submission this
+            # is simply their judgement passed through; for a learner's it is
+            # the comparison the device was never told how to make.
+            correctness=(
+                r.correct
+                if r.correct is not None
+                else r.selected_option == items[r.item_id].correct_option
+            ),
+            selected_option=r.selected_option,
             batch_id=batch.batch_id,
         )
         for r in body.responses
@@ -217,6 +260,125 @@ def record_assessment(
             f"Recorded {batch.response_count} responses. Recalibrate the strand "
             "to fold them into ability estimates."
         ),
+    )
+
+
+class QuizItemOut(BaseModel):
+    """What a learner's device is allowed to know about an item.
+
+    There is deliberately no `correct_option` field on this model, and that
+    absence is the security control. It is a separate schema from `ItemOut`
+    rather than the same one with a field omitted at runtime, because a
+    field that must never be serialised is safer as a field that does not
+    exist than as one someone remembers to strip.
+    """
+
+    item_id: str
+    question_text: str
+    options: list[str]
+
+
+class QuizOut(BaseModel):
+    class_id: str
+    strand_id: str
+    strand: str
+    items: list[QuizItemOut]
+
+
+@router.get("/quiz/{class_id}/{strand_id}", response_model=QuizOut)
+def quiz_items(
+    class_id: uuid.UUID,
+    strand_id: uuid.UUID,
+    session: Session = Depends(get_session),
+    teacher: Teacher = Depends(current_teacher),
+) -> QuizOut:
+    """The questions a learner answers, without the answers.
+
+    Authenticated as the teacher, because the tablet is: there are no learner
+    accounts, and identity rests on the teacher selecting a name before
+    handing the device over. That assumption is deliberate - issuing
+    credentials to primary-school children is a far larger data-protection
+    surface than it is worth here - and it is recorded as a limitation rather
+    than hidden.
+
+    What this endpoint does enforce is that the device learns nothing it does
+    not need: one strand's questions and their options, no answer key, no
+    other learner, no estimates.
+    """
+    if repo.classroom_in_school(session, class_id, teacher.school_id) is None:
+        raise HTTPException(status_code=404, detail="No such classroom")
+    strand = session.get(Strand, strand_id)
+    if strand is None:
+        raise HTTPException(status_code=404, detail="No such strand")
+
+    items = [
+        item
+        for item in session.scalars(
+            select(Item)
+            .where(Item.strand_id == strand_id, Item.is_active.is_(True))
+            .order_by(Item.item_id)
+        )
+        # An item with no options cannot be delivered to a learner. It is
+        # still a perfectly good item for a teacher to mark.
+        if item.options and item.correct_option is not None
+    ]
+
+    return QuizOut(
+        class_id=str(class_id),
+        strand_id=str(strand_id),
+        strand=strand.name,
+        items=[
+            QuizItemOut(
+                item_id=str(item.item_id),
+                question_text=item.question_text,
+                options=list(item.options or []),
+            )
+            for item in items
+        ],
+    )
+
+
+class AnsweredOut(BaseModel):
+    class_id: str
+    strand_id: str
+    # "<student_id>:<item_id>" - a flat key, because JSON object keys cannot
+    # be tuples and the client only ever asks "is this pair taken?".
+    answered: list[str]
+
+
+@router.get("/answered/{class_id}/{strand_id}", response_model=AnsweredOut)
+def answered_pairs(
+    class_id: uuid.UUID,
+    strand_id: uuid.UUID,
+    session: Session = Depends(get_session),
+    teacher: Teacher = Depends(current_teacher),
+) -> AnsweredOut:
+    """Which learner-item pairs in this strand already have a response.
+
+    A marking grid needs this before it can be honest. Without it the
+    interface cannot tell which cells are already recorded, a teacher ticks
+    one of them, and the whole batch is refused with a 409 naming pairs they
+    had no way of knowing about. With it, those cells are locked and the
+    rejection never arises.
+
+    Re-answering is refused rather than allowed because the response matrix
+    holds one cell per learner and item; a second answer would overwrite the
+    first and move estimates derived from it.
+    """
+    if repo.classroom_in_school(session, class_id, teacher.school_id) is None:
+        raise HTTPException(status_code=404, detail="No such classroom")
+
+    enrolled = {s.student_id for s in repo.classroom_students(session, class_id)}
+    rows = session.execute(
+        select(Response.student_id, Response.item_id)
+        .join(Item, Item.item_id == Response.item_id)
+        .where(Item.strand_id == strand_id)
+    ).all()
+
+    return AnsweredOut(
+        class_id=str(class_id),
+        strand_id=str(strand_id),
+        answered=[f"{sid}:{iid}" for sid, iid in rows if sid in enrolled],
     )
 
 

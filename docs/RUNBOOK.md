@@ -141,8 +141,24 @@ it appears identical to a broken install. It is not one.
 
 ### A column does not exist
 
-An error naming a column such as `classroom.name` or `student.is_active` means
-the database predates a schema change. `tasks seed --reset` rebuilds it.
+An error naming a column such as `classroom.name`, `student.is_active` or
+`student.withdrawn_with_class` means the database predates a schema change.
+
+```cmd
+tasks seed --reset
+```
+
+**From the browser this does not look like a database problem at all.** The
+frontend shows a red `Internal Server Error` banner and nothing else, because
+that is all a 500 carries; the column name is printed only in the terminal
+running `tasks run`. The rule: when the interface reports a server error, read
+the backend terminal before looking at any frontend code.
+
+**Whenever the schema changes, reseed.** `app.seed` calls `create_all`, which
+creates missing tables but never alters existing ones, so an added column
+appears in the models and not in the database. Any change to `models.py` -
+pulled from the repository or made locally - means `tasks seed --reset` before
+the application will run.
 
 ### "'tasks' is not recognized"
 

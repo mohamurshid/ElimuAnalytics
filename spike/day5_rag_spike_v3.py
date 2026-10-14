@@ -18,10 +18,14 @@ WHAT IT TESTS
                             - With top_k=2 the prompt also carries a second
                               sub-strand. Does the report cite activities from
                               the WRONG chunk?
-  D. Generation grounding   - 6 conditions: loose-prompt English, STRICT
-                              verbatim-citation English, Kiswahili on Haiku,
-                              Kiswahili on Sonnet, NO context (ablation), and
-                              WRONG context (plants for a heat-transfer learner).
+  D. Generation grounding   - 7 conditions: loose-prompt English, STRICT
+                              verbatim-citation English, Kiswahili on Haiku 5.5,
+                              Kiswahili on Sonnet 5.5, NO context (ablation),
+                              WRONG context (plants for a heat-transfer learner),
+                              and STRICT plus the item-level failure pattern.
+                              5 and 6 are controls with known-correct answers
+                              and print PASS/FAIL; the rest report a verdict and
+                              are compared against each other.
 
 WHAT CHANGED IN v3 (after the first real run)
   The v2 run scored the NO-CONTEXT ablation as GROUNDED - same three anchors as
@@ -40,6 +44,60 @@ WHAT CHANGED IN v3 (after the first real run)
     - adds a Sonnet arm for the Kiswahili report, because Haiku's Kiswahili in
       the v2 run was not fit to send to a teacher
 
+WHAT CHANGED IN v3.1 (model refresh, October 2026)
+  The September run used claude-haiku-4-5 and claude-sonnet-4-5. Both have since
+  moved: claude-sonnet-4-5-20250929 was deprecated on 30 Sept 2026 and retires on
+  30 Nov 2026, and claude-haiku-4-5-20251001 carries a retirement date of "not
+  sooner than 15 Oct 2026". Building the report generator on either one would mean
+  rewriting it mid-submission, so the instrument now runs against claude-haiku-5-5
+  and claude-sonnet-5-5. Nothing else about the measurement changed - same queries,
+  same anchors, same grounding checker, same six conditions - so the September
+  transcript and this one are directly comparable on grounding.
+
+  Two warnings about the COST comparison, which is not directly comparable:
+    - the per-token prices differ (Haiku 5.5 is an order of magnitude cheaper than
+      Haiku 4.5 at $0.10/$0.50 per MTok against $1.00/$5.00), and
+    - models from 4.7 onwards use a tokenizer that produces roughly 30% more
+      tokens for the same text, so the token counts in the transcript are not on
+      the same scale as September's either.
+  Compare the dollar figure, not the token counts, and quote the dollar figure
+  from the newest run rather than the 1.19 cents reported in September.
+
+  The first v3.1 run then crashed on `'ThinkingBlock' object has no attribute
+  'text'`, which exposed something the script had been assuming. From Claude 4.7
+  onwards thinking is ADAPTIVE and cannot be switched off - the model decides per
+  request, `thinking.budget_tokens` is rejected outright, and effort is the only
+  lever. Three consequences, all handled here:
+    - a response is a LIST of blocks and the report is not reliably the first
+      one, so the text blocks are selected by type and the thinking block is
+      discarded rather than concatenated (scoring the model's scratch work would
+      inflate every grounding number - the same error v2 made)
+    - thinking tokens count against max_tokens, so the old 500-token ceiling
+      could be spent entirely on thinking; the ceiling is now 4000 and both
+      truncation and an empty response are detected and announced, because
+      either one makes a grounding verdict meaningless rather than negative
+    - thinking tokens are billed as output tokens, so they are reported
+      separately; effort defaults to "low" as the closest available setting to
+      September's non-thinking behaviour
+
+  The 14 Oct run then exposed three more things, all fixed here:
+    - the `dist` count was inflated by substring overlap. "good and poor
+      conductors" and "poor conductors" are both anchors, so one mention scored
+      two. Condition 1's printed dist=2 was really 1, which drops it below the
+      two-anchor threshold - so the loose prompt was never GROUNDED, and the
+      strict prompt is doing more work than the first run suggested. Anchors are
+      now reduced to maximal matches before counting.
+    - conditions 5 and 6 printed UNGROUNDED, which reads as failure when both
+      are passes: condition 6 named the context mismatch and refused to
+      recommend anything, leaking no plant content. Controls now carry an
+      expected verdict and print PASS/FAIL; the measured conditions deliberately
+      do not, because declaring the expected answer for the thing under
+      measurement is circular.
+    - both English conditions asked, unprompted, for the item-level breakdown
+      the prompt was withholding. Condition 7 supplies it - the questions she
+      got wrong and the distractor she chose for each - to test whether that
+      turns "please review her scripts" into a named misconception.
+
 USAGE
   pip install sentence-transformers anthropic numpy
   setx ANTHROPIC_API_KEY "sk-ant-..."      (reopen Command Prompt afterwards)
@@ -48,6 +106,10 @@ USAGE
   python day5_rag_spike_v3.py --no-api          retrieval tests only, no cost
   python day5_rag_spike_v3.py --embedder tfidf  no sentence-transformers needed
   python day5_rag_spike_v3.py --selftest        verify the grounding checker itself
+  python day5_rag_spike_v3.py --effort medium   more adaptive thinking (slower, dearer)
+
+A failed CONTROL means the instrument is broken, not that the system performed
+badly. Fix it before reading anything into the measured conditions.
 
 Writes day5_results_<timestamp>.json and day5_transcript_<timestamp>.txt
 next to the script. Output is pure ASCII so Windows cmd will not choke on it.
@@ -66,15 +128,54 @@ import numpy as np
 
 from kicd_curriculum_chunks import CURRICULUM_CHUNKS, RUBRIC_LEVELS
 
-DEFAULT_MODEL = "claude-haiku-4-5-20251001"
-COMPARISON_MODEL = "claude-sonnet-4-5"   # used only for the Kiswahili quality arm
+# Current as of 14 Oct 2026. The 4-5 generation this spike originally used is on
+# its way out (sonnet-4-5 retires 30 Nov 2026; haiku-4-5 is dated "not sooner
+# than 15 Oct 2026"), and a dissertation result about a retired model is a result
+# about nothing. These two IDs are the unversioned aliases, which is deliberate
+# for a spike - the point is to measure what a teacher would get today. Pin a
+# dated snapshot before anything goes in front of real learners.
+DEFAULT_MODEL = "claude-haiku-5-5"
+COMPARISON_MODEL = "claude-sonnet-5-5"   # used only for the Kiswahili quality arm
+
+# From Claude 4.7 onwards thinking is ADAPTIVE: the model decides per request
+# whether to think and for how long, requests that set thinking.budget_tokens
+# are rejected with a 400, and the documented controls do not include an
+# off-switch. The only lever is effort. "low" is the closest available setting
+# to the non-thinking behaviour the September run measured, which is what makes
+# the two runs comparable; it is also the cheapest, because thinking tokens are
+# billed as output tokens.
+#
+# Note what this means for the write-up: the system cannot promise a teacher
+# that no thinking happens, only that it asks for little. Report the effort
+# level alongside the grounding verdicts - it is part of the configuration that
+# produced them.
+DEFAULT_EFFORT = "low"
+
+# 500 was enough when nothing but the report came out of the model. It is not
+# enough now: thinking tokens count against max_tokens, so a 500-token ceiling
+# can be spent entirely on thinking and return a truncated report or no report
+# at all. A truncated report scores UNGROUNDED for a reason that has nothing to
+# do with grounding, which would be a false finding, so the ceiling is generous
+# and truncation is detected and reported rather than left to be discovered in
+# the verdicts. Unused headroom costs nothing - billing is on actual tokens.
+MAX_TOKENS = 4000
 
 # Similarity gates for admitting a second chunk into the prompt (v3).
 FLOOR_ABS = 0.25
 FLOOR_REL = 0.50
 
-# USD per million tokens (input, output), Sept 2026.
+# USD per million tokens (input, output). Checked against the published price
+# list on 14 Oct 2026. The superseded 4-5 rows are kept so an old transcript can
+# still be re-priced; the current run uses the 5-5 rows.
+#
+# Haiku 5.5 is priced in two bands - $0.10/$0.50 below 100K input tokens and
+# $0.50/$2.50 above it. This spike's prompts are a few thousand tokens, so the
+# low band is the honest figure to quote. If the corpus ever gets stuffed whole
+# into a prompt, that stops being true.
 PRICING = {
+    "claude-haiku-5-5": (0.10, 0.50),
+    "claude-sonnet-5-5": (2.00, 10.00),
+    "claude-opus-5-5": (4.00, 20.00),
     "claude-haiku-4-5": (1.00, 5.00),
     "claude-sonnet-4-5": (3.00, 15.00),
     "claude-opus-4": (15.00, 75.00),
@@ -89,6 +190,44 @@ FAKE_LEARNER = {
     "ability_tier": "Below expectation",
     "consecutive_flags": 2,
     "items_answered": 12,  # above the 10-item minimum established on Day 3
+    "items_correct": 8,
+    # v3.1 ADDITION. In the 14 Oct run both English conditions stopped and asked
+    # for this, unprompted: "the item-level breakdown is not provided, so the
+    # failing outcome cannot be confirmed". The system already stores it -
+    # Response.selected_option records which distractor the learner chose - and
+    # the prompt was withholding it. Condition 7 tests whether supplying it
+    # turns "please review her scripts" into a named misconception.
+    #
+    # The pattern below is deliberately coherent rather than random: items 1-3
+    # all show conductor and insulator INVERTED (outcome b), while item 4 is a
+    # separate confusion between the modes of transfer (outcome a). A report
+    # that reads the pattern should say so; one that cannot will fall back to
+    # listing outcomes, which is what conditions 1 and 2 did.
+    "failed_items": [
+        {
+            "question": "Which of these is the best conductor of heat?",
+            "chose": "A cotton cloth",
+            "correct": "A metal spoon",
+        },
+        {
+            "question": "Why is the handle of a cooking pot covered with plastic?",
+            "chose": "Because plastic carries heat away quickly",
+            "correct": "Because plastic is a poor conductor of heat",
+        },
+        {
+            "question": (
+                "A metal cup and a clay cup are filled with equally hot water "
+                "and left on a table. Which one cools faster?"
+            ),
+            "chose": "The clay cup",
+            "correct": "The metal cup",
+        },
+        {
+            "question": "Heat from the sun reaches the earth mainly by",
+            "chose": "conduction",
+            "correct": "radiation",
+        },
+    ],
 }
 
 TARGET_ID = "sci_3_3"
@@ -455,7 +594,26 @@ def run_retrieval_tests(embedder, chunk_matrix, top_k):
 # ---------------------------------------------------------------------------
 # Part D: prompts, generation, grounding checker
 # ---------------------------------------------------------------------------
-def build_prompt(learner, retrieved, language="English", strict=False):
+def failure_block(learner):
+    """The learner's actual wrong answers, as the model asked for them."""
+    lines = [
+        f"\nITEM-LEVEL FAILURE PATTERN "
+        f"({learner['items_correct']} of {learner['items_answered']} answered "
+        f"correctly; the {len(learner['failed_items'])} she got wrong are listed "
+        f"with the option she chose):"
+    ]
+    for n, it in enumerate(learner["failed_items"], 1):
+        lines.append(f"  {n}. {it['question']}")
+        lines.append(f"     she chose: {it['chose']}")
+        lines.append(f"     correct:   {it['correct']}")
+    lines.append(
+        "  Read these together. Name the misconception they share, in plain words "
+        "a teacher can use, instead of listing the Specific Learning Outcomes."
+    )
+    return "\n".join(lines)
+
+
+def build_prompt(learner, retrieved, language="English", strict=False, items=False):
     context = "\n\n".join(c["text"] for c in retrieved)
     tiers = ", ".join(RUBRIC_LEVELS)
     lang_line = (
@@ -497,6 +655,7 @@ LEARNER PERFORMANCE:
 - KICD rubric level: {learner['ability_tier']}
 - Items answered in this sub-strand: {learner['items_answered']}
 - Flagged as at-risk for {learner['consecutive_flags']} consecutive assessments
+{failure_block(learner) if items else ""}
 
 The KICD rubric levels are: {tiers}
 
@@ -553,20 +712,44 @@ def verbatim_quotes(report, context_chunk_ids, min_words=5):
     return found, fabricated
 
 
+def maximal(hits):
+    """Drop any hit that is a proper substring of another hit.
+
+    v3.1 FIX. The anchor list for Heat Transfer contains both
+    "good and poor conductors" and "poor conductors", so a report using the
+    longer phrase once scored TWO distinctive anchors for one mention. That
+    inflated the `dist` column - the number that decides the verdict and the
+    number that would have gone into the write-up. The 14 Oct run printed
+    dist=2 for condition 1 where the honest count is 1.
+
+    The shorter form is kept in ANCHORS deliberately: a report may well say
+    only "poor conductors", and that should still count. It is the
+    double-counting that is wrong, not the entry.
+
+    If a report genuinely uses both phrasings in different places this
+    under-counts by one. That is the safe direction for a grounding claim -
+    it can only make the evidence look weaker than it is. Spelling variants
+    that are not substrings of each other ("life savers" / "lifesavers") are
+    unaffected, which is why this is substring-based and not fuzzy.
+    """
+    return [h for h in hits if not any(h != o and h in o for o in hits)]
+
+
 def check_grounding(report, target_id, context_chunk_ids):
     """Counts genuine KICD anchors, wrong-chunk anchors, and vague filler."""
     low = report.lower()
-    target_hits = [a for a in ANCHORS[target_id] if a in low]
-    generic_hits = [g for g in GENERIC_TERMS.get(target_id, []) if g in low]
+    target_hits = maximal([a for a in ANCHORS[target_id] if a in low])
+    generic_hits = maximal([g for g in GENERIC_TERMS.get(target_id, []) if g in low])
     quoted_ok, quoted_fabricated = verbatim_quotes(report, context_chunk_ids)
     other_hits = []
     for cid, anchors in ANCHORS.items():
         if cid == target_id:
             continue
-        for a in anchors:
-            if a in low:
-                other_hits.append(f"{cid}:{a}")
-    vague_hits = [p for p in VAGUE_PHRASES if p in low]
+        # Deduplicated per chunk, then labelled, so the cid prefix cannot
+        # defeat the substring test.
+        for a in maximal([a for a in anchors if a in low]):
+            other_hits.append(f"{cid}:{a}")
+    vague_hits = maximal([p for p in VAGUE_PHRASES if p in low])
 
     # Lexical overlap with the context actually supplied.
     ctx = " ".join(
@@ -609,30 +792,86 @@ def check_grounding(report, target_id, context_chunk_ids):
 
 
 def price(model, usage):
-    key = next((k for k in PRICING if model.startswith(k)), None)
+    # Longest prefix wins. "claude-sonnet-5" is a prefix of "claude-sonnet-5-5",
+    # so first-match-in-dict-order would silently price the wrong model the
+    # moment another row is added.
+    key = max(
+        (k for k in PRICING if model.startswith(k)), key=len, default=None
+    )
     if key is None:
         return None
     pin, pout = PRICING[key]
     return usage.input_tokens / 1e6 * pin + usage.output_tokens / 1e6 * pout
 
 
-def call_claude(client, model, prompt, label):
+def report_text(resp):
+    """The report, and only the report.
+
+    A response is a LIST of blocks and the first one is not necessarily the
+    text: on an adaptive-thinking model it is often a ThinkingBlock, which is
+    what crashed the first v3.1 run with
+    `'ThinkingBlock' object has no attribute 'text'`.
+
+    Thinking is deliberately excluded rather than concatenated. It is the
+    model's scratch work: it is never shown to a teacher, so it is not part of
+    the artefact under test, and feeding it to the grounding checker would
+    score the scratch work instead of the report. Scratch work quotes the
+    context freely while reasoning, so including it would inflate every
+    grounding score - the same class of measurement error that v2 made.
+    """
+    return "\n".join(
+        b.text for b in resp.content if getattr(b, "type", None) == "text"
+    ).strip()
+
+
+def thinking_tokens(usage):
+    """How many of the billed output tokens were internal reasoning, or None."""
+    details = getattr(usage, "output_tokens_details", None)
+    return getattr(details, "thinking_tokens", None) if details else None
+
+
+def call_claude(client, model, prompt, label, effort=DEFAULT_EFFORT):
     resp = client.messages.create(
-        model=model, max_tokens=500, messages=[{"role": "user", "content": prompt}]
+        model=model,
+        max_tokens=MAX_TOKENS,
+        output_config={"effort": effort},
+        messages=[{"role": "user", "content": prompt}],
     )
-    text = resp.content[0].text
+    text = report_text(resp)
     cost = price(model, resp.usage)
+    think = thinking_tokens(resp.usage)
+    truncated = resp.stop_reason == "max_tokens"
+
     print(f"\n{'-'*74}\n{label}\n{'-'*74}")
-    print(text)
-    print(
-        f"\n[{resp.usage.input_tokens} in / {resp.usage.output_tokens} out"
-        + (f" | ${cost:.6f}]" if cost is not None else " | pricing unknown]")
-    )
+    print(text if text else "(no text block in the response)")
+
+    meta = f"{resp.usage.input_tokens} in / {resp.usage.output_tokens} out"
+    if think is not None:
+        meta += f" (of which {think} thinking)"
+    meta += f" | effort={effort} | stop={resp.stop_reason}"
+    meta += f" | ${cost:.6f}" if cost is not None else " | pricing unknown"
+    print(f"\n[{meta}]")
+
+    # Loud, because both of these invalidate the verdict rather than inform it.
+    if truncated:
+        print("  !! TRUNCATED at max_tokens. This report is incomplete and its")
+        print("  !! grounding verdict is not evidence about grounding. Raise")
+        print("  !! MAX_TOKENS and rerun before quoting anything from it.")
+    if not text:
+        print("  !! NO TEXT BLOCK. The model returned thinking and nothing else.")
+        print("  !! Lower the effort or raise MAX_TOKENS; do not report this run.")
+
     return {
         "label": label,
         "text": text,
+        "model": model,
+        "effort": effort,
+        "stop_reason": resp.stop_reason,
+        "truncated": truncated,
+        "empty": not text,
         "input_tokens": resp.usage.input_tokens,
         "output_tokens": resp.usage.output_tokens,
+        "thinking_tokens": think,
         "cost_usd": cost,
     }
 
@@ -694,6 +933,12 @@ def selftest():
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--model", default=DEFAULT_MODEL)
+    ap.add_argument(
+        "--effort",
+        choices=["low", "medium", "high", "xhigh", "max"],
+        default=DEFAULT_EFFORT,
+        help="adaptive-thinking effort; there is no off-switch on 4.7+ models",
+    )
     ap.add_argument("--top-k", type=int, default=2)
     ap.add_argument("--no-api", action="store_true", help="retrieval tests only")
     ap.add_argument("--embedder", choices=["minilm", "tfidf"], default="minilm")
@@ -709,9 +954,11 @@ def main():
     sys.stdout = tee
 
     try:
-        print("ELIMU ANALYTICS - DAY 5 RAG SPIKE (hardened)")
+        print("ELIMU ANALYTICS - DAY 5 RAG SPIKE (hardened, v3.1 model refresh)")
         print(f"run: {datetime.now().isoformat(timespec='seconds')}")
         print(f"chunks: {len(CURRICULUM_CHUNKS)}  model: {args.model}  top_k: {args.top_k}")
+        print(f"kiswahili comparison model: {COMPARISON_MODEL}")
+        print(f"effort: {args.effort}  max_tokens: {MAX_TOKENS}")
 
         texts = [c["text"] for c in CURRICULUM_CHUNKS]
         if args.embedder == "minilm":
@@ -731,6 +978,9 @@ def main():
             "run": stamp,
             "embedder": embedder.name,
             "model": args.model,
+            "comparison_model": COMPARISON_MODEL,
+            "effort": args.effort,
+            "max_tokens": MAX_TOKENS,
             "top_k": args.top_k,
             "learner": FAKE_LEARNER,
             "retrieval": retrieval,
@@ -752,30 +1002,77 @@ def main():
             ctx_ids = [c["id"] for c in retrieved]
             plants = [c for c in CURRICULUM_CHUNKS if c["id"] == "sci_1_1"]
 
+            # Each condition carries an `expect`, and only the CONTROLS have one.
+            #
+            # v3.1: conditions 5 and 6 have known-correct answers, so they can
+            # pass or fail. The 14 Oct run printed both as UNGROUNDED, which
+            # reads as a failure when it is the opposite - condition 6 named the
+            # mismatch and refused to recommend anything, leaking no plant
+            # content, which is the single most important safety property here.
+            #
+            # Conditions 1-4 deliberately have expect=None. Declaring the
+            # expected verdict for the thing being measured and then reporting
+            # that it was met is circular; those conditions report a verdict and
+            # the comparison BETWEEN them is the result.
             conditions = [
-                ("1. GROUNDED / EN / loose prompt (v2 wording)",
-                 build_prompt(FAKE_LEARNER, retrieved, "English", strict=False), ctx_ids, args.model),
-                ("2. GROUNDED / EN / STRICT verbatim-citation prompt",
-                 build_prompt(FAKE_LEARNER, retrieved, "English", strict=True), ctx_ids, args.model),
-                ("3. GROUNDED / KISWAHILI / Haiku",
-                 build_prompt(FAKE_LEARNER, retrieved, "Kiswahili", strict=True), ctx_ids, args.model),
-                ("4. GROUNDED / KISWAHILI / Sonnet (quality comparison)",
-                 build_prompt(FAKE_LEARNER, retrieved, "Kiswahili", strict=True), ctx_ids,
-                 COMPARISON_MODEL),
-                ("5. ABLATION - NO CURRICULUM CONTEXT",
-                 build_prompt_no_context(FAKE_LEARNER), [], args.model),
+                ("1. MEASURED / EN / loose prompt (v2 wording)",
+                 build_prompt(FAKE_LEARNER, retrieved, "English", strict=False),
+                 ctx_ids, args.model, None),
+                ("2. MEASURED / EN / STRICT verbatim-citation prompt",
+                 build_prompt(FAKE_LEARNER, retrieved, "English", strict=True),
+                 ctx_ids, args.model, None),
+                ("3. MEASURED / KISWAHILI / Haiku 5.5",
+                 build_prompt(FAKE_LEARNER, retrieved, "Kiswahili", strict=True),
+                 ctx_ids, args.model, None),
+                ("4. MEASURED / KISWAHILI / Sonnet 5.5 (quality comparison)",
+                 build_prompt(FAKE_LEARNER, retrieved, "Kiswahili", strict=True),
+                 ctx_ids, COMPARISON_MODEL, None),
+                ("5. CONTROL - NO CURRICULUM CONTEXT (ablation)",
+                 build_prompt_no_context(FAKE_LEARNER), [], args.model,
+                 {"verdicts": ("UNGROUNDED", "MIXED"), "no_leak": True,
+                  "why": "with no curriculum supplied, nothing can be grounded; "
+                         "anything else means the checker is crediting the "
+                         "model's own knowledge, which is the v2 bug"}),
                 ("6. CONTROL - WRONG CONTEXT (plants for a heat learner)",
-                 build_prompt(FAKE_LEARNER, plants, "English", strict=True), ["sci_1_1"], args.model),
+                 build_prompt(FAKE_LEARNER, plants, "English", strict=True),
+                 ["sci_1_1"], args.model,
+                 {"verdicts": ("UNGROUNDED",), "no_leak": True,
+                  "why": "the only safe answer is to refuse; a recommendation "
+                         "built from plants curriculum for a heat learner would "
+                         "be a wrong-chunk leak reaching a teacher"}),
+                ("7. MEASURED / EN / STRICT + item-level failure pattern",
+                 build_prompt(FAKE_LEARNER, retrieved, "English", strict=True, items=True),
+                 ctx_ids, args.model, None),
             ]
 
-            hr("PART D - GENERATION UNDER SIX CONDITIONS")
-            print("Condition 1 vs 2 isolates the prompt change; 3 vs 4 isolates the model;")
-            print("5 is the control that exposed the broken v2 measurement; 6 tests refusal.\n")
-            for label, prompt, cids, mdl in conditions:
-                gen = call_claude(client, mdl, prompt, label)
+            hr("PART D - GENERATION UNDER SEVEN CONDITIONS")
+            print("1 vs 2 isolates the prompt wording; 3 vs 4 isolates the model;")
+            print("2 vs 7 isolates the item-level failure pattern; 5 and 6 are")
+            print("controls with known-correct answers and print PASS or FAIL.\n")
+            for label, prompt, cids, mdl, expect in conditions:
+                gen = call_claude(client, mdl, prompt, label, effort=args.effort)
                 gen["grounding"] = check_grounding(gen["text"], TARGET_ID, cids)
                 g = gen["grounding"]
-                print(f"  verdict: {g['verdict']}")
+
+                # A control's result is only meaningful if the call itself was
+                # sound, so truncation or an empty body fails it outright.
+                gen["is_control"] = expect is not None
+                if expect is None:
+                    gen["passed"] = None
+                else:
+                    gen["passed"] = (
+                        g["verdict"] in expect["verdicts"]
+                        and not (expect.get("no_leak") and g["wrong_chunk_anchors"])
+                        and not gen["truncated"]
+                        and not gen["empty"]
+                    )
+
+                print(f"  verdict: {g['verdict']}"
+                      + ("" if expect is None else
+                         f"   [CONTROL: {'PASS' if gen['passed'] else 'FAIL'}"
+                         f" - expected {' or '.join(expect['verdicts'])}]"))
+                if expect is not None and not gen["passed"]:
+                    print(f"  why this control exists: {expect['why']}")
                 print(f"  DISTINCTIVE KICD anchors (count as evidence): {g['target_anchors'] or 'none'}")
                 print(f"  generic science terms (prove nothing):        {g['generic_terms'] or 'none'}")
                 print(f"  verbatim quotes verified in context:          {g['verbatim_quotes_verified'] or 'none'}")
@@ -786,13 +1083,33 @@ def main():
                 results["generations"].append(gen)
 
             hr("SUMMARY")
-            print(f"{'condition':<48}{'verdict':<12}{'dist':>5}{'quote':>6}{'gen':>5}{'vague':>7}")
+            print(f"{'condition':<48}{'verdict':<12}{'dist':>5}{'quote':>6}"
+                  f"{'gen':>5}{'vague':>7}{'  control':<10}")
             for gen in results["generations"]:
                 g = gen["grounding"]
+                if gen.get("empty"):
+                    flag = "  <-- EMPTY, verdict not valid"
+                elif gen.get("truncated"):
+                    flag = "  <-- TRUNCATED, verdict not valid"
+                elif gen["passed"] is True:
+                    flag = "  PASS"
+                elif gen["passed"] is False:
+                    flag = "  FAIL"
+                else:
+                    flag = "  (measured)"
                 print(f"{gen['label'][:46]:<48}{g['verdict']:<12}"
                       f"{len(g['target_anchors']):>5}{len(g['verbatim_quotes_verified']):>6}"
-                      f"{len(g['generic_terms']):>5}{len(g['vague_phrases']):>7}")
-            print("\ndist  = distinctive KICD anchors (real evidence of grounding)")
+                      f"{len(g['generic_terms']):>5}{len(g['vague_phrases']):>7}{flag}")
+
+            controls = [g for g in results["generations"] if g["is_control"]]
+            ctl_ok = all(g["passed"] for g in controls)
+            results["controls_passed"] = ctl_ok
+            print(f"\nCONTROLS: {sum(1 for g in controls if g['passed'])}/"
+                  f"{len(controls)} passed."
+                  + ("" if ctl_ok else
+                     " A failed control invalidates the measured conditions -"
+                     " fix it before quoting any of them."))
+            print("\ndist  = distinctive KICD anchors, deduplicated (real evidence)")
             print("quote = verbatim citations verified against the supplied context")
             print("gen   = generic science vocabulary (the v2 false-positive source)")
             print("\nKISWAHILI REVIEW - read conditions 3 and 4 as a Kiswahili speaker, not")
@@ -801,12 +1118,28 @@ def main():
 
             costs = [g["cost_usd"] for g in results["generations"] if g["cost_usd"]]
             total = sum(costs)
+            # Selected by label. This was generations[1:3] - positional, and
+            # adding condition 7 would silently have changed what "bilingual"
+            # meant without changing the number's name.
             bilingual = sum(
-                g["cost_usd"] for g in results["generations"][1:3] if g["cost_usd"]
+                g["cost_usd"] for g in results["generations"]
+                if g["cost_usd"] and g["label"].startswith(("2.", "3."))
             )
             print(f"\nTotal this run ({len(costs)} calls): ${total:.5f}")
-            print(f"Bilingual report (EN + SW): ${bilingual:.5f} = {bilingual*100:.2f} cents")
+            print(f"Bilingual report (EN strict + SW Haiku): ${bilingual:.5f} "
+                  f"= {bilingual*100:.2f} cents")
             print(f"Projected 60 UAT bilingual reports: ${bilingual*60:.2f}")
+            think_total = sum(
+                g["thinking_tokens"] or 0 for g in results["generations"]
+            )
+            out_total = sum(g["output_tokens"] for g in results["generations"])
+            if out_total:
+                print(f"Thinking tokens: {think_total} of {out_total} billed output "
+                      f"tokens ({think_total / out_total * 100:.0f}%)")
+            print("\nNOTE: this figure supersedes the 1.19 cents measured in September.")
+            print("Different models at different prices, and a tokenizer from 4.7")
+            print("onwards that emits ~30% more tokens for the same text. Quote this")
+            print("number, and say which models produced it.")
             results["cost"] = {"run_total_usd": total, "bilingual_report_usd": bilingual}
 
         out = os.path.join(here, f"day5_results_{stamp}.json")

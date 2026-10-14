@@ -6,6 +6,11 @@ anything RAG-related on top of it.
 import os
 from anthropic import Anthropic
 
+# claude-haiku-5-5: the cheapest current model, which is all a connectivity
+# check needs. The earlier claude-sonnet-4-5 here was printing a deprecation
+# warning on every run - it retires 30 Nov 2026.
+MODEL = "claude-haiku-5-5"
+
 api_key = os.environ.get("ANTHROPIC_API_KEY")
 if not api_key:
     raise RuntimeError(
@@ -16,9 +21,9 @@ if not api_key:
 
 client = Anthropic(api_key=api_key)
 
-print("Sending a test request to Claude API...")
+print(f"Sending a test request to Claude API ({MODEL})...")
 response = client.messages.create(
-    model="claude-sonnet-4-5",
+    model=MODEL,
     max_tokens=100,
     messages=[
         {"role": "user", "content": "Reply with exactly: API connection successful."}

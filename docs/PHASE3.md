@@ -11,7 +11,7 @@ placeholder dashboard that proves the chain works end to end.
 | **1** | Scaffold, login, protected routes, token refresh | Sign in, reload, stay signed in ✅ |
 | **2** | Classrooms and learners: list, create, enrol, withdraw | A class created through the UI appears in the API ✅ |
 | **3** | Learner detail, competency heatmap, intervention queue | Otieno renders as "insufficient evidence", not a blank ✅ |
-| 4 | Quiz administration: present items, capture, submit | A response recorded in the UI changes θ |
+| **4** | Quiz administration: present items, capture, submit | A response recorded in the UI changes θ ✅ |
 
 ---
 
@@ -281,6 +281,131 @@ produces one. Without that, an empty queue after an assessment looks broken.
 "Nobody is flagged" is ambiguous and could be read as reassurance, so the
 empty state says that a flag needs two consecutive below-threshold assessments
 and that an empty queue early in a term is expected rather than comforting.
+
+---
+
+## Stage 4 — marking a quiz
+
+`/classrooms/[id]/quiz` is a grid of learners by items. It is the page that
+finally lets a teacher create the data the rest of the system measures: until
+now every response in the database came from `seed.py`.
+
+Four decisions, each forced by the backend rather than chosen for looks.
+
+**Cells are tri-state, not checkboxes.** Blank, correct, wrong. A checkbox
+conflates "wrong" with "not attempted", and the response matrix treats those
+as entirely different: an unanswered item is excluded from the estimate, a
+wrong one pulls it down. Submitting blanks as zeroes would bias every ability
+estimate in the class downward - the Day 1 sentinel rule, surfacing as an
+interface requirement.
+
+**Pairs already recorded are locked**, which needed a new endpoint. The matrix
+holds one response per learner and item, so re-answering is refused with 409.
+Without knowing which pairs exist, the grid would let a teacher mark one and
+then reject the entire batch for a reason they had no way of seeing.
+`GET /api/assessments/answered/{class_id}/{strand_id}` returns the taken pairs
+so those cells are disabled and the rejection never arises.
+
+**One identifier per batch, generated on the device and reused on retry.**
+`client_batch_id` is made when a fresh grid loads and regenerated only after a
+submission is known to have landed. A submission that times out and is sent
+again therefore carries the same id and is recognised as the same work. This
+is the client the idempotency work in Phase 2.5 was built for, and the comment
+in the failure branch says explicitly why the id is *not* regenerated there.
+
+**Nothing is saved until Submit.** The grid is local state; a half-marked
+class is not a half-recorded assessment.
+
+### The loop closes here
+
+Mark a quiz → Run assessment on the heatmap → the cells move. Twice → the
+intervention queue fills. Every number in the system can now originate from a
+teacher rather than from the seed.
+
+---
+
+## Stage 4b — learner-facing quiz mode
+
+`/classrooms/[id]/administer` is the screen a child holds. It is the only
+place in the application where someone other than the signed-in teacher
+touches the device, and that single fact drives the design.
+
+### The containment problem
+
+**The tablet is signed in as the teacher.** A child holding it is holding a
+session that can reach the competency heatmap - every classmate's ability
+estimate, by name. That is a children's-data disclosure one back-button away,
+and it is squarely inside the Data Protection Act territory Chapter 3 covers.
+
+So quiz mode is a boundary rather than a page: it renders over the whole
+viewport with no navigation chrome, the browser's Back button is trapped by
+re-pushing history state, and leaving re-prompts for the teacher's password.
+None of this is a hard lock - nothing in a browser is - but it closes the
+realistic case, which is a bored eight-year-old tapping.
+
+### Identity, and the assumption behind it
+
+A learner is identified by **the teacher selecting their name before handing
+the device over**. There are no learner accounts and no child PINs: issuing
+credentials to primary-school children is a far larger data-protection
+surface than this buys, and children lose and share codes.
+
+Identity therefore rests on supervision. That is a real limitation and it
+belongs in Chapter 6 stated plainly, not glossed: the system records the
+learner the teacher said was answering.
+
+### The device never learns the answers
+
+The quiz endpoint returns question text and options. Its response model has
+**no field for the key**, so there is nothing to forget to strip, and the
+client submits `selected_option` rather than `correct`. The server marks it.
+
+A learner cannot read the answer off the network tab, because it was never
+sent; a modified client cannot report itself correct, because correctness is
+not an input.
+
+### The flow
+
+```
+setup      pick a strand, Start
+roster     tap a name, hand the device over
+answering  one question at a time, four options, no going back
+handback   "Please give the device back to your teacher"
+roster     next learner, or End session
+```
+
+There is no Back and no Skip inside a quiz. A child revisiting an earlier
+answer after seeing a later question is a different measurement, and there is
+no teacher watching the screen to adjudicate.
+
+Answers are held in the page until the teacher ends the session, then sent as
+**one batch with one idempotency key** - not regenerated on failure, so a
+submission that times out and is retried is recognised as the same work.
+
+### One response per learner and item, enforced before the child answers
+
+The first version of the roster offered every learner. A learner who had
+already answered that strand - which, in the demonstration classroom, is all
+forty of them - would sit through twelve questions and have the entire batch
+refused afterwards with a 409. The rule was right and the moment of enforcing
+it was wrong: the cost fell on a child who had done nothing but answer the
+questions put in front of them.
+
+The roster now loads the answered pairs when a session starts and shows each
+learner what they still owe - "12 question(s) left", "already answered this
+strand" - and hands over only the items that learner has not answered. A
+learner who answered six of twelve gets the remaining six. The refusal moves
+from after the work to before it.
+
+Answers are also marked as taken locally as they are given, so a second
+hand-over within the same session cannot ask the same question twice.
+
+### Items without options
+
+An item with only question text is still a valid item: a teacher can ask it
+aloud and mark it on the quiz grid. It simply is not delivered to a learner,
+because nothing knows what the right answer is. The two modes coexist, and
+the setup screen says so when a strand has nothing deliverable.
 
 ---
 

@@ -22,11 +22,11 @@ and Kiswahili.
 | **1 — Walking skeleton** | Complete |
 | **2 — Backend core** | Complete. Persistence, calibration, auth, item bank, login throttling, classroom and learner records with school-level scoping |
 | **2.5 — API for the interface** | Complete. Assessment recording with idempotency, strands, per-learner diagnostics, class heatmap, scoped intervention queue, rotating refresh tokens |
-| **3 — Frontend** | Stages 1–3 complete: shell and auth, classroom and learner management, competency heatmap, learner diagnostics, intervention queue. Stage 4 (quiz administration) outstanding |
+| **3 — Frontend** | Complete. Shell and auth, classroom and learner management, competency heatmap, learner diagnostics, intervention queue, quiz marking, learner-facing quiz mode |
 | 4 — Offline sync | Not started |
 | 5 — RAG + reports | Not started (retrieval validated in Phase 0) |
 
-**117 tests**, lint clean, CI on every push.
+**127 tests**, lint clean, CI on every push.
 
 ---
 

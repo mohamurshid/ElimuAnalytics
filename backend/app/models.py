@@ -24,6 +24,7 @@ from datetime import datetime
 
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
+    JSON,
     Boolean,
     DateTime,
     Float,
@@ -156,6 +157,20 @@ class Item(Base):
         ForeignKey("strand.strand_id", ondelete="CASCADE"), nullable=False
     )
     question_text: Mapped[str] = mapped_column(Text, nullable=False)
+    # Answer options and the key, for items a learner answers on a device.
+    #
+    # Both are nullable on purpose. An item with only question text is still a
+    # valid item - a teacher can ask it aloud or on paper and record the
+    # result - it simply cannot be delivered to a learner, because nothing
+    # knows what the right answer is. The two modes coexist rather than one
+    # replacing the other.
+    #
+    # `correct_option` must never reach a learner's device. The delivery
+    # endpoint has its own schema that does not contain this field, and
+    # correctness is computed on the server from the option a learner chose.
+    # A client that reports its own correctness can report whatever it likes.
+    options: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    correct_option: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # Null until the strand has been calibrated.
     difficulty_b: Mapped[float | None] = mapped_column(Float, nullable=True)
     discrimination_a: Mapped[float | None] = mapped_column(Float, nullable=True)
@@ -180,6 +195,13 @@ class Response(Base):
         ForeignKey("item.item_id", ondelete="CASCADE"), nullable=False
     )
     correctness: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    # Which option the learner chose, when they chose one on a device. Null
+    # for responses a teacher marked, where no option was recorded.
+    #
+    # Not needed to compute ability - correctness is - but kept because which
+    # wrong answer a learner picked is the evidence behind distractor
+    # analysis, and that evidence cannot be recovered after the fact.
+    selected_option: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # Nullable: responses seeded for demonstration, and those recorded before
     # batching existed, belong to no submission.
     batch_id: Mapped[uuid.UUID | None] = mapped_column(

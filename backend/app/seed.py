@@ -33,20 +33,43 @@ from .models import (
 from .security import ROLE_SCHOOL_ADMIN, hash_password
 
 STRAND_NAME = "3.0 Force and Energy / 3.3 Heat Transfer"
-QUESTIONS = [
-    "A metal spoon is left in hot porridge. What happens to the handle?",
-    "Which keeps hot food warm for longer: a metal tin or a clay pot?",
-    "Name one good conductor of heat found in the kitchen.",
-    "Why is the handle of a cooking pot covered with plastic?",
-    "How does heat reach your hand when you sit near a fire?",
-    "Which travels through a metal rod: conduction or radiation?",
-    "Name one poor conductor of heat used to hold hot things.",
-    "Give one safety precaution when handling hot utensils.",
-    "Why does warm air rise above a cooking fire?",
-    "Which mode of heat transfer needs no material to travel through?",
-    "Name one material that could be used to make oven gloves.",
-    "State one use of heat transfer in preserving food.",
+# Question, options, index of the correct option.
+#
+# Placeholder content, as the whole demonstration classroom is - but the
+# shape is real: four options, one key, and the key never leaves the server.
+# Real items come from a teacher through the item bank.
+QUESTION_BANK: list[tuple[str, list[str], int]] = [
+    ("A metal spoon is left in hot porridge. What happens to the handle?",
+     ["It becomes hot", "It stays cool", "It becomes wet", "It changes colour"], 0),
+    ("Which keeps hot food warm for longer: a metal tin or a clay pot?",
+     ["The metal tin", "The clay pot", "Both the same", "Neither"], 1),
+    ("Name one good conductor of heat found in the kitchen.",
+     ["A wooden spoon", "A cotton cloth", "An aluminium sufuria", "A plastic bowl"], 2),
+    ("Why is the handle of a cooking pot covered with plastic?",
+     ["To make it colourful", "Because plastic is cheap",
+      "To make the pot heavier", "Because plastic is a poor conductor"], 3),
+    ("How does heat reach your hand when you sit near a fire?",
+     ["By radiation", "By conduction", "By evaporation", "By condensation"], 0),
+    ("Which travels through a metal rod: conduction or radiation?",
+     ["Radiation", "Conduction", "Neither", "Both equally"], 1),
+    ("Name one poor conductor of heat used to hold hot things.",
+     ["Copper wire", "An iron bar", "A dry cloth", "An aluminium sheet"], 2),
+    ("Give one safety precaution when handling hot utensils.",
+     ["Carry them quickly", "Hold them with bare hands",
+      "Pour water on them first", "Use a dry cloth or gloves"], 3),
+    ("Why does warm air rise above a cooking fire?",
+     ["It is lighter than cold air", "It is heavier than cold air",
+      "It is pushed down by smoke", "It does not rise"], 0),
+    ("Which mode of heat transfer needs no material to travel through?",
+     ["Conduction", "Radiation", "Convection", "All of them"], 1),
+    ("Name one material that could be used to make oven gloves.",
+     ["Thin polythene", "Aluminium foil", "Thick cotton cloth", "Copper mesh"], 2),
+    ("State one use of heat transfer in preserving food.",
+     ["Painting the container", "Adding more salt only",
+      "Storing food in sunlight", "Boiling milk before storing it"], 3),
 ]
+
+QUESTIONS = [q for q, _, _ in QUESTION_BANK]
 N_STUDENTS = 40
 NAMED = {0: "Chebet K.", 1: "Amina W.", 2: "Otieno J."}
 
@@ -97,7 +120,15 @@ def seed(session: Session) -> None:
     classroom = Classroom(grade="Grade 5", name="Blue", school=school, teacher=teacher)
     strand = Strand(name=STRAND_NAME, level="Upper Primary")
 
-    items = [Item(question_text=q, strand=strand) for q in QUESTIONS]
+    items = [
+        Item(
+            question_text=question,
+            options=options,
+            correct_option=key,
+            strand=strand,
+        )
+        for question, options, key in QUESTION_BANK
+    ]
     students = [
         Student(name=NAMED.get(i, f"Learner {i + 1:02d}"), classroom=classroom)
         for i in range(N_STUDENTS)

@@ -258,3 +258,183 @@ def test_another_schools_classroom_is_not_found(client, head, fresh, session):  
 
 def test_recording_requires_authentication(client, fresh):
     assert client.post("/api/assessments", json=batch_body(fresh)).status_code == 401
+
+
+# --- which pairs are already taken -----------------------------------------
+def test_answered_pairs_lists_what_is_already_recorded(client, head, fresh, session):  # noqa: F811
+    """A marking grid cannot be honest without this.
+
+    Without it the interface shows every cell as free, a teacher ticks one
+    that is already recorded, and the whole batch is refused with a 409
+    naming pairs they had no way of knowing about.
+    """
+    cid = fresh["classroom"].class_id
+    sid = session_strand(fresh)
+
+    r = client.get(f"/api/assessments/answered/{cid}/{sid}", headers=auth(head))
+    assert r.status_code == 200
+    before = set(r.json()["answered"])
+    assert len(before) == 471  # the seeded responses
+
+    pair = f"{fresh['learner'].student_id}:{fresh['item'].item_id}"
+    assert pair not in before  # the fresh learner has answered nothing
+
+    client.post("/api/assessments", headers=auth(head), json=batch_body(fresh))
+
+    after = set(
+        client.get(f"/api/assessments/answered/{cid}/{sid}", headers=auth(head))
+        .json()["answered"]
+    )
+    assert pair in after
+    assert len(after) == len(before) + 1
+
+
+def test_answered_pairs_is_school_scoped(client, head, session):  # noqa: F811
+    rival_school = School(name="Rival", type="private")
+    rival_class = Classroom(grade="Grade 4", name="Red", school=rival_school)
+    session.add_all([rival_school, rival_class])
+    session.commit()
+    session.refresh(rival_class)
+
+    strand = session.scalar(select(Item)).strand_id
+    r = client.get(
+        f"/api/assessments/answered/{rival_class.class_id}/{strand}",
+        headers=auth(head),
+    )
+    assert r.status_code == 404
+
+
+def test_answered_pairs_requires_authentication(client, fresh):
+    cid = fresh["classroom"].class_id
+    sid = session_strand(fresh)
+    assert client.get(f"/api/assessments/answered/{cid}/{sid}").status_code == 401
+
+
+# --- learner-facing delivery and marking ------------------------------------
+def test_the_answer_key_never_leaves_the_server(client, head, fresh):
+    """The control the whole learner-facing mode rests on.
+
+    If the key reaches the browser, a curious learner can read it off the
+    network tab, and a dishonest client can mark its own answers. The
+    delivery schema has no field for it at all.
+    """
+    cid = fresh["classroom"].class_id
+    sid = session_strand(fresh)
+
+    r = client.get(f"/api/assessments/quiz/{cid}/{sid}", headers=auth(head))
+    assert r.status_code == 200
+    body = r.json()
+
+    assert body["items"], "expected deliverable items"
+    for item in body["items"]:
+        assert set(item) == {"item_id", "question_text", "options"}
+        assert len(item["options"]) == 4
+    assert "correct" not in r.text.lower().replace("correctness", "")
+
+
+def test_an_item_without_options_is_not_delivered(client, head, fresh, session):  # noqa: F811
+    """A teacher can still mark it; a learner cannot answer it, because
+    nothing knows what the right answer is."""
+    cid = fresh["classroom"].class_id
+    sid = session_strand(fresh)
+    fresh["item"].options = None
+    fresh["item"].correct_option = None
+    session.commit()
+
+    body = client.get(f"/api/assessments/quiz/{cid}/{sid}", headers=auth(head)).json()
+    assert str(fresh["item"].item_id) not in [i["item_id"] for i in body["items"]]
+
+
+def test_the_server_marks_a_learners_answer(client, head, fresh, session):  # noqa: F811
+    """The device sends the option chosen; the server decides."""
+    key = fresh["item"].correct_option
+    body = batch_body(
+        fresh,
+        responses=[{
+            "student_id": str(fresh["learner"].student_id),
+            "item_id": str(fresh["item"].item_id),
+            "selected_option": key,
+        }],
+    )
+    assert client.post("/api/assessments", headers=auth(head), json=body).status_code == 200
+
+    stored = session.scalar(
+        select(Response).where(
+            Response.student_id == fresh["learner"].student_id,
+            Response.item_id == fresh["item"].item_id,
+        )
+    )
+    assert stored.correctness is True
+    assert stored.selected_option == key
+
+
+def test_a_wrong_option_is_marked_wrong_and_remembered(client, head, fresh, session):  # noqa: F811
+    """Which wrong answer was chosen is kept: it is the evidence behind
+    distractor analysis, and it cannot be recovered afterwards."""
+    wrong = (fresh["item"].correct_option + 1) % len(fresh["item"].options)
+    body = batch_body(
+        fresh,
+        responses=[{
+            "student_id": str(fresh["learner"].student_id),
+            "item_id": str(fresh["item"].item_id),
+            "selected_option": wrong,
+        }],
+    )
+    client.post("/api/assessments", headers=auth(head), json=body)
+
+    stored = session.scalar(
+        select(Response).where(
+            Response.student_id == fresh["learner"].student_id,
+            Response.item_id == fresh["item"].item_id,
+        )
+    )
+    assert stored.correctness is False
+    assert stored.selected_option == wrong
+
+
+def test_an_answer_must_be_one_thing_or_the_other(client, head, fresh):
+    """Both, or neither, is a client bug worth refusing loudly."""
+    base = {
+        "student_id": str(fresh["learner"].student_id),
+        "item_id": str(fresh["item"].item_id),
+    }
+    both = client.post(
+        "/api/assessments",
+        headers=auth(head),
+        json=batch_body(fresh, responses=[{**base, "correct": True, "selected_option": 0}]),
+    )
+    neither = client.post(
+        "/api/assessments",
+        headers=auth(head),
+        json=batch_body(fresh, responses=[base]),
+    )
+    assert both.status_code == 422
+    assert neither.status_code == 422
+
+
+def test_an_option_that_does_not_exist_is_refused(client, head, fresh):
+    r = client.post(
+        "/api/assessments",
+        headers=auth(head),
+        json=batch_body(fresh, responses=[{
+            "student_id": str(fresh["learner"].student_id),
+            "item_id": str(fresh["item"].item_id),
+            "selected_option": 99,
+        }]),
+    )
+    assert r.status_code == 422
+    assert "does not exist" in str(r.json()["detail"]["problems"])
+
+
+def test_quiz_delivery_is_school_scoped(client, head, session):  # noqa: F811
+    rival_school = School(name="Rival", type="private")
+    rival_class = Classroom(grade="Grade 4", name="Red", school=rival_school)
+    session.add_all([rival_school, rival_class])
+    session.commit()
+    session.refresh(rival_class)
+
+    strand = session.scalar(select(Item)).strand_id
+    r = client.get(
+        f"/api/assessments/quiz/{rival_class.class_id}/{strand}", headers=auth(head)
+    )
+    assert r.status_code == 404

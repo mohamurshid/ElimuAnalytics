@@ -5,6 +5,7 @@ REM   tasks test    run the test suite
 REM   tasks lint    run ruff
 REM   tasks fix     run ruff with autofix
 REM   tasks seed    rebuild the schema and demonstration data (--reset to drop first)
+REM   tasks ingest  load the KICD curriculum corpus into curriculum_chunk
 REM   tasks run     start the backend development server
 REM   tasks web     start the Next.js frontend (http://localhost:3000)
 REM   tasks webci   frontend lint, typecheck and build
@@ -44,6 +45,12 @@ cd backend
 python -m app.seed %2 %3
 goto end
 
+:ingest
+call .venv\Scripts\activate
+cd backend
+python -m app.ingest_curriculum %2 %3
+goto end
+
 :run
 call .venv\Scripts\activate
 cd backend
@@ -78,7 +85,7 @@ echo CI checks FAILED. Fix before pushing.
 exit /b 1
 
 :help
-echo Usage: tasks [setup^|test^|lint^|fix^|seed^|run^|web^|webci^|ci]
+echo Usage: tasks [setup^|test^|lint^|fix^|seed^|ingest^|run^|web^|webci^|ci]
 goto end
 
 :end

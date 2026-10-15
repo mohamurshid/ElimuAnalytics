@@ -356,17 +356,46 @@ class CurriculumChunk(Base):
     __tablename__ = "curriculum_chunk"
 
     chunk_id: Mapped[uuid.UUID] = _pk()
+    # Left NULL by ingest. The `strand` rows are assessment strands, seeded
+    # independently, and they do not correspond one-to-one with the curriculum
+    # strand strings in the KICD corpus. Retrieval never filters on this.
     strand_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("strand.strand_id", ondelete="SET NULL"), nullable=True
     )
-    # Retrieval filters on these before embedding similarity is considered.
-    # Measured at full corpus scale: realistic queries reach 64.3% top-1 without
-    # the filter and 100% with it, because 26% of KICD sub-strand titles repeat
-    # across grades - the distinguishing information is metadata, not text.
+    # Provenance, and deliberately NOT unique. The harvested id is built from
+    # the grade plus the subject slugged to eight characters, so CRE, IRE and
+    # HRE all become "religiou" and Arabic, French and Mandarin all become
+    # "foreignl": 162 ids are shared by 213 rows of different content. Anything
+    # that treats this as a key loses data. `source_row` is the record's index
+    # in the harvested JSON, which is unique, and is what traces a chunk back.
+    source_id: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    source_row: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Retrieval filters on grade and learning_area BEFORE embedding similarity
+    # is considered, and the filter is not an optimisation - it is the only
+    # reason retrieval works. Measured on the full 1,617-chunk corpus with 300
+    # queries: top-1 45.3%, top-5 72.3%, MRR 0.569, and a mean top1-top2 margin
+    # of 0.044, which means the leading candidates are effectively tied. With
+    # the grade and learning-area filter applied first, top-1 was 100% and the
+    # margin 0.209. The collapse is worst where sub-strand wording repeats
+    # across grades: Indigenous Language 16%, Kiswahili 23%, Mathematics 25%,
+    # English 26% unfiltered.
+    #
+    # `strand` and `sub_strand` are stored for display and citation only. They
+    # are not join keys: the extractor let content lists bleed into sub_strand
+    # ("3.3 Heat transfer   Modes of heat transfer in nature  ...") and OCR
+    # splits words in strand ("Living things and their Environme nt"), so
+    # neither is reliable enough to match on.
     grade: Mapped[str | None] = mapped_column(String(20), nullable=True)
     learning_area: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    strand: Mapped[str | None] = mapped_column(String(300), nullable=True)
     sub_strand: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    lessons: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Repaired by curriculum.normalise() on the way in, never on the way out.
+    # The report prompt quotes this text verbatim, so what is stored has to be
+    # exactly what a teacher reads - otherwise a rendered quotation stops
+    # matching the chunk and the grounding check calls it fabricated.
     syllabus_text: Mapped[str] = mapped_column(Text, nullable=False)
+    # Unit vectors, so cosine distance and a dot product agree.
     embedding: Mapped[list[float] | None] = mapped_column(
         Vector(EMBEDDING_DIM), nullable=True
     )

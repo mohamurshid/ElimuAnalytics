@@ -10,3 +10,16 @@ alembic
 pyjwt
 bcrypt
 email-validator
+
+# Phase 5: grounded report generation.
+#
+# Both of these were installed in the working venv but never declared, so a
+# fresh checkout would import-error the moment Phase 5 code ran. Declaring
+# them is the point of this entry.
+#
+# sentence-transformers pulls torch, which is a large install, and CI installs
+# requirements-dev.txt on two Python versions - expect a slow first run until
+# pip's cache warms. Both imports are deliberately lazy (see curriculum.py),
+# so neither is loaded by importing the app or by running the test suite.
+anthropic
+sentence-transformers

@@ -54,7 +54,7 @@ from pathlib import Path
 from sqlalchemy import delete
 from sqlalchemy.orm import Session
 
-from .curriculum import get_embedder, normalise, unmapped_private_use
+from .curriculum import embedding_text, get_embedder, normalise, unmapped_private_use
 from .db import ensure_extensions, get_engine, get_session_factory
 from .models import Base, CurriculumChunk
 
@@ -112,7 +112,8 @@ def ingest(
         encode = get_embedder()
         for start in range(0, len(chunks), batch_size):
             window = chunks[start : start + batch_size]
-            vectors = encode([c.syllabus_text for c in window])
+            # The head, not the whole chunk - see curriculum.embedding_text.
+            vectors = encode([embedding_text(c.syllabus_text) for c in window])
             for chunk, vector in zip(window, vectors, strict=True):
                 chunk.embedding = vector
             embedded += len(window)
@@ -127,6 +128,8 @@ def ingest(
         "loaded": len(chunks),
         "skipped_not_ok": len(skipped),
         "embedded": embedded,
+        "embedded_chars": sum(len(embedding_text(c.syllabus_text)) for c in chunks),
+        "stored_chars": sum(len(c.syllabus_text) for c in chunks),
         "grades": sorted({c.grade for c in chunks if c.grade}),
         "learning_areas": len({c.learning_area for c in chunks if c.learning_area}),
         "unmapped_private_use": dict(leftovers),
@@ -157,6 +160,13 @@ def main() -> None:
     print(f"source: {args.path}")
     print(f"replaced {summary['removed']} existing chunks with {summary['loaded']}")
     print(f"embedded: {summary['embedded']}" + ("" if summary["embedded"] else "  (--no-embed)"))
+    if summary["loaded"]:
+        head = summary["embedded_chars"] / summary["loaded"]
+        full = summary["stored_chars"] / summary["loaded"]
+        print(
+            f"mean chars: {head:.0f} embedded (the curriculum head) / "
+            f"{full:.0f} stored and sent to the prompt"
+        )
     print(f"grades: {', '.join(summary['grades'])}")
     print(f"learning areas: {summary['learning_areas']}")
     if summary["skipped_not_ok"]:

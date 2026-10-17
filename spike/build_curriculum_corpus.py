@@ -51,7 +51,7 @@ import urllib.request
 from collections import Counter, defaultdict
 from pathlib import Path
 
-VERSION = "v3 (separates curriculum rows from assessment rubric rows)"
+VERSION = "v4 (joins curriculum rows that continue across a page break)"
 
 MEDIA_API = "https://cbcelimu.com/wp-json/wp/v2/media"
 USER_AGENT = "Mozilla/5.0 (compatible; ElimuAnalytics-Research/1.0; academic use)"
@@ -96,6 +96,69 @@ SECTION_PATTERNS = {
     "strand": re.compile(r"\bSTRAND\b", re.I),
     "substrand": re.compile(r"SUB[\s.\-]?STRAND", re.I),
 }
+
+# The sections that trail a curriculum row, and which v3 lost entirely.
+#
+# A KICD curriculum row does not fit on one page. It starts with Strand through
+# Key Inquiry Question and then continues onto the NEXT page with Projects,
+# Core competencies, Values, PCIs and Links to other Learning areas.
+# pdfplumber reports that continuation as a table row of its own, and v3
+# dropped every one: the row carries no numbered strand, so it failed the
+# strand/sub-strand test, and the short ones also failed the 200-character
+# body test.
+#
+# Measured on the 1,617-chunk v3 corpus: PROJECT survived in 30 chunks,
+# ASSESSMENT in 27, and Core competencies, Values, Links and Suggested
+# Resources in ZERO. On Grade 5 Heat Transfer only 1,211 of the row's 2,046
+# characters were captured - 59%. The missing 41% held both KICD projects,
+# "Learners to make oven gloves using locally available materials" and
+# "Learners to make a fireless cooker", which are the two phrases every
+# GROUNDED verdict in the Day 5 spike was earned by quoting. The spike's
+# chunks were transcribed from the PDF by hand and contained them; the
+# extracted corpus did not, so the spike's grounding result could not be
+# reproduced against the database until this was fixed.
+#
+# Matching on the section label rather than on cell geometry is deliberate.
+# The continuation appears in at least three shapes - a one-column table, a
+# five-column row with only column 0 filled, and a five-column row with only
+# column 3 filled - so any rule based on which columns are populated would
+# have to cover all of them and would risk swallowing a rubric row.
+#
+# The label may appear mid-cell rather than at its start: the Heat Transfer
+# continuation cell begins with leftover Suggested Learning Experiences and
+# reaches "Project 1:" only after them. So this searches rather than anchors -
+# but it requires the label to begin a cell or follow sentence punctuation, and
+# requires "Project" to be followed by a colon. Without those guards, a cell
+# reading "carry out a project to..." would match, and because the
+# continuation test runs before the rubric test, a mis-hit would append a whole
+# curriculum or rubric row onto the previous chunk and lose it.
+#
+# "Assessment Rubric" is deliberately absent: it heads the rubric table that
+# follows, and is not trailing content of the row above.
+CONTINUATION_LABELS = re.compile(
+    r"(?:^|[.;:]\s+)("
+    # English designs
+    r"projects?\s*\d*\s*:"
+    r"|core\s+competenc"
+    r"|values\s*:"
+    r"|pertinent\s+and\s+contemporary"
+    r"|pcis\s*:?"
+    r"|links?\s+to\s+other"
+    r"|non[\s-]?formal"
+    r"|suggested\s+resources"
+    r"|community\s+service"
+    # Kiswahili and Indigenous Language designs, which label the same sections
+    # in Kiswahili and without a colon. Found by reading GRADE.5.KISWAHILI.pdf:
+    # the English list recovered 0 continuations from 55 Kiswahili chunks while
+    # recovering 38 from 8 Science chunks, which is what sent me looking.
+    r"|umilisi\b"                      # competencies
+    r"|maadili\b"                      # values
+    r"|masuala\s+mtambuko"             # pertinent and contemporary issues
+    r"|uhusiano\s+na\s+masomo"        # links to other learning areas
+    r"|miradi\b|mradi\b"              # projects
+    r")",
+    re.I,
+)
 
 LESSON_RE = re.compile(r"\((\d{1,3})\s*lessons?\)", re.I)
 GRADE_RE = re.compile(r"GRADE[\s._\-]*([1-9])", re.I)
@@ -286,7 +349,7 @@ NUMBERED_RE = re.compile(r"^\s*\d+\.\d")
 
 
 def parse_row(cells: list[str], grade: int, area: str, index: int):
-    """Classify one table row and return ("curriculum"|"rubric", record).
+    """Classify a row: ("curriculum"|"rubric"|"continuation", record).
 
     KICD curriculum rows run: Strand | Sub Strand | Specific Learning Outcomes |
     Suggested Learning Experiences | Key Inquiry Question(s).
@@ -298,6 +361,38 @@ def parse_row(cells: list[str], grade: int, area: str, index: int):
     report generator should use when describing a learner's tier.
     """
     cells = [clean(c) for c in cells]
+    numbered = len(cells) > 1 and (
+        NUMBERED_RE.match(cells[0]) or NUMBERED_RE.match(cells[1])
+    )
+
+    # Order matters. A numbered strand or sub-strand means this is a curriculum
+    # row and nothing else, so that is settled before the continuation test can
+    # look at it. Only a row that is NOT a curriculum row can be a
+    # continuation, and the continuation test runs before the length and
+    # column-count guards, because those guards are precisely what dropped
+    # these rows in v3 - "Project: Learners to make functional water filters
+    # using locally available materials." is a one-cell row of 89 characters.
+    if not numbered:
+        trailing = [c for c in cells if c and CONTINUATION_LABELS.search(c)]
+        if trailing:
+            return ("continuation", {"text": " ".join(trailing)})
+
+        # Unlabelled continuation. The Kiswahili designs wrap the outcomes and
+        # experiences columns across a page break with no section label at all,
+        # leaving a row whose Mada and Mada Ndogo cells are empty and whose
+        # remaining cells carry prose - one such row in GRADE.5.KISWAHILI.pdf
+        # held 591 characters of learning outcomes, dropped entirely by v3.
+        #
+        # The geometry is safe here in a way it would not be as a general rule:
+        # a real curriculum row always names a strand or a sub-strand, and a
+        # rubric row always names an indicator, so both have column 0 filled.
+        # A row with columns 0 AND 1 empty is continuation text by elimination.
+        # The length floor keeps out page furniture and stray table artefacts.
+        if len(cells) >= 4 and not cells[0] and not cells[1]:
+            rest = " ".join(c for c in cells[2:] if c)
+            if len(rest) >= 40:
+                return ("continuation", {"text": rest})
+
     if len(cells) < 4:
         return None
     body = " ".join(cells)
@@ -310,7 +405,7 @@ def parse_row(cells: list[str], grade: int, area: str, index: int):
     if SECTION_PATTERNS["outcomes"].search(strand):  # this row IS the header
         return None
 
-    if not (NUMBERED_RE.match(strand) or NUMBERED_RE.match(sub_strand)):
+    if not numbered:
         levels = (cells + ["", "", "", ""])[1:5]
         return (
             "rubric",
@@ -378,7 +473,7 @@ def extract_one(path: Path, grade: int, area: str):
 
     chunks: list[dict] = []
     rubrics: list[dict] = []
-    pages = chars = tables = 0
+    pages = chars = tables = continuations = 0
 
     page_errors = 0
 
@@ -400,6 +495,19 @@ def extract_one(path: Path, grade: int, area: str):
                         if not parsed:
                             continue
                         kind, record = parsed
+                        if kind == "continuation":
+                            # It belongs to the row above, which is the last
+                            # curriculum chunk appended: pages and rows are
+                            # read in document order, so chunks[-1] is it. A
+                            # continuation reached before any curriculum row
+                            # has nothing to attach to and is dropped. The
+                            # containment test stops a Project that already
+                            # sits inside the main row's cell being appended
+                            # a second time.
+                            if chunks and record["text"] not in chunks[-1]["text"]:
+                                chunks[-1]["text"] += " " + record["text"]
+                                continuations += 1
+                            continue
                         (chunks if kind == "curriculum" else rubrics).append(record)
             except Exception:  # noqa: BLE001 - pdfminer raises many shapes
                 page_errors += 1
@@ -426,6 +534,7 @@ def extract_one(path: Path, grade: int, area: str):
         "tables": tables,
         "chunks": len(chunks),
         "rubrics": len(rubrics),
+        "continuations": continuations,
         "page_errors": page_errors,
         "status": status,
     }

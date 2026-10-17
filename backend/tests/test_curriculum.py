@@ -86,6 +86,95 @@ def test_normalise_handles_nothing(value):
 
 
 # --------------------------------------------------------------------------
+# What gets embedded
+# --------------------------------------------------------------------------
+# The real Grade 5 Heat Transfer chunk as the v4 extractor produces it, cut
+# down in the middle so the test stays readable. The head runs to the Key
+# Inquiry Question; everything from "Project 1:" on is trailing content.
+REAL_CHUNK = (
+    "STRAND: 3.0 Force and Energy. SUB-STRAND: 3.3 Heat transfer (12 lessons). "
+    "SPECIFIC LEARNING OUTCOMES: By the end of the sub strand the learner should be "
+    "able to: a) demonstrate the modes of heat transfer in nature. "
+    "SUGGESTED LEARNING EXPERIENCES: The learner is guided to: "
+    "\u25cf carry out experiments to identify good and poor conductors of heat, "
+    "KEY INQUIRY QUESTION: 1. How is heat transferred through materials in nature? "
+    "Project 1: Learners to make oven gloves using locally available materials "
+    "Project 2: Learners to make a fireless cooker "
+    "Core competencies to be developed: Self-efficacy: The learner displays "
+    "self-confidence. Values: Social justice: The learner shares resources."
+)
+
+
+def test_the_head_stops_where_the_trailing_sections_start():
+    head = curriculum.embedding_text(REAL_CHUNK)
+    assert head.endswith("How is heat transferred through materials in nature?")
+    for gone in ("Project 1", "fireless cooker", "Core competencies", "Values:"):
+        assert gone not in head
+    for kept in ("STRAND:", "SPECIFIC LEARNING OUTCOMES:", "SUGGESTED LEARNING EXPERIENCES:"):
+        assert kept in head
+
+
+def test_the_full_text_is_what_is_stored_not_the_head():
+    """The whole point of the split.
+
+    The Projects must survive into the stored text, because that is what the
+    report prompt quotes verbatim. They must NOT reach the embedding, because
+    the trailing sections are boilerplate that blurs sub-strands.
+    """
+    chunk = to_chunk({**RECORD, "text": REAL_CHUNK}, 0)
+    assert "fireless cooker" in chunk.syllabus_text
+    assert "fireless cooker" not in curriculum.embedding_text(chunk.syllabus_text)
+
+
+def test_a_chunk_with_no_trailing_sections_is_embedded_whole():
+    plain = "STRAND: 1.0 Matter. SUB-STRAND: 1.1 Mixtures. KEY INQUIRY QUESTION: Why?"
+    assert curriculum.embedding_text(plain) == plain
+
+
+def test_the_kiswahili_labels_cut_too():
+    # Kiswahili designs label the same sections in Kiswahili. Missing these
+    # would embed 239 Kiswahili chunks on a different basis from the rest.
+    text = "MADA: 1.0 Kusikiliza. Umilisi wa Kimsingi Unaokuzwa Mawasiliano na ushirikiano."
+    head = curriculum.embedding_text(text)
+    assert head == "MADA: 1.0 Kusikiliza."
+
+
+@pytest.mark.parametrize("value", [None, "", "   "])
+def test_embedding_text_handles_nothing(value):
+    assert curriculum.embedding_text(value) == ""
+
+
+def test_a_passing_mention_of_a_label_word_does_not_truncate():
+    """"project" mid-sentence is not a section heading.
+
+    Without the colon and the sentence-boundary guard, a learning experience
+    reading "carry out a project to..." would cut the head in half and the
+    chunk would be embedded on a fragment.
+    """
+    text = (
+        "STRAND: 2.0 Matter. SUGGESTED LEARNING EXPERIENCES: learners carry out a "
+        "project to separate mixtures and record their core competencies in a table."
+    )
+    assert curriculum.embedding_text(text) == text
+
+
+def test_ingest_embeds_the_head_and_stores_the_whole_thing():
+    seen: list[str] = []
+
+    def spy(texts):
+        seen.extend(texts)
+        return [[0.0] * 384 for _ in texts]
+
+    curriculum.set_embedder(spy)
+    session = FakeSession()
+    ingest(session, [{**RECORD, "text": REAL_CHUNK}])
+
+    assert len(seen) == 1
+    assert "Project 1" not in seen[0]
+    assert "Project 1" in session.added[0].syllabus_text
+
+
+# --------------------------------------------------------------------------
 # Embedder injection
 # --------------------------------------------------------------------------
 def test_installed_embedder_is_used_and_can_be_replaced():

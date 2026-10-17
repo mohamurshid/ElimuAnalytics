@@ -149,8 +149,10 @@ class Strand(Base):
     # Technology", "Mathematics", "Kiswahili". Must match the spelling in
     # curriculum_chunk.learning_area, because curriculum retrieval filters on
     # grade AND learning area before similarity is considered, and that filter
-    # is not an optimisation: unfiltered top-1 over the whole corpus was 45.3%
-    # against 100% filtered. A strand named "Reading" exists in four language
+    # is not an optimisation: on realistic queries, unfiltered top-1 over the
+    # whole corpus was 64.3% against 100% filtered (14 queries - small, and
+    # the figure belongs with its n). A strand named "Reading" exists in four
+    # language
     # designs across six grades, so without this the pre-filter would be
     # guessing among them.
     #
@@ -474,13 +476,26 @@ class CurriculumChunk(Base):
     source_row: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # Retrieval filters on grade and learning_area BEFORE embedding similarity
     # is considered, and the filter is not an optimisation - it is the only
-    # reason retrieval works. Measured on the full 1,617-chunk corpus with 300
-    # queries: top-1 45.3%, top-5 72.3%, MRR 0.569, and a mean top1-top2 margin
-    # of 0.044, which means the leading candidates are effectively tied. With
-    # the grade and learning-area filter applied first, top-1 was 100% and the
-    # margin 0.209. The collapse is worst where sub-strand wording repeats
-    # across grades: Indigenous Language 16%, Kiswahili 23%, Mathematics 25%,
-    # English 26% unfiltered.
+    # reason retrieval works.
+    #
+    # Measured 17 October against the corpus as it is actually embedded: the
+    # curriculum head, not the whole chunk. Two tests, which must not be
+    # mixed - doing so is how this comment carried a wrong figure for a day:
+    #
+    #   * 300 heading queries over all 1,617 chunks - top-1 46.3%, top-5
+    #     72.0%, MRR 0.577, mean top1-top2 margin 0.042. The margin is the
+    #     real finding: the leading candidates are effectively tied, so
+    #     retrieval on wording alone is guessing. This test has no filtered
+    #     counterpart.
+    #   * 14 realistic queries, teacher phrasing and failed items with
+    #     curriculum vocabulary deliberately avoided - top-1 64.3% over the
+    #     whole corpus against 100% with grade and learning area applied
+    #     first, which cuts the candidates to 8. Fourteen queries is a small
+    #     sample; quote it with its n.
+    #
+    # Weakest areas on the 300-query test, where sub-strand wording repeats
+    # across the six grades: Indigenous Language 16%, Kiswahili 23%,
+    # Mathematics 25%, English 33%.
     #
     # `strand` and `sub_strand` are stored for display and citation only. They
     # are not join keys: the extractor let content lists bleed into sub_strand

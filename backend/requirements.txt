@@ -23,3 +23,8 @@ email-validator
 # so neither is loaded by importing the app or by running the test suite.
 anthropic
 sentence-transformers
+
+# Phase 5: the PDF a teacher sends home. Vera, which covers every
+# character the corpus and the model produce, ships inside this package -
+# so there is no font to vendor into a public repository.
+reportlab

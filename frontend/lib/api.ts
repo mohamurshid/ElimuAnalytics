@@ -182,6 +182,40 @@ export async function logout(): Promise<void> {
 
 export const getProfile = () => api.get<Profile>("/api/auth/me");
 
+/** The filename the server chose, so a download is not called "report.pdf". */
+function filenameFrom(header: string | null): string {
+  const match = header?.match(/filename="([^"]+)"/);
+  return match ? match[1] : "report.pdf";
+}
+
+/**
+ * Fetch a file rather than JSON.
+ *
+ * A plain `<a href>` to a download endpoint would arrive unauthenticated:
+ * the access token is held in memory, not in a cookie, which is the whole
+ * reason this client exists. So the file comes back through the same path as
+ * every other request - including the retry after a 401, because a token
+ * expiring in the second before a teacher clicks Download is ordinary.
+ */
+export async function downloadFile(
+  path: string,
+): Promise<{ blob: Blob; filename: string }> {
+  let response = await send(path, {});
+
+  if (response.status === 401) {
+    const renewed = await refresh();
+    if (renewed) response = await send(path, {});
+  }
+  if (!response.ok) {
+    throw new ApiError(response.status, await readError(response));
+  }
+
+  return {
+    blob: await response.blob(),
+    filename: filenameFrom(response.headers.get("content-disposition")),
+  };
+}
+
 /** Human-readable text for anything thrown by the client. */
 export function errorMessage(error: unknown, fallback: string): string {
   if (error instanceof ApiError) return error.message;

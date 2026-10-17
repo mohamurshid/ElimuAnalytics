@@ -64,17 +64,25 @@ list positions.
 
 from __future__ import annotations
 
+import re
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    HTTPException,
+    Query,
+    Response,
+)
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from . import grounding
+from . import export, grounding
 from . import repository as repo
 from .auth import current_teacher
 from .db import get_session, get_session_factory
@@ -667,3 +675,82 @@ def get_report(
     # generation is most likely to be noticed first.
     resolve_stale(session, [report])
     return _out(report, student.name)
+
+
+def filename_for(learner: str, generated: datetime | None) -> str:
+    """A filename a teacher can find again in a downloads folder."""
+    slug = re.sub(r"[^a-z0-9]+", "-", learner.lower()).strip("-") or "learner"
+    day = (generated or datetime.now(timezone.utc)).strftime("%Y-%m-%d")
+    return f"report-{slug}-{day}.pdf"
+
+
+@router.get(
+    "/students/{student_id}/reports/{report_id}/pdf", response_class=Response
+)
+def download_report(
+    student_id: uuid.UUID,
+    report_id: uuid.UUID,
+    session: Session = Depends(get_session),
+    teacher: Teacher = Depends(current_teacher),
+) -> Response:
+    """The document that goes home, built on demand.
+
+    Not stored. A PDF is cheap to rebuild from the row and expensive to keep
+    in step with it: a stored file would be the version that leaves the
+    building while the row it came from could be re-read, re-checked or
+    corrected. The row is the record; this is a rendering of it.
+
+    Both refusals below are 409 rather than 403, and both answer with the
+    row's own sentence. A report that is still being written and a report
+    that failed its grounding check are not the teacher doing something
+    forbidden - they are a document that does not exist yet, or must not.
+    """
+    student = repo.student_in_school(session, student_id, teacher.school_id)
+    if student is None:
+        raise HTTPException(status_code=404, detail="Learner not found")
+
+    report = session.get(Report, report_id)
+    if report is None or report.student_id != student_id:
+        raise HTTPException(status_code=404, detail="Report not found")
+
+    if report.status != READY or not report.exportable:
+        raise HTTPException(status_code=409, detail=detail_for(report))
+
+    strand = session.get(Strand, report.strand_id) if report.strand_id else None
+    strand_name, sub_strand = (
+        split_strand_name(strand.name) if strand else ("", "")
+    )
+    classroom = student.classroom
+
+    try:
+        document = export.build_pdf(
+            learner=student.name,
+            grade=classroom.grade if classroom else "",
+            school=classroom.school.name if classroom and classroom.school else "",
+            strand=strand_name,
+            sub_strand=sub_strand,
+            learning_area=strand.learning_area if strand else None,
+            generated=report.generated_at,
+            english=report.content_en,
+            kiswahili=report.content_sw,
+        )
+    except RuntimeError as exc:
+        # A missing font is a server that cannot produce a document, not a
+        # bad request. The message names the file and the folder.
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    if document.dropped:
+        # Worth a line in the log every time: it means a report went home
+        # with a character missing from a word.
+        lost = ", ".join(sorted(repr(c) for c in document.dropped))
+        print(f"pdf: dropped characters with no glyph in this font: {lost}")
+
+    return Response(
+        content=document.pdf,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="{filename_for(student.name, report.generated_at)}"'
+            )
+        },
+    )

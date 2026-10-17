@@ -34,6 +34,7 @@ from .diagnostics import router as diagnostics_router
 from .irt import ResponseMatrixError
 from .items import router as items_router
 from .models import Teacher
+from .reporting import router as reports_router
 from .security import ALLOWED_ORIGINS, secret_is_default
 
 # The Phase 1 page moved under frontend/legacy/ when the Next.js app took
@@ -56,7 +57,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     yield
 
 
-app = FastAPI(title="Elimu Analytics", version="0.6.0", lifespan=lifespan)
+app = FastAPI(title="Elimu Analytics", version="0.7.0", lifespan=lifespan)
 # Credentialed CORS: the refresh cookie only travels if the browser is told
 # to send it, and a wildcard origin is forbidden once credentials are allowed -
 # which is the specification protecting us from ourselves.
@@ -73,6 +74,7 @@ app.include_router(items_router)
 app.include_router(classrooms_router)
 app.include_router(assessments_router)
 app.include_router(diagnostics_router)
+app.include_router(reports_router)
 
 
 @app.get("/api/health")

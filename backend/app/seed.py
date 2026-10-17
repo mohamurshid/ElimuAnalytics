@@ -157,7 +157,14 @@ def seed(session: Session) -> None:
         school=school,
     )
     classroom = Classroom(grade="Grade 5", name="Blue", school=school, teacher=teacher)
-    strand = Strand(name=STRAND_NAME, level="Upper Primary")
+    # The learning area must match curriculum_chunk.learning_area exactly, or
+    # the retrieval pre-filter matches nothing and the report has no curriculum
+    # to quote. This is the spelling the KICD corpus uses.
+    strand = Strand(
+        name=STRAND_NAME,
+        level="Upper Primary",
+        learning_area="Science and Technology",
+    )
 
     items = [
         Item(

@@ -1,5 +1,5 @@
 """
-Building the prompt for a grounded diagnostic report.
+Building the prompt for a grounded diagnostic report, and calling the model.
 
 This is the prompt the Day 5 spike measured, moved out of the spike and
 parameterised. Six conditions in the 14 October run decided its shape, and the
@@ -45,12 +45,37 @@ and names, the possibility that there is no single misconception.
 
 from __future__ import annotations
 
+import os
+from collections.abc import Callable
 from dataclasses import dataclass
+from typing import Any
 
 from .irt import CONFIDENT_RESPONSES, MIN_RESPONSES, TIER_CUTS
 
 RUBRIC_LEVELS = [name for _cut, name in TIER_CUTS]
 MAX_WORDS = 200
+
+# claude-sonnet-5-5 was dropped after the 14 October run: 9.5x the cost of
+# haiku-5-5 ($0.009944 against $0.001139 for the same Kiswahili report) for an
+# equivalent grounding result - both GROUNDED with one verified citation.
+MODEL = "claude-haiku-5-5"
+EFFORT = "low"
+MAX_TOKENS = 4000
+
+# USD per million tokens (input, output), checked against the published price
+# list on 14 October 2026. Haiku 5.5 is priced in two bands - these are the
+# low band, below 100K input tokens, which is the only band a report prompt of
+# roughly 750 tokens can reach.
+PRICING = {
+    "claude-haiku-5-5": (0.10, 0.50),
+    "claude-sonnet-5-5": (2.00, 10.00),
+    "claude-opus-5-5": (4.00, 20.00),
+}
+
+# A callable with the shape of anthropic's `client.messages.create`.
+Generator = Callable[..., Any]
+
+_generator: Generator | None = None
 
 KISWAHILI_INSTRUCTION = (
     "Andika ripoti yote kwa Kiswahili sanifu kinachotumika shuleni Kenya. "
@@ -179,3 +204,110 @@ Paragraph 3: Recommend ONE concrete classroom activity, drawn directly from the
 {language_line} Maximum {MAX_WORDS} words. Do not invent curriculum content that is
 not present in the context above. If the curriculum context does not cover this
 learner's sub-strand, say so explicitly instead of writing a recommendation."""
+
+
+# ---------------------------------------------------------------------------
+# Calling the model
+# ---------------------------------------------------------------------------
+def set_generator(generator: Generator | None) -> None:
+    """Install a generator, or pass None to fall back to the real client."""
+    global _generator
+    _generator = generator
+
+
+def get_generator() -> Generator:
+    global _generator
+    if _generator is None:
+        _generator = _load_anthropic()
+    return _generator
+
+
+def _load_anthropic() -> Generator:
+    if not os.environ.get("ANTHROPIC_API_KEY"):
+        raise RuntimeError(
+            "ANTHROPIC_API_KEY is not set, so no report can be generated. "
+            'Windows: setx ANTHROPIC_API_KEY "sk-ant-..." then reopen the terminal.'
+        )
+    # Imported here, not at module scope, so that importing this module does
+    # not require the anthropic package - the same laziness db.py applies to
+    # the database driver.
+    from anthropic import Anthropic
+
+    return Anthropic().messages.create
+
+
+def report_text(response: Any) -> str:
+    """The report, and only the report.
+
+    Thinking blocks are discarded rather than concatenated. They are the
+    model's scratch work: never shown to a teacher, so not part of the
+    artefact under test, and they quote the supplied curriculum freely while
+    reasoning - so scoring them would inflate every grounding result.
+    """
+    return "\n".join(
+        block.text
+        for block in response.content
+        if getattr(block, "type", None) == "text"
+    ).strip()
+
+
+def thinking_tokens(usage: Any) -> int | None:
+    """How many of the billed output tokens were internal reasoning."""
+    details = getattr(usage, "output_tokens_details", None)
+    return getattr(details, "thinking_tokens", None) if details else None
+
+
+def price(model: str, usage: Any) -> float | None:
+    # Longest prefix wins: "claude-sonnet-5" is a prefix of
+    # "claude-sonnet-5-5", so first-match-in-dict-order would silently price
+    # the wrong model as soon as another row is added.
+    key = max((k for k in PRICING if model.startswith(k)), key=len, default=None)
+    if key is None:
+        return None
+    per_in, per_out = PRICING[key]
+    return usage.input_tokens / 1e6 * per_in + usage.output_tokens / 1e6 * per_out
+
+
+@dataclass(frozen=True)
+class Generated:
+    """One model response, with everything needed to audit it later."""
+
+    text: str
+    model: str
+    effort: str
+    stop_reason: str | None
+    truncated: bool
+    empty: bool
+    input_tokens: int
+    output_tokens: int
+    thinking_tokens: int | None
+    cost_usd: float | None
+
+
+def generate(
+    prompt: str,
+    *,
+    model: str = MODEL,
+    effort: str = EFFORT,
+    max_tokens: int = MAX_TOKENS,
+) -> Generated:
+    """Send the prompt and return the report with its accounting."""
+    response = get_generator()(
+        model=model,
+        max_tokens=max_tokens,
+        output_config={"effort": effort},
+        messages=[{"role": "user", "content": prompt}],
+    )
+    text = report_text(response)
+    return Generated(
+        text=text,
+        model=model,
+        effort=effort,
+        stop_reason=getattr(response, "stop_reason", None),
+        truncated=getattr(response, "stop_reason", None) == "max_tokens",
+        empty=not text,
+        input_tokens=response.usage.input_tokens,
+        output_tokens=response.usage.output_tokens,
+        thinking_tokens=thinking_tokens(response.usage),
+        cost_usd=price(model, response.usage),
+    )

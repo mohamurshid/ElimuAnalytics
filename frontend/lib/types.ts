@@ -216,6 +216,11 @@ export type Report = {
   content_sw: string | null;
   verdict: string | null;
   exportable: boolean;
+  /** pending | ready | failed. The row exists before its content does. */
+  status: string;
+  /** Why a failed report failed, in a sentence. Null unless status is failed. */
+  error: string | null;
+  duration_ms: number | null;
   detail: string;
   top_similarity: number | null;
   chunk_source_rows: number[] | null;

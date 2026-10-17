@@ -425,6 +425,30 @@ class Report(Base):
     thinking_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
     cost_usd: Mapped[float | None] = mapped_column(Float, nullable=True)
 
+    # --- how far it got ---
+    # pending | ready | failed. The row is created before the content exists,
+    # because generation takes about half a minute and the request that asks
+    # for it cannot be held open that long - 32 to 38 seconds, measured, was
+    # already past what the development proxy would wait, and a mobile
+    # network is not more patient than a proxy.
+    #
+    # Derived state would not do. "content_en IS NULL" cannot tell a report
+    # that is still running from one where the model returned nothing, and the
+    # second is a real outcome with a test of its own.
+    status: Mapped[str] = mapped_column(
+        String(10), nullable=False, default="pending", server_default="pending"
+    )
+    # Why a failed report failed, in a sentence a teacher can read. Without
+    # it a failure is a blank row and the only account of it is a server log
+    # that no teacher will ever see.
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Wall clock for the generation itself. Recorded because it turned out to
+    # matter as much as the cost: a report slow enough for something in front
+    # of it to give up is indistinguishable, from the browser, from a crash.
+    duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    # When the report was REQUESTED, not finished - the row now exists before
+    # its content does. Completion is this plus duration_ms.
     generated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

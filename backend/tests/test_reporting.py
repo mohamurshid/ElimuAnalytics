@@ -42,6 +42,7 @@ from app.reporting import (
     detail_for,
     fill_report,
     is_stale,
+    resolve_stale,
     split_strand_name,
     worst_verdict,
 )
@@ -720,3 +721,88 @@ def test_another_learners_report_is_not_found(client, head, heat, session):  # n
 def test_an_unknown_report_is_not_found(client, head, heat, session):  # noqa: F811
     r = fetch(client, chebet(session), uuid.uuid4(), head)
     assert r.status_code == 404
+
+
+# --------------------------------------------------------------------------
+# Abandoned generations
+#
+# A pending row whose worker died stays pending for ever unless something
+# writes the outcome down, and a page polling it would report that the work
+# was continuing on the server while nothing was running at all.
+# --------------------------------------------------------------------------
+def abandoned(session, learner, strand):  # noqa: F811
+    """A pending row left behind by a worker that never came back."""
+    report = create_pending(session, learner, strand)
+    report.generated_at = datetime.now(timezone.utc) - timedelta(hours=2)
+    session.commit()
+    return report
+
+
+def test_reading_the_list_marks_an_abandoned_generation_failed(
+    client, head, heat, session  # noqa: F811
+):
+    learner = chebet(session)
+    left = abandoned(session, learner, heat)
+
+    r = client.get(
+        f"/api/students/{learner.student_id}/reports", headers=auth(head)
+    )
+
+    body = next(x for x in r.json() if x["report_id"] == str(left.report_id))
+    assert body["status"] == FAILED
+    assert "did not complete" in body["error"]
+
+
+def test_reading_one_report_marks_it_failed_too(client, head, heat, session):  # noqa: F811
+    """The endpoint a waiting page polls, so the first to notice."""
+    learner = chebet(session)
+    left = abandoned(session, learner, heat)
+
+    body = fetch(client, learner, left.report_id, head).json()
+
+    assert body["status"] == FAILED
+    assert body["detail"] == body["error"]
+
+
+def test_the_outcome_is_written_down_not_just_reported(
+    client, head, heat, session  # noqa: F811
+):
+    """Reported but not stored, it would be recomputed on every read for ever."""
+    learner = chebet(session)
+    left = abandoned(session, learner, heat)
+
+    fetch(client, learner, left.report_id, head)
+    session.expire_all()
+
+    assert session.get(Report, left.report_id).status == FAILED
+
+
+def test_a_live_generation_is_left_alone_by_a_read(client, head, heat, session):  # noqa: F811
+    """26 seconds in is not abandoned, and failing it would be a lie."""
+    learner = chebet(session)
+    live = create_pending(session, learner, heat)
+
+    body = fetch(client, learner, live.report_id, head).json()
+
+    assert body["status"] == PENDING
+    assert body["error"] is None
+
+
+def test_nothing_is_written_when_nothing_is_stale():
+    """The sweep runs on every read, so it must not commit for its own sake.
+
+    Asserting the row is unchanged would pass even if the sweep committed on
+    every read of every report. Counting the commits is the actual claim.
+    """
+
+    class CountingSession:
+        commits = 0
+
+        def commit(self):
+            CountingSession.commits += 1
+
+    live = Report(status=PENDING, generated_at=datetime.now(timezone.utc))
+    resolve_stale(CountingSession(), [live])
+
+    assert CountingSession.commits == 0
+    assert live.status == PENDING

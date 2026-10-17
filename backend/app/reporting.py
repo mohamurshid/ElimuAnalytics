@@ -202,6 +202,37 @@ def is_stale(report: Report) -> bool:
     return datetime.now(timezone.utc) - _aware(report.generated_at) > STALE_AFTER
 
 
+ABANDONED = (
+    "Generation did not complete: the server was interrupted while this "
+    "report was being written. Nothing was saved. Asking for it again is the "
+    "right next step."
+)
+
+
+def resolve_stale(session: Session, reports: list[Report]) -> None:
+    """Write down the outcome of an abandoned generation, when it is read.
+
+    A pending row whose worker died would otherwise stay pending for ever.
+    The page would poll it and then tell the teacher the work was continuing
+    on the server while nothing at all was running - which is the same lie,
+    in a politer voice, as the spinner this whole change set set out to
+    remove. Writing the failure down on read is what makes `pending` mean
+    `running`.
+
+    Deliberately not a background sweep. A reader is already here, the write
+    is two columns, and a scheduled job would be a second thing to deploy and
+    keep alive for a case that only matters when something has already
+    crashed.
+    """
+    abandoned = [report for report in reports if is_stale(report)]
+    if not abandoned:
+        return
+    for report in abandoned:
+        report.status = FAILED
+        report.error = ABANDONED
+    session.commit()
+
+
 def pending_report(
     session: Session, student_id: uuid.UUID, strand_id: uuid.UUID
 ) -> Report | None:
@@ -603,6 +634,7 @@ def list_reports(
         .where(Report.student_id == student_id)
         .order_by(Report.generated_at.desc())
     ).all()
+    resolve_stale(session, list(reports))
     return [_out(r, student.name) for r in reports]
 
 
@@ -631,4 +663,7 @@ def get_report(
     if report is None or report.student_id != student_id:
         raise HTTPException(status_code=404, detail="Report not found")
 
+    # This is the endpoint a waiting page polls, so it is where an abandoned
+    # generation is most likely to be noticed first.
+    resolve_stale(session, [report])
     return _out(report, student.name)

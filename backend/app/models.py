@@ -145,6 +145,19 @@ class Strand(Base):
     strand_id: Mapped[uuid.UUID] = _pk()
     name: Mapped[str] = mapped_column(String(300), nullable=False)
     level: Mapped[str] = mapped_column(String(50), nullable=False)  # Lower / Upper Primary
+    # Which KICD learning area this strand belongs to - "Science and
+    # Technology", "Mathematics", "Kiswahili". Must match the spelling in
+    # curriculum_chunk.learning_area, because curriculum retrieval filters on
+    # grade AND learning area before similarity is considered, and that filter
+    # is not an optimisation: unfiltered top-1 over the whole corpus was 45.3%
+    # against 100% filtered. A strand named "Reading" exists in four language
+    # designs across six grades, so without this the pre-filter would be
+    # guessing among them.
+    #
+    # Nullable because a strand can exist before anyone has said where it
+    # belongs. Report generation then refuses with a clear message rather than
+    # retrieving against a guess.
+    learning_area: Mapped[str | None] = mapped_column(String(80), nullable=True)
 
     items: Mapped[list[Item]] = relationship(back_populates="strand")
 

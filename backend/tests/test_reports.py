@@ -12,15 +12,26 @@ No API and no database: build_prompt is a pure function of its arguments.
 from __future__ import annotations
 
 from dataclasses import FrozenInstanceError
+from types import SimpleNamespace
 
 import pytest
 from app.reports import (
+    EFFORT,
+    MAX_TOKENS,
     MAX_WORDS,
+    MODEL,
+    PRICING,
     RUBRIC_LEVELS,
     STRICT_CITATION,
+    Generated,
     LearnerFacts,
     build_prompt,
     failure_block,
+    generate,
+    price,
+    report_text,
+    set_generator,
+    thinking_tokens,
 )
 
 CHUNK = (
@@ -235,3 +246,169 @@ def test_the_three_paragraph_structure_is_requested():
     prompt = build_prompt(CHEBET, [CHUNK])
     for paragraph in ("Paragraph 1:", "Paragraph 2:", "Paragraph 3:"):
         assert paragraph in prompt
+
+
+# --------------------------------------------------------------------------
+# Calling the model. The generator is always a stub; see reports.py.
+# --------------------------------------------------------------------------
+def block(kind: str, **fields):
+    return SimpleNamespace(type=kind, **fields)
+
+
+def fake_response(
+    *,
+    text: str = "A grounded report.",
+    thinking: str | None = "scratch work quoting oven gloves verbatim",
+    stop_reason: str = "end_turn",
+    input_tokens: int = 1000,
+    output_tokens: int = 500,
+    thinking_token_count: int | None = 300,
+):
+    content = []
+    if thinking is not None:
+        content.append(block("thinking", thinking=thinking))
+    if text:
+        content.append(block("text", text=text))
+    details = (
+        SimpleNamespace(thinking_tokens=thinking_token_count)
+        if thinking_token_count is not None
+        else None
+    )
+    return SimpleNamespace(
+        content=content,
+        stop_reason=stop_reason,
+        usage=SimpleNamespace(
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            output_tokens_details=details,
+        ),
+    )
+
+
+@pytest.fixture(autouse=True)
+def _no_live_api():
+    """Nothing in this module may reach the network, even by accident."""
+    set_generator(lambda **kwargs: fake_response())
+    yield
+    set_generator(None)
+
+
+def test_the_report_is_the_text_block_not_the_first_block():
+    """What crashed the first run of the refreshed spike.
+
+    Adaptive thinking cannot be disabled on these models, so content[0] is
+    often a ThinkingBlock, which has no `.text` at all.
+    """
+    assert report_text(fake_response(text="THE REPORT")) == "THE REPORT"
+
+
+def test_thinking_is_discarded_rather_than_concatenated():
+    """Scratch work quotes the context freely while reasoning.
+
+    Concatenating it would hand the grounding check a document full of
+    verified citations the report itself never made - the same class of
+    measurement error the v2 spike made with generic vocabulary.
+    """
+    text = report_text(fake_response(text="THE REPORT"))
+    assert "oven gloves" not in text
+
+
+def test_several_text_blocks_are_joined():
+    response = fake_response()
+    response.content = [block("text", text="A"), block("text", text="B")]
+    assert report_text(response) == "A\nB"
+
+
+def test_a_response_of_pure_thinking_yields_nothing():
+    assert report_text(fake_response(text="", thinking="only thinking")) == ""
+
+
+def test_the_wire_call_carries_the_settings_the_spike_settled_on():
+    seen: dict = {}
+
+    def spy(**kwargs):
+        seen.update(kwargs)
+        return fake_response()
+
+    set_generator(spy)
+    generate("PROMPT")
+
+    assert seen["model"] == MODEL == "claude-haiku-5-5"
+    assert seen["max_tokens"] == MAX_TOKENS == 4000
+    assert seen["output_config"] == {"effort": EFFORT} == {"effort": "low"}
+    assert seen["messages"] == [{"role": "user", "content": "PROMPT"}]
+
+
+def test_generation_records_everything_needed_to_audit_it():
+    result = generate("PROMPT")
+    assert isinstance(result, Generated)
+    assert result.text == "A grounded report."
+    assert (result.model, result.effort) == (MODEL, EFFORT)
+    assert result.input_tokens == 1000
+    assert result.output_tokens == 500
+    assert result.thinking_tokens == 300
+    assert result.truncated is False
+    assert result.empty is False
+
+
+def test_truncation_is_flagged_rather_than_raised():
+    """The policy is save, flag, refuse export - so the caller needs a flag.
+
+    Raising would lose the evidence that a truncated generation happened at
+    all, which is the thing worth knowing.
+    """
+    set_generator(lambda **kw: fake_response(stop_reason="max_tokens"))
+    result = generate("PROMPT")
+    assert result.truncated is True
+    assert result.stop_reason == "max_tokens"
+
+
+def test_an_empty_report_is_flagged_not_raised():
+    set_generator(lambda **kw: fake_response(text="", thinking="all thinking"))
+    result = generate("PROMPT")
+    assert result.empty is True
+    assert result.text == ""
+
+
+def test_thinking_tokens_are_optional_and_never_crash():
+    assert thinking_tokens(SimpleNamespace()) is None
+    assert thinking_tokens(SimpleNamespace(output_tokens_details=None)) is None
+    assert (
+        thinking_tokens(SimpleNamespace(output_tokens_details=SimpleNamespace(thinking_tokens=7)))
+        == 7
+    )
+
+
+def test_cost_is_computed_from_the_published_rates():
+    result = generate("PROMPT")
+    # 1000 in at $0.10/MTok + 500 out at $0.50/MTok
+    assert result.cost_usd == pytest.approx(1000 / 1e6 * 0.10 + 500 / 1e6 * 0.50)
+
+
+def test_pricing_takes_the_longest_matching_prefix():
+    """"claude-sonnet-5" is a prefix of "claude-sonnet-5-5".
+
+    First-match-in-dict-order priced the wrong model in the spike, silently.
+    """
+    usage = SimpleNamespace(input_tokens=1_000_000, output_tokens=0)
+    assert price("claude-sonnet-5-5", usage) == pytest.approx(2.00)
+
+    PRICING["claude-sonnet-5"] = (99.0, 99.0)
+    try:
+        assert price("claude-sonnet-5-5", usage) == pytest.approx(2.00)
+    finally:
+        del PRICING["claude-sonnet-5"]
+
+
+def test_an_unpriced_model_reports_no_cost_rather_than_zero():
+    usage = SimpleNamespace(input_tokens=1000, output_tokens=500)
+    assert price("some-other-model", usage) is None
+
+
+def test_clearing_the_generator_does_not_load_the_client():
+    # The fallback is lazy; set_generator(None) must not import anthropic or
+    # require a key.
+    set_generator(None)
+    from app import reports
+
+    assert reports._generator is None

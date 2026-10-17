@@ -21,15 +21,13 @@ It refuses more often than it succeeds, and each refusal is deliberate.
   * No curriculum for that grade and learning area -> 409. Nothing to ground
     against. Grade 2 Kiswahili, for instance, extracted zero chunks because
     pdfminer cannot read that PDF's encryption dictionary.
-  * No API key on the server -> 503. The model client's own sentence says what
-    to set and how; it is passed through unchanged.
-  * The model provider refusing or unreachable -> 502. Nothing is saved.
 
-Those last two used to surface as a bare 500. FastAPI replaces any exception
-that is not an `HTTPException` with the string "Internal Server Error", so the
-one sentence that said what to fix never left the server, and reading a
-uvicorn log was the only way to learn that a key was missing. Anything this
-endpoint can explain, it now explains in the response.
+A failure in generation itself - no API key, a provider that refuses - is NOT
+one of these. Those were 503 and 502 while generation happened inside the
+request; the row now outlives the request, so they are recorded on it as a
+status and a sentence instead. `failure_text` is where that distinction
+lives now, and it is the same distinction: what to fix, in words, rather
+than FastAPI's generic "Internal Server Error".
 
 SAVE, FLAG, REFUSE EXPORT
 -------------------------
@@ -78,7 +76,7 @@ from sqlalchemy.orm import Session
 from . import grounding
 from . import repository as repo
 from .auth import current_teacher
-from .db import get_session
+from .db import get_session, get_session_factory
 from .irt import ResponseMatrixError
 from .models import Report, Strand, Student, Teacher
 from .reports import LearnerFacts, build_prompt, generate
@@ -93,6 +91,13 @@ LANGUAGES = (ENGLISH, KISWAHILI)
 # Worst first. Used to reduce two per-language verdicts to one.
 VERDICT_RANK = {"FABRICATED": 0, "WEAK": 1, "GROUNDED": 2}
 
+# A report's life. It is handed to the teacher as `pending` before a model has
+# been called, because generation takes about half a minute and no request
+# should be held open that long.
+PENDING = "pending"
+READY = "ready"
+FAILED = "failed"
+
 
 class ReportOut(BaseModel):
     report_id: str
@@ -103,6 +108,9 @@ class ReportOut(BaseModel):
     content_sw: str | None
     verdict: str | None
     exportable: bool
+    status: str
+    error: str | None
+    duration_ms: int | None
     detail: str
     top_similarity: float | None
     chunk_source_rows: list[int] | None
@@ -170,7 +178,49 @@ def provider_detail(exc: BaseException) -> str:
     )
 
 
-def _out(report: Report, learner: str, detail: str) -> ReportOut:
+def detail_for(report: Report) -> str:
+    """The sentence shown to the teacher, derived from the stored row.
+
+    Derived rather than stored because one row now carries three outcomes in
+    turn: pending, then ready or failed. Deriving also repairs a smaller
+    fault - the list endpoint passed an empty detail, so a report that read
+    clearly when it was generated lost its explanation on the next reload.
+    """
+    if report.status == PENDING:
+        return (
+            "Both languages are being generated. This takes about half a "
+            "minute, and the page updates itself when it is done."
+        )
+    if report.status == FAILED:
+        return report.error or "The report could not be generated."
+
+    checks = report.grounding or {}
+    # Read in LANGUAGES order rather than the JSON's, so the sentence cannot
+    # change because a column type stopped preserving insertion order.
+    unusable = [
+        language
+        for language in LANGUAGES
+        if (checks.get(language) or {}).get("truncated")
+        or (checks.get(language) or {}).get("empty")
+    ]
+    if unusable:
+        return (
+            f"The model returned a truncated or empty report in "
+            f"{', '.join(unusable)}. It is saved for the record but cannot be "
+            f"exported. Generating it again is the right next step."
+        )
+    if report.exportable:
+        return (
+            "Every citation in this report was verified against the retrieved "
+            "KICD curriculum. It can be exported."
+        )
+    return (
+        f"This report did not pass the grounding check ({report.verdict}). It "
+        f"is saved and visible, but cannot be exported or sent home."
+    )
+
+
+def _out(report: Report, learner: str) -> ReportOut:
     return ReportOut(
         report_id=str(report.report_id),
         student_id=str(report.student_id),
@@ -180,7 +230,10 @@ def _out(report: Report, learner: str, detail: str) -> ReportOut:
         content_sw=report.content_sw,
         verdict=report.verdict,
         exportable=report.exportable,
-        detail=detail,
+        status=report.status,
+        error=report.error,
+        duration_ms=report.duration_ms,
+        detail=detail_for(report),
         top_similarity=report.top_similarity,
         chunk_source_rows=report.chunk_source_rows,
         model=report.model,
@@ -194,22 +247,116 @@ def _out(report: Report, learner: str, detail: str) -> ReportOut:
     )
 
 
-def compose_report(
+def worker_session() -> Session:
+    """A session of the background worker's own.
+
+    It cannot use the request's: FastAPI closes that before a background task
+    runs. Indirected through a function for the same reason the embedder and
+    the model client are - the test suite runs on SQLite and has to be able
+    to hand the worker the session the test is already holding.
+    """
+    return get_session_factory()()
+
+
+def create_pending(session: Session, student: Student, strand: Strand) -> Report:
+    """The row handed to the teacher before any model has been called.
+
+    Committing first is what makes a timeout survivable. Until this existed, a
+    generation that outlived the connection in front of it still finished,
+    still cost money, and still wrote a row - while the teacher was shown a
+    failure and clicked again, paying twice for a report they already had.
+    """
+    report = Report(
+        student_id=student.student_id,
+        strand_id=strand.strand_id,
+        status=PENDING,
+    )
+    session.add(report)
+    session.commit()
+    return report
+
+
+def failure_text(exc: BaseException) -> str:
+    """What the teacher is told when generation fails.
+
+    These were HTTP statuses while generation happened inside the request:
+    503 for a server with no API key, 502 for a provider that refused.
+    Asynchronously there is no response left to carry a status, so the
+    distinction survives as the sentence stored on the row - which was always
+    the part worth having. The provider's own message is still withheld; see
+    provider_detail.
+    """
+    if isinstance(exc, RuntimeError):
+        return str(exc)
+    if isinstance(exc, provider_errors()):
+        return provider_detail(exc)
+    return (
+        f"The report could not be generated: an unexpected "
+        f"{type(exc).__name__} in the server. This is a fault to fix rather "
+        f"than anything to do with this learner, and the server log has the "
+        f"traceback."
+    )
+
+
+def fill_report(
+    report_id: uuid.UUID,
+    retrieved: list,
+    *,
+    session: Session | None = None,
+) -> None:
+    """Generate, ground and store. Records failure on the row; never raises.
+
+    By the time this runs there may be no client listening, and an exception
+    in a background task has nowhere to go: it would leave the row pending
+    for ever and the teacher watching a spinner that never resolves. Here a
+    failure is an outcome, written down.
+
+    A row that is no longer pending is left alone. Filling it again would
+    spend money to overwrite a finished report.
+    """
+    own = session is None
+    session = session or worker_session()
+    try:
+        report = session.get(Report, report_id)
+        if report is None or report.status != PENDING:
+            return
+        try:
+            _generate_into(session, report, retrieved)
+        except Exception as exc:
+            session.rollback()
+            report = session.get(Report, report_id)
+            if report is not None:
+                report.status = FAILED
+                report.error = failure_text(exc)
+                session.commit()
+            print(f"report failed: {type(exc).__name__}: {exc}")
+    finally:
+        if own:
+            session.close()
+
+
+def _generate_into(
     session: Session,
-    student: Student,
-    strand: Strand,
-    grade: str,
+    report: Report,
     retrieved: list,
     *,
     languages: tuple[str, ...] = LANGUAGES,
-) -> tuple[Report, str]:
-    """Generate, ground and persist. Returns the row and a one-line summary.
+) -> None:
+    """The work itself, written onto a row that already exists.
 
-    Separated from the endpoint so it can be tested without a
-    `curriculum_chunk` table: pgvector has no SQLite equivalent, so the
-    retrieval query cannot run in the test suite, but everything downstream of
-    it can and does.
+    Reads the learner and strand back from the row rather than taking them as
+    arguments, because the caller that matters runs after the request has
+    gone and cannot pass ORM objects across a closed session.
     """
+    student = session.get(Student, report.student_id)
+    strand = session.get(Strand, report.strand_id)
+    if student is None or strand is None:
+        raise ValueError("The learner or strand was removed before the report ran.")
+
+    grade = student.classroom.grade if student.classroom else None
+    if not grade:
+        raise ValueError("The learner is not in a classroom, so the grade is unknown.")
+
     diagnosis = repo.diagnose_student(session, strand.strand_id, student.student_id)
     pattern = repo.learner_failure_pattern(
         session, student.student_id, strand.strand_id
@@ -242,9 +389,9 @@ def compose_report(
 
     # Submitted together, read back in a fixed order. `future.result()`
     # re-raises whatever the call raised, so a missing API key or a provider
-    # error still reaches the endpoint's handlers unchanged - the cost is
-    # that a failure in one language now wastes the other's spend, because
-    # both were already in flight.
+    # error still reaches fill_report's handler unchanged - the cost is that a
+    # failure in one language now wastes the other's spend, because both were
+    # already in flight.
     with ThreadPoolExecutor(max_workers=len(languages)) as pool:
         pending = {
             language: pool.submit(
@@ -279,57 +426,36 @@ def compose_report(
         totals["thinking"] += result.thinking_tokens or 0
         totals["cost"] += result.cost_usd or 0.0
 
-    verdict = worst_verdict([c["verdict"] for c in checks.values()])
-    exportable = bool(checks) and not unusable and all(
+    elapsed = time.perf_counter() - started
+
+    report.content_en = content.get(ENGLISH)
+    report.content_sw = content.get(KISWAHILI)
+    report.verdict = worst_verdict([c["verdict"] for c in checks.values()])
+    report.exportable = bool(checks) and not unusable and all(
         c["exportable"] for c in checks.values()
     )
-
-    report = Report(
-        student_id=student.student_id,
-        strand_id=strand.strand_id,
-        content_en=content.get(ENGLISH),
-        content_sw=content.get(KISWAHILI),
-        verdict=verdict,
-        exportable=exportable,
-        grounding=checks,
-        top_similarity=retrieved[0].similarity if retrieved else None,
-        chunk_source_rows=[r.source_row for r in retrieved if r.source_row is not None],
-        model=model,
-        effort=effort,
-        input_tokens=totals["input"],
-        output_tokens=totals["output"],
-        thinking_tokens=totals["thinking"] or None,
-        cost_usd=round(totals["cost"], 8),
-    )
-    session.add(report)
+    report.grounding = checks
+    report.top_similarity = retrieved[0].similarity if retrieved else None
+    report.chunk_source_rows = [
+        r.source_row for r in retrieved if r.source_row is not None
+    ]
+    report.model = model
+    report.effort = effort
+    report.input_tokens = totals["input"]
+    report.output_tokens = totals["output"]
+    report.thinking_tokens = totals["thinking"] or None
+    report.cost_usd = round(totals["cost"], 8)
+    report.duration_ms = int(elapsed * 1000)
+    report.error = None
+    report.status = READY
     session.commit()
 
-    # Printed because the wall clock turned out to matter as much as the
-    # money: a generation slow enough for the proxy in front of it to give up
-    # is indistinguishable, from the browser, from a server that crashed.
+    # Printed as well as stored: the wall clock turned out to matter as much
+    # as the money, and a tail of this log is how we found that out.
     print(
-        f"report: {time.perf_counter() - started:.1f}s, "
-        f"{len(languages)} languages, {totals['output']} output tokens, "
-        f"${round(totals['cost'], 4)}"
+        f"report: {elapsed:.1f}s, {len(languages)} languages, "
+        f"{totals['output']} output tokens, ${round(totals['cost'], 4)}"
     )
-
-    if unusable:
-        detail = (
-            f"The model returned a truncated or empty report in "
-            f"{', '.join(unusable)}. It is saved for the record but cannot be "
-            f"exported. Generating it again is the right next step."
-        )
-    elif exportable:
-        detail = (
-            "Every citation in this report was verified against the retrieved "
-            "KICD curriculum. It can be exported."
-        )
-    else:
-        detail = (
-            f"This report did not pass the grounding check ({verdict}). It is "
-            f"saved and visible, but cannot be exported or sent home."
-        )
-    return report, detail
 
 
 @router.post(
@@ -393,17 +519,15 @@ def create_report(
             ),
         )
 
-    try:
-        report, detail = compose_report(session, student, strand, grade, retrieved)
-    except RuntimeError as exc:
-        # A misconfigured server, which in practice means no API key. The
-        # client raises a sentence written for whoever can fix it, and that
-        # sentence is the whole value of the error - so it is passed through
-        # rather than replaced with something tidier.
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
-    except provider_errors() as exc:
-        raise HTTPException(status_code=502, detail=provider_detail(exc)) from exc
-    return _out(report, student.name, detail)
+    report = create_pending(session, student, strand)
+    # Still synchronous, and still answering 201. The pending row, the worker
+    # and the derived detail are all new, and running them inline means the
+    # tests written against the old code prove the new internals produce the
+    # same report. Answering 202 and handing the work to a background task is
+    # the next step, deliberately not mixed into this one.
+    fill_report(report.report_id, retrieved, session=session)
+    session.refresh(report)
+    return _out(report, student.name)
 
 
 @router.get("/students/{student_id}/reports", response_model=list[ReportOut])
@@ -421,4 +545,4 @@ def list_reports(
         .where(Report.student_id == student_id)
         .order_by(Report.generated_at.desc())
     ).all()
-    return [_out(r, student.name, "") for r in reports]
+    return [_out(r, student.name) for r in reports]

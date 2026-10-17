@@ -26,7 +26,15 @@ from app.db import get_session
 from app.irt import ResponseMatrixError
 from app.main import app
 from app.models import Report, School, Student, Teacher
-from app.reporting import split_strand_name, worst_verdict
+from app.reporting import (
+    FAILED,
+    PENDING,
+    READY,
+    detail_for,
+    fill_report,
+    split_strand_name,
+    worst_verdict,
+)
 from app.reports import set_generator
 from app.retrieval import Retrieved
 from app.security import ROLE_SCHOOL_ADMIN, create_token, hash_password
@@ -375,13 +383,15 @@ def test_a_strand_name_with_no_separator_fills_both_fields():
         "3.3 Heat Transfer",
     )
 # --------------------------------------------------------------------------
-# Failures that are nobody's fault, and must not read as a crash
+# Failures that are nobody's fault
 #
-# FastAPI replaces any exception that is not an HTTPException with the string
-# "Internal Server Error". A missing API key and an unreachable provider both
-# took that path, so the browser showed four words that named neither the
-# cause nor the request, and the sentence that said what to fix stayed in the
-# uvicorn log. These tests pin each one to a status and a readable message.
+# These were HTTP statuses - 503 for a server with no API key, 502 for a
+# provider that refused - while generation happened inside the request. The
+# row now outlives the request, so a failure is recorded on it instead: the
+# teacher still gets the sentence, and a report that failed is visible rather
+# than silently absent. What must never happen is the row staying `pending`,
+# because a spinner that never resolves is the one outcome a teacher cannot
+# interpret.
 # --------------------------------------------------------------------------
 def raising(exc: BaseException):
     """A generator that fails the way the live client fails."""
@@ -395,10 +405,10 @@ def raising(exc: BaseException):
 def connection_error():
     """A real `anthropic` exception instance, not a stand-in.
 
-    Constructed from the installed class because the endpoint catches the
-    provider's own hierarchy: a home-made exception would pass this test while
-    the real class went uncaught in production, which is the exact failure
-    these tests exist to prevent.
+    Constructed from the installed class because the code catches the
+    provider's own hierarchy: a home-made exception would pass this test
+    while the real class went uncaught in production, which is the exact
+    failure these tests exist to prevent.
     """
     import httpx
     from anthropic import APIConnectionError
@@ -413,35 +423,60 @@ def test_a_missing_api_key_is_explained_rather_than_crashing(
     client, head, heat, session  # noqa: F811
 ):
     set_generator(
-        raising(RuntimeError("ANTHROPIC_API_KEY is not set, so no report can be generated."))
+        raising(
+            RuntimeError("ANTHROPIC_API_KEY is not set, so no report can be generated.")
+        )
     )
-    r = post(client, chebet(session), heat, head)
-    assert r.status_code == 503
-    # The client's own sentence, passed through: it names the variable to set.
-    assert "ANTHROPIC_API_KEY is not set" in r.json()["detail"]
+    body = post(client, chebet(session), heat, head).json()
+
+    assert body["status"] == FAILED
+    # The client's own sentence, kept: it names the variable to set.
+    assert "ANTHROPIC_API_KEY is not set" in body["error"]
+    assert body["detail"] == body["error"]
 
 
-def test_a_provider_failure_is_a_bad_gateway(client, head, heat, session):  # noqa: F811
+def test_a_provider_failure_is_recorded_on_the_row(client, head, heat, session):  # noqa: F811
     set_generator(raising(connection_error()))
-    r = post(client, chebet(session), heat, head)
-    assert r.status_code == 502
-    assert "APIConnectionError" in r.json()["detail"]
+    body = post(client, chebet(session), heat, head).json()
+
+    assert body["status"] == FAILED
+    assert "APIConnectionError" in body["error"]
 
 
 def test_the_providers_own_message_is_not_shown_in_the_browser(
     client, head, heat, session  # noqa: F811
 ):
     set_generator(raising(connection_error()))
-    detail = post(client, chebet(session), heat, head).json()["detail"]
-    assert "workspace-id-and-billing-hint" not in detail
+    body = post(client, chebet(session), heat, head).json()
+
+    assert "workspace-id-and-billing-hint" not in body["error"]
+    assert "workspace-id-and-billing-hint" not in body["detail"]
 
 
-def test_a_failed_generation_saves_nothing(client, head, heat, session):  # noqa: F811
-    before = len(session.scalars(select(Report)).all())
+def test_a_failed_generation_is_kept_rather_than_lost(client, head, heat, session):  # noqa: F811
+    """The orphan is the point: a teacher must be able to see what happened.
+
+    While generation lived inside the request a failure saved nothing, which
+    was defensible then. Now the row is created first, so discarding it would
+    mean deleting the only record that the attempt was made and paid for.
+    """
     set_generator(raising(connection_error()))
-    assert post(client, chebet(session), heat, head).status_code == 502
+    post(client, chebet(session), heat, head)
     session.expire_all()
-    assert len(session.scalars(select(Report)).all()) == before
+
+    report = session.scalar(select(Report))
+    assert report.status == FAILED
+    assert report.content_en is None
+    assert report.exportable is False
+
+
+def test_a_failure_never_leaves_the_row_pending(client, head, heat, session):  # noqa: F811
+    """A spinner that never resolves is the one outcome a teacher cannot read."""
+    set_generator(raising(RuntimeError("boom")))
+    post(client, chebet(session), heat, head)
+    session.expire_all()
+
+    assert session.scalar(select(Report)).status != PENDING
 
 
 def test_a_violated_matrix_rule_is_a_server_bug_not_a_conflict(
@@ -505,3 +540,47 @@ def test_completion_order_does_not_decide_which_language_is_stored(
 
     assert body["content_en"] == "ENGLISH BODY"
     assert body["content_sw"] == "KISWAHILI BODY"
+
+
+# --------------------------------------------------------------------------
+# The row's three states
+# --------------------------------------------------------------------------
+def test_a_finished_report_is_ready_and_timed(client, head, heat, session):  # noqa: F811
+    body = post(client, chebet(session), heat, head).json()
+
+    assert body["status"] == READY
+    assert body["duration_ms"] is not None and body["duration_ms"] >= 0
+    assert body["error"] is None
+
+
+def test_a_report_that_is_already_finished_is_not_generated_again(
+    client, head, heat, session  # noqa: F811
+):
+    """Filling a finished row would spend money to overwrite a good report."""
+    calls: list[str] = []
+
+    def spy(**kwargs):
+        calls.append(kwargs["messages"][0]["content"])
+        return response(GROUNDED_REPORT)
+
+    set_generator(spy)
+    body = post(client, chebet(session), heat, head).json()
+    assert len(calls) == 2
+
+    fill_report(uuid.UUID(body["report_id"]), [chunk()], session=session)
+
+    assert len(calls) == 2
+
+
+def test_the_pending_sentence_says_what_is_happening():
+    """Derived, not stored: one row carries all three outcomes in turn."""
+    assert "being generated" in detail_for(Report(status=PENDING))
+
+
+def test_the_failed_sentence_is_the_stored_error():
+    report = Report(status=FAILED, error="The provider did not answer.")
+    assert detail_for(report) == "The provider did not answer."
+
+
+def test_a_failed_row_with_no_error_still_says_something():
+    assert detail_for(Report(status=FAILED)) != ""

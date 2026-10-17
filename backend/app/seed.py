@@ -94,6 +94,45 @@ def simulated_responses() -> np.ndarray:
     return responses
 
 
+def simulated_choices(matrix: np.ndarray) -> np.ndarray:
+    """Which option each learner picked, given the correctness matrix.
+
+    A 2-PL model has no concept of WHICH wrong answer a learner chose - it
+    yields a probability of being correct and nothing more. So a choice has to
+    be invented, and the honest way to invent one is uniformly at random among
+    the wrong options.
+
+    That is a deliberate decision, not a shortcut. Picking distractors to form
+    a coherent misconception would make the demonstration reliably impressive
+    and would mean the system was being shown detecting a pattern that had been
+    planted for it to find. With random distractors, a report on seeded data
+    correctly reports no single misconception - which demonstrates something
+    more useful: that the system declines to invent a pattern when there is
+    none. Real patterns come from real learners answering through the quiz,
+    where `selected_option` records an actual choice.
+
+    A SEPARATE generator, seeded independently, because `simulated_responses`
+    is pinned by the regression that holds Chebet at theta = -1.741 and must
+    produce the identical matrix it always has. Drawing choices from the same
+    stream would advance it and silently change every ability estimate in the
+    demonstration classroom.
+
+    Returns an array shaped like `matrix`; entries for unanswered items are
+    left at INVALID_RESPONSE.
+    """
+    rng = np.random.default_rng(20261017)
+    n_items, n_students = matrix.shape
+    choices = np.full((n_items, n_students), INVALID_RESPONSE, dtype=int)
+
+    for r, (_question, options, key) in enumerate(QUESTION_BANK):
+        wrong = [i for i in range(len(options)) if i != key]
+        for c in range(n_students):
+            if matrix[r, c] == INVALID_RESPONSE:
+                continue
+            choices[r, c] = key if matrix[r, c] else wrong[rng.integers(len(wrong))]
+    return choices
+
+
 def seed(session: Session) -> None:
     if session.query(School).count():
         print("Database already seeded; nothing to do.")
@@ -138,11 +177,17 @@ def seed(session: Session) -> None:
     session.flush()  # assign primary keys before responses reference them
 
     matrix = simulated_responses()
+    # Both fields are stored, which mirrors what the quiz path produces: the
+    # device sends the option, the server computes correctness from the key and
+    # writes both. Seeding only one of them would leave the demonstration
+    # classroom unable to exercise the failure-pattern query.
+    choices = simulated_choices(matrix)
     responses = [
         Response(
             student_id=students[c].student_id,
             item_id=items[r].item_id,
             correctness=bool(matrix[r, c]),
+            selected_option=int(choices[r, c]),
         )
         for r in range(matrix.shape[0])
         for c in range(matrix.shape[1])

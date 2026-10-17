@@ -30,8 +30,9 @@ from app.repository import (
     build_response_matrix,
     consecutive_low_assessments,
     diagnose_student,
+    learner_failure_pattern,
 )
-from app.seed import NAMED, QUESTION_BANK, simulated_responses
+from app.seed import NAMED, QUESTION_BANK, simulated_choices, simulated_responses
 from girth import INVALID_RESPONSE
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
@@ -80,11 +81,13 @@ def session() -> Session:
         s.flush()
 
         matrix = simulated_responses()
+        choices = simulated_choices(matrix)
         s.add_all(
             Response(
                 student_id=students[c].student_id,
                 item_id=items[r].item_id,
                 correctness=bool(matrix[r, c]),
+                selected_option=int(choices[r, c]),
             )
             for r in range(matrix.shape[0])
             for c in range(matrix.shape[1])
@@ -166,3 +169,120 @@ def test_low_evidence_estimates_do_not_count_towards_flagging(session):
                              items_answered=2))
     session.commit()
     assert consecutive_low_assessments(session, sid, strand) == 0
+
+
+# --------------------------------------------------------------------------
+# The item-level failure pattern, which the report prompt reads
+# --------------------------------------------------------------------------
+def test_simulated_choices_leaves_the_response_matrix_untouched(session):
+    """The regression that justifies a separate generator.
+
+    `simulated_responses` is pinned by the theta = -1.741 expectation. Drawing
+    the distractor choices from the same stream would advance it and silently
+    change every ability estimate in the demonstration classroom.
+    """
+    before = simulated_responses()
+    simulated_choices(before)
+    after = simulated_responses()
+    assert np.array_equal(before, after)
+
+
+def test_every_choice_agrees_with_the_correctness_it_came_from():
+    matrix = simulated_responses()
+    choices = simulated_choices(matrix)
+    for r, (_q, _options, key) in enumerate(QUESTION_BANK):
+        for c in range(matrix.shape[1]):
+            if matrix[r, c] == INVALID_RESPONSE:
+                assert choices[r, c] == INVALID_RESPONSE
+                continue
+            assert (choices[r, c] == key) == bool(matrix[r, c])
+
+
+def test_the_pattern_names_what_was_chosen_and_what_was_correct(session):
+    chebet = session.students[0].student_id
+    pattern = learner_failure_pattern(session, chebet, session.strand_id)
+
+    assert pattern["answered"] == 12
+    assert pattern["failed_items"], "Chebet is at theta -1.8; she got items wrong"
+    assert pattern["unreported_failures"] == 0
+
+    options_by_question = {q: options for q, options, _k in QUESTION_BANK}
+    for failed in pattern["failed_items"]:
+        options = options_by_question[failed["question"]]
+        assert failed["chose"] in options
+        assert failed["correct"] in options
+        assert failed["chose"] != failed["correct"]
+
+
+def test_correct_answers_never_appear_as_failures(session):
+    chebet = session.students[0].student_id
+    pattern = learner_failure_pattern(session, chebet, session.strand_id)
+    assert len(pattern["failed_items"]) == pattern["answered"] - pattern["correct"]
+
+
+def test_a_hand_marked_wrong_answer_is_counted_but_not_described(session):
+    """An item a teacher asked aloud has no chosen option to report.
+
+    It must still count towards `answered`, because it is evidence about the
+    learner, but it cannot be described - and `unreported_failures` says so
+    rather than the gap being silent.
+    """
+    learner = Student(name="Hand Marked", class_id=session.students[0].class_id)
+    session.add(learner)
+    session.flush()
+
+    item = session.get(Item, build_response_matrix(session, session.strand_id)[1][0])
+    session.add(
+        Response(
+            student_id=learner.student_id,
+            item_id=item.item_id,
+            correctness=False,
+            selected_option=None,
+        )
+    )
+    session.commit()
+
+    pattern = learner_failure_pattern(session, learner.student_id, session.strand_id)
+    assert pattern["answered"] == 1
+    assert pattern["failed_items"] == []
+    assert pattern["unreported_failures"] == 1
+
+
+def test_the_pattern_is_scoped_to_one_strand(session):
+    other = Strand(name="3.2 Sound Energy", level="Upper Primary")
+    session.add(other)
+    session.commit()
+
+    pattern = learner_failure_pattern(
+        session, session.students[0].student_id, other.strand_id
+    )
+    assert pattern == {
+        "answered": 0,
+        "correct": 0,
+        "failed_items": [],
+        "unreported_failures": 0,
+    }
+
+
+def test_random_distractors_do_not_form_a_planted_pattern():
+    """The integrity property behind the seeding choice.
+
+    Distractors are drawn uniformly, so across the cohort the wrong answers to
+    an item spread across its distractors rather than concentrating on one. If
+    they concentrated, a report on seeded data would name a misconception that
+    had been planted for it to find, and the demonstration would be showing
+    the system succeeding at a rigged task.
+    """
+    matrix = simulated_responses()
+    choices = simulated_choices(matrix)
+    spread_seen = 0
+    for r, (_q, _options, key) in enumerate(QUESTION_BANK):
+        wrong = {
+            int(choices[r, c])
+            for c in range(matrix.shape[1])
+            if matrix[r, c] == 0
+        }
+        assert key not in wrong
+        if len(wrong) > 1:
+            spread_seen += 1
+    assert spread_seen >= len(QUESTION_BANK) - 2

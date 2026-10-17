@@ -209,6 +209,72 @@ def classroom_students(
     return list(session.scalars(stmt.order_by(Student.name)))
 
 
+def learner_failure_pattern(
+    session: Session, student_id: uuid.UUID, strand_id: uuid.UUID
+) -> dict:
+    """What this learner got wrong in this strand, and what they chose instead.
+
+    The report prompt needs this. In the 14 October spike run both English
+    conditions stopped and asked for it unprompted - "the item-level breakdown
+    is not provided, so the failing outcome cannot be confirmed" - and the
+    condition that supplied it turned "please review her scripts" into a named
+    misconception. The data was already in the database; the prompt was
+    withholding it.
+
+    Only items that can actually be reported on are included. An item needs
+    both `options` and `correct_option` to say what was chosen instead of what,
+    and a response needs `selected_option` to say anything at all. Items a
+    teacher asked aloud and marked by hand have neither, and they are counted
+    in `answered` but cannot appear in `failed_items` - so a report built from
+    hand-marked assessments correctly carries no failure pattern rather than a
+    misleading partial one.
+
+    `unreported_failures` makes that gap visible instead of silent: it is the
+    number of wrong answers that exist but cannot be described.
+    """
+    rows = session.execute(
+        select(Response, Item)
+        .join(Item, Item.item_id == Response.item_id)
+        .where(Response.student_id == student_id, Item.strand_id == strand_id)
+        .order_by(Item.question_text)
+    ).all()
+
+    answered = len(rows)
+    correct = sum(1 for response, _item in rows if response.correctness)
+
+    failed_items: list[dict] = []
+    unreported = 0
+    for response, item in rows:
+        if response.correctness:
+            continue
+        options = item.options or []
+        chosen = response.selected_option
+        key = item.correct_option
+        if (
+            chosen is None
+            or key is None
+            or not 0 <= chosen < len(options)
+            or not 0 <= key < len(options)
+        ):
+            unreported += 1
+            continue
+        failed_items.append(
+            {
+                "item_id": item.item_id,
+                "question": item.question_text,
+                "chose": options[chosen],
+                "correct": options[key],
+            }
+        )
+
+    return {
+        "answered": answered,
+        "correct": correct,
+        "failed_items": failed_items,
+        "unreported_failures": unreported,
+    }
+
+
 def student_response_count(session: Session, student_id: uuid.UUID) -> int:
     return int(
         session.scalar(

@@ -33,10 +33,18 @@
  * so either failure became one banner that named neither request - and when a
  * 500 did arrive it cost an hour to work out which of three calls had
  * produced it. Parallel is still right; collapsing their failures was not.
+ *
+ * **A pending report is polled, and the wait is counted out loud.** The
+ * server answers 202 with an empty row and fills it about half a minute
+ * later. The elapsed seconds are shown rather than a motionless
+ * "Generating...", because an unchanging spinner is exactly what made a
+ * working endpoint indistinguishable from a crashed one. Polling covers any
+ * pending report in the list, not only one just asked for, so a reload in
+ * the middle of a generation picks the wait back up instead of stranding it.
  */
 
 import { useParams } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { Legend } from "@/components/Heatmap";
 import { Button, Empty, Loading, Note } from "@/components/ui";
@@ -45,6 +53,47 @@ import { shortTier, tierColour } from "@/lib/tiers";
 import type { LearnerDiagnostics, Report } from "@/lib/types";
 
 const MINIMUM = 5;
+
+const POLL_MS = 2000;
+// Two minutes against a generation that takes about 26 seconds. Past this
+// something is wrong, and polling for ever would hide it behind a spinner.
+const GIVE_UP_MS = 120_000;
+
+/**
+ * Parse a server timestamp as UTC.
+ *
+ * The API sends an aware ISO string, but a timestamp with no zone would be
+ * read by `Date` as local time - which in Nairobi, three hours ahead, would
+ * make every report look three hours old the moment it was created.
+ */
+function instant(iso: string): number {
+  const zoned = /(Z|[+-]\d\d:?\d\d)$/.test(iso);
+  return new Date(zoned ? iso : `${iso}Z`).getTime();
+}
+
+function secondsSince(iso: string | null): number | null {
+  if (!iso) return null;
+  const started = instant(iso);
+  if (Number.isNaN(started)) return null;
+  return Math.max(0, Math.round((Date.now() - started) / 1000));
+}
+
+/** What the badge says: the state first, the verdict only once there is one. */
+function badgeLabel(report: Report): string {
+  if (report.status === "pending") return "generating";
+  if (report.status === "failed") return "failed";
+  return report.verdict ?? "no verdict";
+}
+
+function badgeStyle(report: Report): string {
+  if (report.status === "pending") {
+    return "border-blue-300 bg-blue-50 text-blue-900";
+  }
+  if (report.status === "failed") {
+    return "border-red-300 bg-red-50 text-red-900";
+  }
+  return verdictStyle(report.verdict);
+}
 
 /** GROUNDED is the only verdict that may be sent home. */
 function verdictStyle(verdict: string | null): string {
@@ -62,33 +111,45 @@ function verdictStyle(verdict: string | null): string {
 
 function ReportCard({ report }: { report: Report }) {
   const generated = report.generated_at
-    ? new Date(report.generated_at).toLocaleString()
+    ? new Date(instant(report.generated_at)).toLocaleString()
     : "";
+  const pending = report.status === "pending";
+  const elapsed = pending ? secondsSince(report.generated_at) : null;
 
   return (
     <div className="mt-3 rounded border border-neutral-200 bg-white p-4">
       <div className="flex flex-wrap items-center gap-2">
         <span
           className={`rounded border px-2 py-0.5 text-xs font-semibold
-                      ${verdictStyle(report.verdict)}`}
+                      ${badgeStyle(report)}`}
         >
-          {report.verdict ?? "no verdict"}
+          {badgeLabel(report)}
         </span>
         <span className="text-xs text-neutral-500">{generated}</span>
+        {elapsed !== null && (
+          <span className="text-xs text-neutral-600">{elapsed}s elapsed</span>
+        )}
       </div>
 
       {/* The server's own sentence. Paraphrasing it is how a refusal turns
           into an apparent fault. */}
       <p className="mt-2 text-sm text-neutral-700">{report.detail}</p>
 
-      {report.exportable ? (
-        <p className="mt-1 text-sm text-green-800">
-          Every citation was verified against the retrieved KICD curriculum.
-          This report is fit to send home.
-        </p>
-      ) : (
-        <p className="mt-1 text-sm text-red-800">
-          This report cannot be sent home.
+      {/* No second sentence about export. `detail` already carries the
+          server's own account - "It can be exported", "cannot be exported or
+          sent home" - and the paragraph that used to sit here said the same
+          thing again in different words. Two sentences making one claim is
+          how they drift apart. What is left is a marker, not prose, and only
+          for a finished report: a pending row carries exportable=false
+          because nothing has been checked yet, and a verdict on work not yet
+          done is simply wrong. */}
+      {report.status === "ready" && (
+        <p
+          className={`mt-1 text-sm ${
+            report.exportable ? "text-green-800" : "text-red-800"
+          }`}
+        >
+          {report.exportable ? "Fit to send home." : "Not fit to send home."}
         </p>
       )}
 
@@ -124,6 +185,7 @@ function ReportCard({ report }: { report: Report }) {
         );
       })}
 
+      {report.status === "ready" && (
       <p className="mt-4 text-xs text-neutral-500">
         {report.model}
         {report.effort ? ` · effort ${report.effort}` : ""}
@@ -133,7 +195,11 @@ function ReportCard({ report }: { report: Report }) {
         {report.top_similarity !== null
           ? ` · curriculum match ${report.top_similarity.toFixed(3)}`
           : ""}
+        {report.duration_ms !== null
+          ? ` · ${(report.duration_ms / 1000).toFixed(1)}s`
+          : ""}
       </p>
+      )}
     </div>
   );
 }
@@ -147,6 +213,9 @@ export default function LearnerPage() {
   const [reportError, setReportError] = useState<string | null>(null);
   const [generating, setGenerating] = useState<string | null>(null);
   const [open, setOpen] = useState<string | null>(null);
+  const [stalled, setStalled] = useState(false);
+  // Only to re-render the elapsed counter; the value is never read.
+  const [, setTick] = useState(0);
 
   // Fired together, reported separately. Diagnostics failing means the page
   // has nothing to show; the report history failing means the page is intact
@@ -192,6 +261,93 @@ export default function LearnerPage() {
     };
   }, [id]);
 
+  /**
+   * Every report still being generated, as a stable string.
+   *
+   * A string rather than an array so the polling effect restarts when the set
+   * of pending reports actually changes, not every time `reports` is replaced
+   * by an equal copy.
+   */
+  const watching = useMemo(
+    () =>
+      (reports ?? [])
+        .filter((r) => r.status === "pending")
+        .map((r) => r.report_id)
+        .sort()
+        .join(","),
+    [reports],
+  );
+
+  const refresh = useCallback(async () => {
+    setStalled(false);
+    try {
+      const existing = await api.get<Report[]>(`/api/students/${id}/reports`);
+      setReports(existing);
+      setHistoryError(null);
+    } catch (e) {
+      setHistoryError(errorMessage(e, "Could not refresh the reports"));
+    }
+  }, [id]);
+
+  useEffect(() => {
+    if (!watching) return;
+    const ids = watching.split(",");
+    const deadline = Date.now() + GIVE_UP_MS;
+    let cancelled = false;
+
+    const timer = setInterval(async () => {
+      if (cancelled) return;
+      if (Date.now() > deadline) {
+        setStalled(true);
+        clearInterval(timer);
+        return;
+      }
+      try {
+        const fresh = await Promise.all(
+          ids.map((rid) =>
+            api.get<Report>(`/api/students/${id}/reports/${rid}`),
+          ),
+        );
+        if (cancelled) return;
+        // Replaced in place, so the open card and the strand order are kept.
+        setReports((prev) =>
+          (prev ?? []).map(
+            (r) => fresh.find((f) => f.report_id === r.report_id) ?? r,
+          ),
+        );
+      } catch (e) {
+        // One failed poll is not a failed report: the row is in the database
+        // either way and the next tick will find it. A 404 is different - the
+        // report or the learner is gone, and polling can only keep failing.
+        if (e instanceof ApiError && e.status === 404) clearInterval(timer);
+      }
+    }, POLL_MS);
+
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [watching, id]);
+
+  // A second timer, only while something is pending, so the elapsed seconds
+  // move once a second rather than in two-second jumps with the polling.
+  useEffect(() => {
+    if (!watching) return;
+    const timer = setInterval(() => setTick((n) => n + 1), 1000);
+    return () => clearInterval(timer);
+  }, [watching]);
+
+  /** Strands with a generation already running. */
+  const busyStrands = useMemo(
+    () =>
+      new Set(
+        (reports ?? [])
+          .filter((r) => r.status === "pending" && r.strand_id)
+          .map((r) => r.strand_id as string),
+      ),
+    [reports],
+  );
+
   /** The most recent report per strand, which is the one a teacher wants. */
   const latest = useMemo(() => {
     const map = new Map<string, Report>();
@@ -204,9 +360,11 @@ export default function LearnerPage() {
   }, [reports]);
 
   async function generate(strandId: string) {
-    // Guarded here as well as by the disabled attribute: a keyboard repeat or
-    // a second tab would otherwise spend twice.
-    if (generating) return;
+    // Per strand now, not global: with generation off the request thread,
+    // two strands can legitimately run at once. A repeat click on the SAME
+    // strand is still refused here, and refused again by the server with a
+    // 409 - which is the half that survives a second tab.
+    if (generating === strandId || busyStrands.has(strandId)) return;
     setGenerating(strandId);
     setReportError(null);
     try {
@@ -215,6 +373,7 @@ export default function LearnerPage() {
       );
       setReports((prev) => [created, ...(prev ?? [])]);
       setOpen(created.report_id);
+      setStalled(false);
     } catch (e) {
       // A 500 carries FastAPI's generic body, which names neither the cause
       // nor the file. Every refusal this endpoint makes on purpose has its
@@ -248,6 +407,18 @@ export default function LearnerPage() {
         <Note tone="error">{reportError}</Note>
       </div>
 
+      {stalled && (
+        <div className="mt-2 rounded border border-amber-300 bg-amber-50 p-3
+                        text-sm text-amber-900">
+          This report is taking longer than two minutes. It may still be
+          running - the work happens on the server, so nothing is lost either
+          way.{" "}
+          <button className="underline" onClick={refresh} type="button">
+            Check again
+          </button>
+        </div>
+      )}
+
       {!data && !error && (
         <div className="mt-6">
           <Loading what="diagnostics" />
@@ -269,7 +440,9 @@ export default function LearnerPage() {
           <ul className="mt-4 space-y-3">
             {data.cells.map((cell) => {
               const report = latest.get(cell.strand_id);
-              const busy = generating === cell.strand_id;
+              const busy =
+                generating === cell.strand_id ||
+                busyStrands.has(cell.strand_id);
               const expanded = report && open === report.report_id;
 
               return (
@@ -309,7 +482,7 @@ export default function LearnerPage() {
                     <div className="mt-2 flex flex-wrap items-center gap-2">
                       <Button
                         variant={report ? "secondary" : "primary"}
-                        disabled={generating !== null}
+                        disabled={busy}
                         onClick={() => generate(cell.strand_id)}
                       >
                         {busy
@@ -319,7 +492,7 @@ export default function LearnerPage() {
                             : "Generate report"}
                       </Button>
 
-                      {report && !busy && (
+                      {report && (
                         <>
                           <Button
                             variant="secondary"
@@ -332,16 +505,17 @@ export default function LearnerPage() {
                           <span
                             className={`rounded border px-2 py-0.5 text-xs
                                         font-semibold
-                                        ${verdictStyle(report.verdict)}`}
+                                        ${badgeStyle(report)}`}
                           >
-                            {report.verdict}
+                            {badgeLabel(report)}
                           </span>
                         </>
                       )}
 
                       {busy && (
                         <span className="text-sm text-neutral-600">
-                          English and Kiswahili, ten to thirty seconds.
+                          English and Kiswahili, about half a minute. Leaving
+                          this page will not stop it.
                         </span>
                       )}
                     </div>

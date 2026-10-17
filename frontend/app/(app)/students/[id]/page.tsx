@@ -48,7 +48,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { Legend } from "@/components/Heatmap";
 import { Button, Empty, Loading, Note } from "@/components/ui";
-import { api, ApiError, errorMessage } from "@/lib/api";
+import { api, ApiError, downloadFile, errorMessage } from "@/lib/api";
 import { shortTier, tierColour } from "@/lib/tiers";
 import type { LearnerDiagnostics, Report } from "@/lib/types";
 
@@ -109,7 +109,15 @@ function verdictStyle(verdict: string | null): string {
   }
 }
 
-function ReportCard({ report }: { report: Report }) {
+function ReportCard({
+  report,
+  onDownload,
+  downloading,
+}: {
+  report: Report;
+  onDownload: (report: Report) => void;
+  downloading: boolean;
+}) {
   const generated = report.generated_at
     ? new Date(instant(report.generated_at)).toLocaleString()
     : "";
@@ -144,13 +152,27 @@ function ReportCard({ report }: { report: Report }) {
           because nothing has been checked yet, and a verdict on work not yet
           done is simply wrong. */}
       {report.status === "ready" && (
-        <p
-          className={`mt-1 text-sm ${
-            report.exportable ? "text-green-800" : "text-red-800"
-          }`}
-        >
-          {report.exportable ? "Fit to send home." : "Not fit to send home."}
-        </p>
+        <div className="mt-2 flex flex-wrap items-center gap-3">
+          <p
+            className={`text-sm ${
+              report.exportable ? "text-green-800" : "text-red-800"
+            }`}
+          >
+            {report.exportable ? "Fit to send home." : "Not fit to send home."}
+          </p>
+          {/* No button at all when the grounding check failed. The server
+              refuses the download as well - this is the half that stops a
+              teacher from trying and being told no. */}
+          {report.exportable && (
+            <Button
+              variant="secondary"
+              disabled={downloading}
+              onClick={() => onDownload(report)}
+            >
+              {downloading ? "Preparing\u2026" : "Download PDF"}
+            </Button>
+          )}
+        </div>
       )}
 
       {(["English", "Kiswahili"] as const).map((language) => {
@@ -214,6 +236,7 @@ export default function LearnerPage() {
   const [generating, setGenerating] = useState<string | null>(null);
   const [open, setOpen] = useState<string | null>(null);
   const [stalled, setStalled] = useState(false);
+  const [downloading, setDownloading] = useState<string | null>(null);
   // Only to re-render the elapsed counter; the value is never read.
   const [, setTick] = useState(0);
 
@@ -391,6 +414,28 @@ export default function LearnerPage() {
     }
   }
 
+  async function save(report: Report) {
+    setDownloading(report.report_id);
+    setReportError(null);
+    try {
+      const { blob, filename } = await downloadFile(
+        `/api/students/${id}/reports/${report.report_id}/pdf`,
+      );
+      const url = URL.createObjectURL(blob);
+      const link = window.document.createElement("a");
+      link.href = url;
+      link.download = filename;
+      link.click();
+      // Revoked a moment later rather than in the same frame: some browsers
+      // cancel the download if the object URL disappears underneath it.
+      window.setTimeout(() => URL.revokeObjectURL(url), 2000);
+    } catch (e) {
+      setReportError(errorMessage(e, "Could not download this report"));
+    } finally {
+      setDownloading(null);
+    }
+  }
+
   return (
     <>
       <h1 className="text-2xl font-semibold">{data?.name ?? "Learner"}</h1>
@@ -521,7 +566,13 @@ export default function LearnerPage() {
                     </div>
                   )}
 
-                  {expanded && report && <ReportCard report={report} />}
+                  {expanded && report && (
+                    <ReportCard
+                      report={report}
+                      onDownload={save}
+                      downloading={downloading === report.report_id}
+                    />
+                  )}
                 </li>
               );
             })}

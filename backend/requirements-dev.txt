@@ -2,3 +2,10 @@
 pytest
 httpx
 ruff
+
+# Test-only. The PDF tests read the document back rather than trusting
+# that it was built: a missing glyph or a skipped language does not
+# raise in reportlab, so the only way to catch one is to extract the
+# text and look. pdfplumber is already what the curriculum extractor
+# uses, so this is not a new dependency to learn.
+pdfplumber

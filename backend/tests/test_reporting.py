@@ -40,6 +40,7 @@ from app.reporting import (
     READY,
     create_pending,
     detail_for,
+    filename_for,
     fill_report,
     is_stale,
     resolve_stale,
@@ -806,3 +807,101 @@ def test_nothing_is_written_when_nothing_is_stale():
 
     assert CountingSession.commits == 0
     assert live.status == PENDING
+
+
+# --------------------------------------------------------------------------
+# The document that goes home
+#
+# Built on demand rather than stored: a PDF is cheap to rebuild from the row
+# and expensive to keep in step with it. Both refusals are 409 and both carry
+# the row's own sentence - a report still being written, or one that failed
+# its grounding check, is not the teacher doing something forbidden.
+# --------------------------------------------------------------------------
+def download(client, student, report_id, head):
+    return client.get(
+        f"/api/students/{student.student_id}/reports/{report_id}/pdf",
+        headers=auth(head),
+    )
+
+
+def test_a_grounded_report_downloads_as_a_pdf(client, head, heat, session):  # noqa: F811
+    learner = chebet(session)
+    body = generated(client, learner, heat, head).json()
+    assert body["exportable"] is True
+
+    r = download(client, learner, body["report_id"], head)
+
+    assert r.status_code == 200
+    assert r.headers["content-type"] == "application/pdf"
+    assert r.content.startswith(b"%PDF")
+
+
+def test_the_filename_names_the_learner_and_the_day(client, head, heat, session):  # noqa: F811
+    """A teacher looking in a downloads folder a week later has to find it."""
+    learner = chebet(session)
+    body = generated(client, learner, heat, head).json()
+
+    r = download(client, learner, body["report_id"], head)
+
+    assert "report-chebet-k-" in r.headers["content-disposition"]
+    assert r.headers["content-disposition"].startswith("attachment;")
+
+
+def test_a_report_that_failed_grounding_cannot_be_downloaded(
+    client, head, heat, session  # noqa: F811
+):
+    """The whole point of the exportable flag, enforced where it matters."""
+    set_generator(by_language(GROUNDED_REPORT, FABRICATED_REPORT))
+    body = generated(client, chebet(session), heat, head).json()
+    assert body["exportable"] is False
+
+    r = download(client, chebet(session), body["report_id"], head)
+
+    assert r.status_code == 409
+    assert "cannot be exported" in r.json()["detail"]
+
+
+def test_a_truncated_report_cannot_be_downloaded(client, head, heat, session):  # noqa: F811
+    set_generator(
+        by_language(GROUNDED_REPORT, GROUNDED_REPORT, stop_reason="max_tokens")
+    )
+    body = generated(client, chebet(session), heat, head).json()
+
+    r = download(client, chebet(session), body["report_id"], head)
+
+    assert r.status_code == 409
+    assert "truncated or empty" in r.json()["detail"]
+
+
+def test_a_pending_report_cannot_be_downloaded(client, head, heat, session):  # noqa: F811
+    learner = chebet(session)
+    live = create_pending(session, learner, heat)
+
+    r = download(client, learner, live.report_id, head)
+
+    assert r.status_code == 409
+    assert "being generated" in r.json()["detail"]
+
+
+def test_another_learners_pdf_is_not_found(client, head, heat, session):  # noqa: F811
+    learner = chebet(session)
+    body = generated(client, learner, heat, head).json()
+    other = session.scalars(
+        select(Student).where(Student.student_id != learner.student_id)
+    ).first()
+
+    assert download(client, other, body["report_id"], head).status_code == 404
+
+
+def test_downloading_requires_authentication(client, heat, session):  # noqa: F811
+    learner = chebet(session)
+    r = client.get(
+        f"/api/students/{learner.student_id}/reports/{uuid.uuid4()}/pdf"
+    )
+    assert r.status_code == 401
+
+
+def test_the_filename_survives_an_awkward_name():
+    assert filename_for("Chebet K.", None).startswith("report-chebet-k-")
+    assert filename_for("   ", None).startswith("report-learner-")
+    assert filename_for("O'Brien-Smith", None).startswith("report-o-brien-smith-")

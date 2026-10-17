@@ -46,3 +46,9 @@ next-env.d.ts
 Thumbs.db
 .vscode/
 .idea/
+
+# Working notes that are deliberately NOT part of the submitted repository.
+# PROJECT_STATUS.md is a running status report for my own use; it duplicates
+# what the phase documents say properly and would date badly in the history.
+# Ignored rather than merely unstaged, so that a `git add .` cannot pick it up.
+docs/PROJECT_STATUS.md

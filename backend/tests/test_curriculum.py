@@ -309,3 +309,63 @@ def test_ingest_surfaces_unmapped_glyphs_in_the_summary():
     summary = ingest(session, [odd], embed=False)
 
     assert summary["unmapped_private_use"] == {"": 1}
+
+
+# --------------------------------------------------------------------------
+# Warming
+#
+# The model takes 30 seconds to build. Built lazily, that fell on the first
+# report request of each worker's life and the proxy in front of Next hung up
+# before the backend answered - so the endpoint failed for whoever clicked
+# first and worked for everyone after, which read as a data-dependent bug and
+# was not one.
+# --------------------------------------------------------------------------
+def test_warming_does_not_replace_an_installed_embedder(monkeypatch):
+    """The suite depends on this: warming must never reach for the real model."""
+
+    def forbidden():
+        raise AssertionError("warm_embedder loaded the real model")
+
+    monkeypatch.setattr(curriculum, "_load_sentence_transformer", forbidden)
+    installed = curriculum.get_embedder()
+
+    curriculum.warm_embedder()
+
+    assert curriculum.get_embedder() is installed
+
+
+def test_warming_builds_the_model_when_none_is_installed(monkeypatch):
+    sentinel = object()
+    monkeypatch.setattr(curriculum, "_load_sentence_transformer", lambda: sentinel)
+    curriculum.set_embedder(None)
+
+    curriculum.warm_embedder()
+
+    assert curriculum.get_embedder() is sentinel
+
+
+def test_a_request_arriving_mid_warm_does_not_build_a_second_model(monkeypatch):
+    """Two 90MB models, one of them unreachable, is the bug the lock prevents."""
+    import threading
+
+    builds = []
+
+    def slow_load():
+        # Long enough that every thread is inside get_embedder before the
+        # first one finishes; without the lock they would all build.
+        threading.Event().wait(0.05)
+        builds.append(1)
+        return lambda texts: [[0.0] * 384 for _ in texts]
+
+    monkeypatch.setattr(curriculum, "_load_sentence_transformer", slow_load)
+    curriculum.set_embedder(None)
+
+    threads = [
+        threading.Thread(target=curriculum.get_embedder) for _ in range(5)
+    ]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert len(builds) == 1

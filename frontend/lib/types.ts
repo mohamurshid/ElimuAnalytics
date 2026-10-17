@@ -171,3 +171,60 @@ export type Quiz = {
   strand: string;
   items: QuizItem[];
 };
+
+/**
+ * What the grounding check concluded about one language of a report.
+ *
+ * `verbatim_quotes_verified` is the evidence: each entry was found character
+ * for character in the curriculum chunk retrieved for this learner.
+ * `verbatim_quotes_fabricated` is the opposite and the dangerous one - a span
+ * in quotation marks that is NOT in the supplied curriculum looks like
+ * evidence and a teacher has no way to tell.
+ *
+ * `vague_phrases_*` and `lexical_overlap` are recorded and never decide. The
+ * vague lists are heuristics, and the Kiswahili half has not been validated by
+ * a Kiswahili speaker, so a wrong entry must not be able to block a good
+ * report from reaching a parent.
+ */
+export type ReportGrounding = {
+  verdict: string;
+  exportable: boolean;
+  verbatim_quotes_verified: string[];
+  verbatim_quotes_fabricated: string[];
+  vague_phrases_en: string[];
+  vague_phrases_sw: string[];
+  lexical_overlap: number;
+  words: number;
+  truncated?: boolean;
+  empty?: boolean;
+};
+
+/**
+ * A generated diagnostic report, with the evidence that it was grounded.
+ *
+ * `exportable` is the server's decision, not a hint: it is true only when
+ * every citation in BOTH languages was verified and neither generation was
+ * truncated. A report sent home is only as good as the half the parent can
+ * read, so the interface must not offer to send one that is false.
+ */
+export type Report = {
+  report_id: string;
+  student_id: string;
+  strand_id: string | null;
+  learner: string;
+  content_en: string | null;
+  content_sw: string | null;
+  verdict: string | null;
+  exportable: boolean;
+  detail: string;
+  top_similarity: number | null;
+  chunk_source_rows: number[] | null;
+  model: string | null;
+  effort: string | null;
+  input_tokens: number | null;
+  output_tokens: number | null;
+  thinking_tokens: number | null;
+  cost_usd: number | null;
+  grounding: Record<string, ReportGrounding> | null;
+  generated_at: string | null;
+};

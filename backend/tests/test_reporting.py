@@ -16,11 +16,14 @@ database.
 
 from __future__ import annotations
 
+import threading
+import time
 import uuid
 from types import SimpleNamespace
 
 import pytest
 from app.db import get_session
+from app.irt import ResponseMatrixError
 from app.main import app
 from app.models import Report, School, Student, Teacher
 from app.reporting import split_strand_name, worst_verdict
@@ -371,3 +374,134 @@ def test_a_strand_name_with_no_separator_fills_both_fields():
         "3.3 Heat Transfer",
         "3.3 Heat Transfer",
     )
+# --------------------------------------------------------------------------
+# Failures that are nobody's fault, and must not read as a crash
+#
+# FastAPI replaces any exception that is not an HTTPException with the string
+# "Internal Server Error". A missing API key and an unreachable provider both
+# took that path, so the browser showed four words that named neither the
+# cause nor the request, and the sentence that said what to fix stayed in the
+# uvicorn log. These tests pin each one to a status and a readable message.
+# --------------------------------------------------------------------------
+def raising(exc: BaseException):
+    """A generator that fails the way the live client fails."""
+
+    def generator(**kwargs):
+        raise exc
+
+    return generator
+
+
+def connection_error():
+    """A real `anthropic` exception instance, not a stand-in.
+
+    Constructed from the installed class because the endpoint catches the
+    provider's own hierarchy: a home-made exception would pass this test while
+    the real class went uncaught in production, which is the exact failure
+    these tests exist to prevent.
+    """
+    import httpx
+    from anthropic import APIConnectionError
+
+    return APIConnectionError(
+        message="workspace-id-and-billing-hint-live-in-here",
+        request=httpx.Request("POST", "https://api.anthropic.com/v1/messages"),
+    )
+
+
+def test_a_missing_api_key_is_explained_rather_than_crashing(
+    client, head, heat, session  # noqa: F811
+):
+    set_generator(
+        raising(RuntimeError("ANTHROPIC_API_KEY is not set, so no report can be generated."))
+    )
+    r = post(client, chebet(session), heat, head)
+    assert r.status_code == 503
+    # The client's own sentence, passed through: it names the variable to set.
+    assert "ANTHROPIC_API_KEY is not set" in r.json()["detail"]
+
+
+def test_a_provider_failure_is_a_bad_gateway(client, head, heat, session):  # noqa: F811
+    set_generator(raising(connection_error()))
+    r = post(client, chebet(session), heat, head)
+    assert r.status_code == 502
+    assert "APIConnectionError" in r.json()["detail"]
+
+
+def test_the_providers_own_message_is_not_shown_in_the_browser(
+    client, head, heat, session  # noqa: F811
+):
+    set_generator(raising(connection_error()))
+    detail = post(client, chebet(session), heat, head).json()["detail"]
+    assert "workspace-id-and-billing-hint" not in detail
+
+
+def test_a_failed_generation_saves_nothing(client, head, heat, session):  # noqa: F811
+    before = len(session.scalars(select(Report)).all())
+    set_generator(raising(connection_error()))
+    assert post(client, chebet(session), heat, head).status_code == 502
+    session.expire_all()
+    assert len(session.scalars(select(Report)).all()) == before
+
+
+def test_a_violated_matrix_rule_is_a_server_bug_not_a_conflict(
+    client, head, heat, session, monkeypatch  # noqa: F811
+):
+    """ResponseMatrixError subclasses ValueError, so clause order decides this.
+
+    Written after finding that the broader `except ValueError` came first and
+    made the 500 branch unreachable: a violated Phase 0 rule was answered with
+    a 409, which tells a teacher to fix something only the code can fix.
+    """
+
+    def boom(*args, **kwargs):
+        raise ResponseMatrixError("INVALID_RESPONSE reached the response matrix")
+
+    monkeypatch.setattr("app.reporting.repo.diagnose_student", boom)
+    r = post(client, chebet(session), heat, head)
+    assert r.status_code == 500
+    assert "INVALID_RESPONSE" in r.json()["detail"]
+
+
+# --------------------------------------------------------------------------
+# Concurrency
+#
+# The two calls were sequential, which put the request at 32-38 seconds and
+# over the proxy's limit: the report was generated and committed, and the
+# teacher was shown a failure for work they had already paid for.
+# --------------------------------------------------------------------------
+def test_the_two_languages_are_generated_concurrently(client, head, heat, session):  # noqa: F811
+    """Sequential generation cannot pass this: the barrier would never fill.
+
+    A barrier of two means each call blocks until the other has also started.
+    One-at-a-time, the first wait times out, `BrokenBarrierError` propagates,
+    and the request fails - so a green test here is positive evidence of
+    overlap rather than an absence of evidence against it.
+    """
+    barrier = threading.Barrier(2, timeout=10)
+
+    def generator(**kwargs):
+        barrier.wait()
+        return response(GROUNDED_REPORT)
+
+    set_generator(generator)
+    assert post(client, chebet(session), heat, head).status_code == 201
+
+
+def test_completion_order_does_not_decide_which_language_is_stored(
+    client, head, heat, session  # noqa: F811
+):
+    """English deliberately answers last, and must still be stored as English."""
+
+    def generator(**kwargs):
+        prompt = kwargs["messages"][0]["content"]
+        if "Kiswahili sanifu" in prompt:
+            return response("KISWAHILI BODY")
+        time.sleep(0.2)
+        return response("ENGLISH BODY")
+
+    set_generator(generator)
+    body = post(client, chebet(session), heat, head).json()
+
+    assert body["content_en"] == "ENGLISH BODY"
+    assert body["content_sw"] == "KISWAHILI BODY"

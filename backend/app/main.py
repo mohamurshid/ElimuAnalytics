@@ -13,6 +13,8 @@ Then open http://127.0.0.1:8000
 
 from __future__ import annotations
 
+import os
+import threading
 import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -23,6 +25,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
+from . import curriculum
 from . import repository as repo
 from .assessments import router as assessments_router
 from .auth import current_teacher
@@ -54,6 +57,22 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
             "WARNING: JWT_SECRET is unset, so tokens are signed with the published "
             "development key. Set JWT_SECRET before any deployment."
         )
+
+    # The sentence-transformer takes 30 seconds to build and was being built
+    # inside the first report request, which is how a working endpoint came
+    # to look broken for exactly one teacher per restart. On a daemon thread,
+    # so startup returns at once and Ctrl-C is never held up by a half-loaded
+    # model; nothing waits on it, because get_embedder() takes the same lock
+    # and a request arriving mid-load simply blocks until it is ready.
+    #
+    # ELIMU_WARM_EMBEDDER=0 turns it off, which is worth having under
+    # `--reload`: every saved file restarts the worker and would start
+    # another 30-second load that the next save throws away.
+    if os.environ.get("ELIMU_WARM_EMBEDDER", "1") != "0":
+        threading.Thread(
+            target=curriculum.warm_embedder, name="warm-embedder", daemon=True
+        ).start()
+
     yield
 
 

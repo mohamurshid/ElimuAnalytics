@@ -6,6 +6,13 @@ design. A system that cheerfully produces a report when it cannot measure the
 learner, or cannot find the curriculum, or cannot tell which subject the strand
 belongs to, is worse than one that declines.
 
+Generation is asynchronous, so a POST answers 202 with a `pending` row and
+the response is serialised before the background task runs. Every assertion
+about content, verdict, tokens or cost therefore belongs to the row read back
+afterwards - `generated()` does both steps - and not to the POST's own body.
+`TestClient` runs background tasks before handing the response over, so none
+of this needs sleeping.
+
 The generator is always a stub and `retrieve` is always patched. The stub is
 for the usual reason - a test that calls an API can fail for reasons unrelated
 to the code. The patch is a necessity: `curriculum_chunk` cannot be created on
@@ -19,6 +26,7 @@ from __future__ import annotations
 import threading
 import time
 import uuid
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 import pytest
@@ -30,8 +38,10 @@ from app.reporting import (
     FAILED,
     PENDING,
     READY,
+    create_pending,
     detail_for,
     fill_report,
+    is_stale,
     split_strand_name,
     worst_verdict,
 )
@@ -40,6 +50,7 @@ from app.retrieval import Retrieved
 from app.security import ROLE_SCHOOL_ADMIN, create_token, hash_password
 from fastapi.testclient import TestClient
 from sqlalchemy import select
+from sqlalchemy.orm import Session as SASession
 
 from .test_repository import session  # noqa: F401 - pytest fixture
 
@@ -109,8 +120,16 @@ def _stubbed(monkeypatch):
 
 
 @pytest.fixture
-def client(session):  # noqa: F811
+def client(session, monkeypatch):  # noqa: F811
     app.dependency_overrides[get_session] = lambda: session
+    # The worker opens its own session, because FastAPI closes the request's
+    # before a background task runs. Here it gets a second session on the
+    # same in-memory database rather than the test's own, so that closing it
+    # when the task finishes cannot pull the connection out from under the
+    # assertions that follow.
+    monkeypatch.setattr(
+        "app.reporting.worker_session", lambda: SASession(session.get_bind())
+    )
     with TestClient(app) as c:
         yield c
     app.dependency_overrides.clear()
@@ -152,13 +171,35 @@ def post(client, student, strand, head):
     )
 
 
+def fetch(client, student, report_id, head):
+    return client.get(
+        f"/api/students/{student.student_id}/reports/{report_id}",
+        headers=auth(head),
+    )
+
+
+def generated(client, student, strand, head):
+    """Ask for a report, then read back the finished row.
+
+    The POST answers 202 with a pending row and nothing in it. Asserting
+    content against that body would be asserting against the wrong moment -
+    and would quietly keep passing if the worker never ran at all.
+    """
+    created = post(client, student, strand, head)
+    assert created.status_code == 202
+    assert created.json()["status"] == PENDING
+    assert created.json()["content_en"] is None
+
+    fetched = fetch(client, student, created.json()["report_id"], head)
+    assert fetched.status_code == 200
+    return fetched
+
+
 # --------------------------------------------------------------------------
 # The happy path
 # --------------------------------------------------------------------------
 def test_one_request_produces_one_bilingual_report(client, head, heat, session):  # noqa: F811
-    r = post(client, chebet(session), heat, head)
-    assert r.status_code == 201
-    body = r.json()
+    body = generated(client, chebet(session), heat, head).json()
 
     assert body["content_en"] and body["content_sw"]
     assert body["verdict"] == "GROUNDED"
@@ -184,6 +225,8 @@ def test_both_languages_are_actually_asked_for(client, head, heat, session):  # 
 
 def test_the_evidence_trail_is_persisted(client, head, heat, session):  # noqa: F811
     post(client, chebet(session), heat, head)
+    # Written by the worker's session, so this one has to look again.
+    session.expire_all()
     report = session.scalar(select(Report))
 
     assert report.model == "claude-haiku-5-5"
@@ -204,9 +247,7 @@ def test_the_evidence_trail_is_persisted(client, head, heat, session):  # noqa: 
 def test_the_worse_of_the_two_languages_decides(client, head, heat, session):  # noqa: F811
     """A report sent home is only as good as the half the parent can read."""
     set_generator(by_language(GROUNDED_REPORT, FABRICATED_REPORT))
-    r = post(client, chebet(session), heat, head)
-
-    body = r.json()
+    body = generated(client, chebet(session), heat, head).json()
     assert body["verdict"] == "FABRICATED"
     assert body["exportable"] is False
     assert "cannot be exported" in body["detail"]
@@ -223,9 +264,7 @@ def test_a_truncated_report_cannot_be_exported_whatever_its_verdict(
     says GROUNDED. It is still unfit to read and must not leave the building.
     """
     set_generator(by_language(GROUNDED_REPORT, GROUNDED_REPORT, stop_reason="max_tokens"))
-    r = post(client, chebet(session), heat, head)
-
-    body = r.json()
+    body = generated(client, chebet(session), heat, head).json()
     assert body["verdict"] == "GROUNDED"
     assert body["exportable"] is False
     assert "truncated or empty" in body["detail"]
@@ -427,7 +466,7 @@ def test_a_missing_api_key_is_explained_rather_than_crashing(
             RuntimeError("ANTHROPIC_API_KEY is not set, so no report can be generated.")
         )
     )
-    body = post(client, chebet(session), heat, head).json()
+    body = generated(client, chebet(session), heat, head).json()
 
     assert body["status"] == FAILED
     # The client's own sentence, kept: it names the variable to set.
@@ -437,7 +476,7 @@ def test_a_missing_api_key_is_explained_rather_than_crashing(
 
 def test_a_provider_failure_is_recorded_on_the_row(client, head, heat, session):  # noqa: F811
     set_generator(raising(connection_error()))
-    body = post(client, chebet(session), heat, head).json()
+    body = generated(client, chebet(session), heat, head).json()
 
     assert body["status"] == FAILED
     assert "APIConnectionError" in body["error"]
@@ -447,7 +486,7 @@ def test_the_providers_own_message_is_not_shown_in_the_browser(
     client, head, heat, session  # noqa: F811
 ):
     set_generator(raising(connection_error()))
-    body = post(client, chebet(session), heat, head).json()
+    body = generated(client, chebet(session), heat, head).json()
 
     assert "workspace-id-and-billing-hint" not in body["error"]
     assert "workspace-id-and-billing-hint" not in body["detail"]
@@ -520,7 +559,7 @@ def test_the_two_languages_are_generated_concurrently(client, head, heat, sessio
         return response(GROUNDED_REPORT)
 
     set_generator(generator)
-    assert post(client, chebet(session), heat, head).status_code == 201
+    assert post(client, chebet(session), heat, head).status_code == 202
 
 
 def test_completion_order_does_not_decide_which_language_is_stored(
@@ -536,7 +575,7 @@ def test_completion_order_does_not_decide_which_language_is_stored(
         return response("ENGLISH BODY")
 
     set_generator(generator)
-    body = post(client, chebet(session), heat, head).json()
+    body = generated(client, chebet(session), heat, head).json()
 
     assert body["content_en"] == "ENGLISH BODY"
     assert body["content_sw"] == "KISWAHILI BODY"
@@ -546,7 +585,7 @@ def test_completion_order_does_not_decide_which_language_is_stored(
 # The row's three states
 # --------------------------------------------------------------------------
 def test_a_finished_report_is_ready_and_timed(client, head, heat, session):  # noqa: F811
-    body = post(client, chebet(session), heat, head).json()
+    body = generated(client, chebet(session), heat, head).json()
 
     assert body["status"] == READY
     assert body["duration_ms"] is not None and body["duration_ms"] >= 0
@@ -564,7 +603,7 @@ def test_a_report_that_is_already_finished_is_not_generated_again(
         return response(GROUNDED_REPORT)
 
     set_generator(spy)
-    body = post(client, chebet(session), heat, head).json()
+    body = generated(client, chebet(session), heat, head).json()
     assert len(calls) == 2
 
     fill_report(uuid.UUID(body["report_id"]), [chunk()], session=session)
@@ -584,3 +623,100 @@ def test_the_failed_sentence_is_the_stored_error():
 
 def test_a_failed_row_with_no_error_still_says_something():
     assert detail_for(Report(status=FAILED)) != ""
+
+
+# --------------------------------------------------------------------------
+# Asking twice
+#
+# The page disables its button while a generation runs, but a second tab does
+# not know that, and every report costs real money. This is the half of that
+# guard the browser cannot provide.
+# --------------------------------------------------------------------------
+def test_a_second_request_while_one_is_pending_is_refused(
+    client, head, heat, session  # noqa: F811
+):
+    learner = chebet(session)
+    create_pending(session, learner, heat)
+
+    r = post(client, learner, heat, head)
+
+    assert r.status_code == 409
+    assert "already being generated" in r.json()["detail"]
+
+
+def test_a_stale_pending_row_does_not_block_a_new_request(
+    client, head, heat, session  # noqa: F811
+):
+    """A worker that died must not lock the strand out for ever.
+
+    This is the failure mode the five-minute rule exists for: a reload, a
+    killed process or a closed laptop leaves a row pending, and without this
+    the teacher could never ask for that report again.
+    """
+    learner = chebet(session)
+    abandoned = create_pending(session, learner, heat)
+    abandoned.generated_at = datetime.now(timezone.utc) - timedelta(hours=2)
+    session.commit()
+
+    assert post(client, learner, heat, head).status_code == 202
+
+
+def test_staleness_is_measured_against_five_minutes():
+    recent = Report(status=PENDING, generated_at=datetime.now(timezone.utc))
+    old = Report(
+        status=PENDING,
+        generated_at=datetime.now(timezone.utc) - timedelta(minutes=6),
+    )
+
+    assert is_stale(recent) is False
+    assert is_stale(old) is True
+
+
+def test_a_naive_timestamp_is_not_a_crash():
+    """SQLite returns this column naive and PostgreSQL returns it aware.
+
+    Comparing the two raises, so without the repair the rule would work in
+    one environment and fail in the other.
+    """
+    # A fixed date in the past, so the answer is the same whatever the
+    # machine's timezone: a naive "now" would read as stale on a machine
+    # behind UTC and fresh on one ahead of it, and the test would be about
+    # the clock rather than the code.
+    naive = Report(status=PENDING, generated_at=datetime(2026, 1, 1, 12, 0))
+    assert is_stale(naive) is True
+
+
+def test_a_finished_report_is_never_stale():
+    assert is_stale(Report(status=READY)) is False
+    assert is_stale(Report(status=FAILED)) is False
+
+
+# --------------------------------------------------------------------------
+# Reading one report
+# --------------------------------------------------------------------------
+def test_one_report_can_be_fetched_on_its_own(client, head, heat, session):  # noqa: F811
+    learner = chebet(session)
+    created = post(client, learner, heat, head).json()
+
+    body = fetch(client, learner, created["report_id"], head).json()
+
+    assert body["report_id"] == created["report_id"]
+    assert body["status"] == READY
+
+
+def test_another_learners_report_is_not_found(client, head, heat, session):  # noqa: F811
+    """Not "forbidden": whether it exists is not this teacher's business."""
+    learner = chebet(session)
+    created = post(client, learner, heat, head).json()
+    other = session.scalars(
+        select(Student).where(Student.student_id != learner.student_id)
+    ).first()
+
+    r = fetch(client, other, created["report_id"], head)
+
+    assert r.status_code == 404
+
+
+def test_an_unknown_report_is_not_found(client, head, heat, session):  # noqa: F811
+    r = fetch(client, chebet(session), uuid.uuid4(), head)
+    assert r.status_code == 404

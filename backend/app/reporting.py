@@ -67,8 +67,9 @@ from __future__ import annotations
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -97,6 +98,12 @@ VERDICT_RANK = {"FABRICATED": 0, "WEAK": 1, "GROUNDED": 2}
 PENDING = "pending"
 READY = "ready"
 FAILED = "failed"
+
+# How long a pending row is given before it is taken as abandoned rather than
+# slow. A generation runs in about 26 seconds, so five minutes is not a
+# borderline call: a row older than this belongs to a worker that is not
+# coming back - a killed process, a reload, a closed laptop.
+STALE_AFTER = timedelta(minutes=5)
 
 
 class ReportOut(BaseModel):
@@ -176,6 +183,43 @@ def provider_detail(exc: BaseException) -> str:
         f"generated and nothing was saved. Trying again is reasonable; the "
         f"server log carries the provider's own message."
     )
+
+
+def _aware(moment: datetime) -> datetime:
+    """PostgreSQL returns this column tz-aware and SQLite does not.
+
+    Comparing a naive datetime with an aware one raises, so the test suite
+    would fail on a rule that works in production, or the reverse. Neither is
+    a failure worth having.
+    """
+    return moment if moment.tzinfo else moment.replace(tzinfo=timezone.utc)
+
+
+def is_stale(report: Report) -> bool:
+    """A pending row whose worker is never coming back."""
+    if report.status != PENDING or report.generated_at is None:
+        return False
+    return datetime.now(timezone.utc) - _aware(report.generated_at) > STALE_AFTER
+
+
+def pending_report(
+    session: Session, student_id: uuid.UUID, strand_id: uuid.UUID
+) -> Report | None:
+    """A live generation for this learner and strand, if there is one.
+
+    Stale rows do not count. Treating one as live would lock a strand out of
+    reporting for ever on the strength of a process that died days ago.
+    """
+    rows = session.scalars(
+        select(Report)
+        .where(
+            Report.student_id == student_id,
+            Report.strand_id == strand_id,
+            Report.status == PENDING,
+        )
+        .order_by(Report.generated_at.desc())
+    ).all()
+    return next((r for r in rows if not is_stale(r)), None)
 
 
 def detail_for(report: Report) -> str:
@@ -459,10 +503,11 @@ def _generate_into(
 
 
 @router.post(
-    "/students/{student_id}/reports", response_model=ReportOut, status_code=201
+    "/students/{student_id}/reports", response_model=ReportOut, status_code=202
 )
 def create_report(
     student_id: uuid.UUID,
+    background: BackgroundTasks,
     strand_id: uuid.UUID = Query(...),
     session: Session = Depends(get_session),
     teacher: Teacher = Depends(current_teacher),
@@ -474,6 +519,20 @@ def create_report(
     strand = repo.get_strand(session, strand_id)
     if strand is None:
         raise HTTPException(status_code=404, detail="Strand not found")
+
+    # The server's half of the guard against paying twice. The page disables
+    # its button while a generation runs, but a second tab does not know
+    # that, and each report costs real money.
+    live = pending_report(session, student_id, strand_id)
+    if live is not None:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "A report for this learner and strand is already being "
+                "generated. It will appear when it is done; generating "
+                "another would cost twice and produce the same thing."
+            ),
+        )
     if not strand.learning_area:
         raise HTTPException(
             status_code=400,
@@ -520,13 +579,12 @@ def create_report(
         )
 
     report = create_pending(session, student, strand)
-    # Still synchronous, and still answering 201. The pending row, the worker
-    # and the derived detail are all new, and running them inline means the
-    # tests written against the old code prove the new internals produce the
-    # same report. Answering 202 and handing the work to a background task is
-    # the next step, deliberately not mixed into this one.
-    fill_report(report.report_id, retrieved, session=session)
-    session.refresh(report)
+    # 202, not 201: the row exists, its content does not yet. The work runs
+    # after the response has been sent, which is the whole point - two model
+    # calls take about 26 seconds and the proxies and mobile networks in
+    # front of this will not wait that long. No session is passed, so the
+    # worker opens its own: FastAPI closes this one before the task runs.
+    background.add_task(fill_report, report.report_id, retrieved)
     return _out(report, student.name)
 
 
@@ -546,3 +604,31 @@ def list_reports(
         .order_by(Report.generated_at.desc())
     ).all()
     return [_out(r, student.name) for r in reports]
+
+
+@router.get(
+    "/students/{student_id}/reports/{report_id}", response_model=ReportOut
+)
+def get_report(
+    student_id: uuid.UUID,
+    report_id: uuid.UUID,
+    session: Session = Depends(get_session),
+    teacher: Teacher = Depends(current_teacher),
+) -> ReportOut:
+    """One report, for a page waiting on a pending one.
+
+    Nested under the learner rather than addressed by its own id, so the
+    school check is the same one the list endpoint already makes. Polling the
+    list would work today and get slower with every report ever generated.
+    """
+    student = repo.student_in_school(session, student_id, teacher.school_id)
+    if student is None:
+        raise HTTPException(status_code=404, detail="Learner not found")
+
+    report = session.get(Report, report_id)
+    # A report belonging to another learner is "not found" rather than
+    # "forbidden": whether it exists is not this teacher's business.
+    if report is None or report.student_id != student_id:
+        raise HTTPException(status_code=404, detail="Report not found")
+
+    return _out(report, student.name)

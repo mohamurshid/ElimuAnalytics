@@ -338,15 +338,80 @@ class GapFlag(Base):
 
 
 class Report(Base):
+    """A generated diagnostic report, and the evidence that it was grounded.
+
+    Everything after `pdf_url` exists so that a report can be audited after it
+    was sent. A generated report is a claim about a child, and the claim is
+    only as good as the curriculum text it was built from - so what was
+    retrieved, how close it scored, which model wrote it and what the grounding
+    check concluded are all stored alongside the text rather than left in a log.
+
+    `exportable` is stored rather than derived at read time. A report is
+    exportable only when the grounding check verified a verbatim citation
+    against the retrieved curriculum and found nothing fabricated; a failed
+    report is kept and shown to the teacher, marked, but cannot be printed or
+    sent home. Recomputing that at every read would mean the answer could
+    change under an unrelated code edit, after a teacher had already been told
+    the report was fit to send.
+
+    Note what does NOT block export: vague-phrase detection. That list is a
+    heuristic, and its Kiswahili half is not yet validated by a Kiswahili
+    speaker, so a wrong entry would block a perfectly good report. Vague
+    phrases are recorded and shown; they never decide.
+    """
+
     __tablename__ = "report"
 
     report_id: Mapped[uuid.UUID] = _pk()
     student_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("student.student_id", ondelete="CASCADE"), nullable=False
     )
+    # A report is about one learner in one strand. Without this, two reports on
+    # the same learner for different strands are indistinguishable.
+    strand_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("strand.strand_id", ondelete="SET NULL"), nullable=True
+    )
     content_en: Mapped[str | None] = mapped_column(Text, nullable=True)
     content_sw: Mapped[str | None] = mapped_column(Text, nullable=True)
     pdf_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
+    # --- grounding evidence ---
+    # GROUNDED | WEAK | FABRICATED, from grounding.check().
+    verdict: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    exportable: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    # The full check output, so a verdict can be re-examined without rerunning
+    # the model: which quotations were verified, which were not, what vague
+    # phrases appeared, lexical overlap with the supplied context.
+    grounding: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
+    # --- what it was built from ---
+    # Cosine similarity of the best retrieved chunk. A weak best match does not
+    # block generation - the prompt already instructs the model to refuse when
+    # the curriculum does not cover the sub-strand, and it does - but it is
+    # recorded so a weakly grounded report is identifiable afterwards instead
+    # of looking the same as a strong one.
+    top_similarity: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # curriculum_chunk.source_row values, which are unique and trace back to
+    # the exact records in the harvested JSON.
+    chunk_source_rows: Mapped[list[int] | None] = mapped_column(JSON, nullable=True)
+
+    # --- how it was generated ---
+    # Recorded per report because they change. The September spike ran on
+    # claude-sonnet-4-5, which retires on 30 Nov 2026; a report carrying no
+    # model name cannot be interpreted a year later.
+    model: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    effort: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    input_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    output_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Of the billed output tokens, how many were internal reasoning. Measured
+    # at 60% of output in the 14 Oct spike run, at the lowest effort setting,
+    # and it cannot be switched off on these models - so it is a cost driver
+    # worth being able to total up rather than estimate.
+    thinking_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    cost_usd: Mapped[float | None] = mapped_column(Float, nullable=True)
+
     generated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

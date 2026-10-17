@@ -43,6 +43,35 @@ deterministic stand-in, so the suite stays offline.
 Embeddings are stored as unit vectors, so pgvector's cosine-distance operator
 and a plain dot product agree and a retrieval score means the same thing
 wherever it is computed.
+
+WHAT GETS EMBEDDED IS NOT WHAT GETS STORED
+------------------------------------------
+all-MiniLM-L6-v2 truncates its input at 256 word-pieces and says nothing about
+it. That was found by accident: after the v4 extractor lengthened every chunk
+by 78%, five of the eight Grade 5 Science chunks came back with similarity
+scores identical to four decimal places. An embedding is a function of its
+input, so identical output means the model never saw the added text.
+
+The damage was not the truncation itself - it was that the cut fell in
+different places for different chunks. A chunk whose learning experiences ran
+long lost its Values and Core competencies; a short one kept them.
+Classification of plants rose from 0.0985 to 0.1269 and overtook Water
+Pollution for no reason except that its boilerplate happened to fit. Ranking
+was turning on chunk length.
+
+So the split is now deliberate. `embedding_text()` returns the curriculum head
+- strand, sub-strand, specific learning outcomes, suggested learning
+experiences, key inquiry question - and that is what is embedded. The FULL
+text, Projects and competencies and values and links included, is what is
+stored and what goes into the report prompt.
+
+The division matches what each half is for. Retrieval answers "which
+sub-strand is this learner struggling with", which the head describes and the
+trailing sections do not - they are near-identical boilerplate across
+sub-strands and would blur exactly the distinctions retrieval depends on.
+Generation answers "what should the teacher do", and that is the Projects,
+which is why the v4 extractor had to recover them even though they never
+reach a vector.
 """
 
 from __future__ import annotations
@@ -64,6 +93,32 @@ PRIVATE_USE_REPAIRS = {
 
 PRIVATE_USE = re.compile(r"[-]")
 _RUNS_OF_SPACE = re.compile(r"[ \t]{2,}")
+
+# Where the curriculum head ends and the trailing sections begin. These mirror
+# CONTINUATION_LABELS in spike/build_curriculum_corpus.py, which is what put
+# the trailing sections into the chunk to begin with. The duplication is
+# deliberate - the backend does not import from the spike - but it means the
+# two lists must change together, and test_curriculum.py pins the cut against
+# a real chunk so drift fails a test rather than quietly degrading retrieval.
+HEAD_ENDS_AT = re.compile(
+    r"(?:^|[.;:?]\s+)("
+    r"projects?\s*\d*\s*:"
+    r"|core\s+competenc"
+    r"|values\s*:"
+    r"|pertinent\s+and\s+contemporary"
+    r"|pcis\s*:?"
+    r"|links?\s+to\s+other"
+    r"|non[\s-]?formal"
+    r"|suggested\s+resources"
+    r"|community\s+service"
+    r"|umilisi\b"
+    r"|maadili\b"
+    r"|masuala\s+mtambuko"
+    r"|uhusiano\s+na\s+masomo"
+    r"|miradi\b|mradi\b"
+    r")",
+    re.I,
+)
 
 Embedder = Callable[[Sequence[str]], list[list[float]]]
 
@@ -96,6 +151,25 @@ def unmapped_private_use(text: str | None) -> Counter[str]:
     for broken in PRIVATE_USE_REPAIRS:
         text = text.replace(broken, "")
     return Counter(PRIVATE_USE.findall(text))
+
+
+def embedding_text(text: str | None) -> str:
+    """The part of a chunk that is embedded: the curriculum head.
+
+    Everything from the first trailing-section label onwards is dropped. A
+    chunk with no trailing sections is embedded whole.
+
+    This does not guarantee the head fits in 256 word-pieces either - a long
+    sub-strand can still be cut. What it guarantees is that every chunk is
+    embedded on the same KIND of content, so a ranking cannot turn on whether
+    a chunk's boilerplate happened to fit.
+    """
+    if not text:
+        return ""
+    match = HEAD_ENDS_AT.search(text)
+    # start(1), not start(): the group begins at the label itself, so the
+    # sentence punctuation preceding it stays with the head.
+    return text[: match.start(1)].strip() if match else text.strip()
 
 
 def set_embedder(embedder: Embedder | None) -> None:

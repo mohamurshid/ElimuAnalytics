@@ -29,14 +29,32 @@ any stored chunk can be traced back to the exact record it came from.
 
 WHAT IS LEFT OUT
 ----------------
-The JSON also carries 923 rubric rows, and they are not loaded. All 923 have
-the `exceeds` descriptor populated and NONE has `meets`, `approaches` or
-`below`: the extractor shifted the table columns by one, which `raw_text`
-shows plainly - it writes the indicator into STRAND and the exceeds descriptor
-into SUB-STRAND. One level out of four is not a rubric, and loading it would
-invite a report to cite a rubric level that was never read from the PDF. The
-application's four KICD tiers come from theta thresholds in code, so nothing
-downstream depends on these rows.
+The JSON also carries 924 rubric rows, and they are not loaded.
+
+The reason given here until 17 October was that the rows were unusable: that
+all of them had only the `exceeds` descriptor, the extractor having shifted
+the table columns by one. That was true of the v3 extraction and is no longer
+true of the corpus this file reads. Measured against the current JSON, of 924
+rows:
+
+    four distinct level descriptions   873   (94.5%)
+    all four levels identical            1
+    partial, mostly missing `below`     50
+    extraction_status OK               924
+
+across six grades and thirteen subjects. So the rows are usable, and the
+stated reason for leaving them out has expired. They are still not loaded,
+but now for a different and much smaller reason: nothing reads them yet.
+Loading them means a table, an embedding over the indicators, a retrieval
+path and a prompt that can quote the descriptor for the learner's own tier -
+a feature, with its own measurements, rather than a line in this function.
+
+What has not changed is that the application's four KICD tiers come from
+theta thresholds in code, so nothing downstream depends on these rows today.
+
+The lesson worth keeping is about the comment rather than the rows: a
+rationale recording a measurement goes stale when the measurement is
+repaired, and a stale rationale reads exactly like a current one.
 
 `strand_id` is left NULL. The application's `strand` rows are assessment
 strands, seeded independently, and they do not correspond one-to-one with the

@@ -1,0 +1,245 @@
+{
+  "run": "2026-10-17T14:40:59",
+  "corpus_size": 1617,
+  "rubric_rows": 924,
+  "embedder": "all-MiniLM-L6-v2 (sentence-transformers)",
+  "test_a": {
+    "queries": 300,
+    "top1": 0.4633333333333333,
+    "top5": 0.72,
+    "mrr": 0.5771543428079443,
+    "mean_margin": 0.042387136816978456
+  },
+  "test_bc": {
+    "rows": [
+      {
+        "sub_strand": "1.1 Classification of plants",
+        "style": "teacher",
+        "rank_unfiltered": 1,
+        "rank_filtered": 1,
+        "margin_unfiltered": 0.18150031566619873,
+        "margin_filtered": 0.3897881507873535,
+        "top1_unfiltered": "1.1 Classification of plants  \uf0b7 Classificatio",
+        "candidates_filtered": 8
+      },
+      {
+        "sub_strand": "1.1 Classification of plants",
+        "style": "item",
+        "rank_unfiltered": 5,
+        "rank_filtered": 1,
+        "margin_unfiltered": 0.03351426124572754,
+        "margin_filtered": 0.18281885981559753,
+        "top1_unfiltered": "2.2 Growing fruits",
+        "candidates_filtered": 8
+      },
+      {
+        "sub_strand": "1.2 Vertebrates",
+        "style": "teacher",
+        "rank_unfiltered": 1,
+        "rank_filtered": 1,
+        "margin_unfiltered": 0.04737335443496704,
+        "margin_filtered": 0.16711324453353882,
+        "top1_unfiltered": "1.2 Vertebrates  \uf0b7 General characteristics of",
+        "candidates_filtered": 8
+      },
+      {
+        "sub_strand": "1.2 Vertebrates",
+        "style": "item",
+        "rank_unfiltered": 2,
+        "rank_filtered": 1,
+        "margin_unfiltered": 0.03525823354721069,
+        "margin_filtered": 0.16077274084091187,
+        "top1_unfiltered": "1.2 Animals  \u25cf Characteristics of animals as ",
+        "candidates_filtered": 8
+      },
+      {
+        "sub_strand": "2.1 Mixtures",
+        "style": "teacher",
+        "rank_unfiltered": 1,
+        "rank_filtered": 1,
+        "margin_unfiltered": 0.09220162034034729,
+        "margin_filtered": 0.10172730684280396,
+        "top1_unfiltered": "2.1 Mixtures  \u25cf Meaning of mixtures \u25cf Types o",
+        "candidates_filtered": 8
+      },
+      {
+        "sub_strand": "2.1 Mixtures",
+        "style": "item",
+        "rank_unfiltered": 1,
+        "rank_filtered": 1,
+        "margin_unfiltered": 0.07903355360031128,
+        "margin_filtered": 0.15960106253623962,
+        "top1_unfiltered": "2.1 Mixtures  \u25cf Meaning of mixtures \u25cf Types o",
+        "candidates_filtered": 8
+      },
+      {
+        "sub_strand": "2.2 Water Pollution",
+        "style": "teacher",
+        "rank_unfiltered": 9,
+        "rank_filtered": 1,
+        "margin_unfiltered": 0.030550897121429443,
+        "margin_filtered": 0.2050253450870514,
+        "top1_unfiltered": "3.1 Water",
+        "candidates_filtered": 8
+      },
+      {
+        "sub_strand": "2.2 Water Pollution",
+        "style": "item",
+        "rank_unfiltered": 3,
+        "rank_filtered": 1,
+        "margin_unfiltered": 0.055319368839263916,
+        "margin_filtered": 0.23210573196411133,
+        "top1_unfiltered": "3.1 Water",
+        "candidates_filtered": 8
+      },
+      {
+        "sub_strand": "3.1 Floating and Sinking",
+        "style": "teacher",
+        "rank_unfiltered": 1,
+        "rank_filtered": 1,
+        "margin_unfiltered": 0.10867324471473694,
+        "margin_filtered": 0.20911306142807007,
+        "top1_unfiltered": "3.1 Floating and Sinking  \uf0b7 Floating and sink",
+        "candidates_filtered": 8
+      },
+      {
+        "sub_strand": "3.1 Floating and Sinking",
+        "style": "item",
+        "rank_unfiltered": 1,
+        "rank_filtered": 1,
+        "margin_unfiltered": 0.014538168907165527,
+        "margin_filtered": 0.1743474304676056,
+        "top1_unfiltered": "3.1 Floating and Sinking  \uf0b7 Floating and sink",
+        "candidates_filtered": 8
+      },
+      {
+        "sub_strand": "3.2 Sound Energy",
+        "style": "teacher",
+        "rank_unfiltered": 2,
+        "rank_filtered": 1,
+        "margin_unfiltered": 0.01941511034965515,
+        "margin_filtered": 0.26940494775772095,
+        "top1_unfiltered": "2.7 Percussion Musical Instruments  \u25cf Percuss",
+        "candidates_filtered": 8
+      },
+      {
+        "sub_strand": "3.2 Sound Energy",
+        "style": "item",
+        "rank_unfiltered": 1,
+        "rank_filtered": 1,
+        "margin_unfiltered": 0.09852874279022217,
+        "margin_filtered": 0.3249012529850006,
+        "top1_unfiltered": "3.2 Sound Energy  \uf0b7 Sources of sound \uf0b7 Moveme",
+        "candidates_filtered": 8
+      },
+      {
+        "sub_strand": "3.3 Heat transfer",
+        "style": "teacher",
+        "rank_unfiltered": 1,
+        "rank_filtered": 1,
+        "margin_unfiltered": 0.0022907555103302,
+        "margin_filtered": 0.18402056396007538,
+        "top1_unfiltered": "3.3 Heat transfer  \uf0b7 Modes of heat transfer i",
+        "candidates_filtered": 8
+      },
+      {
+        "sub_strand": "3.3 Heat transfer",
+        "style": "item",
+        "rank_unfiltered": 1,
+        "rank_filtered": 1,
+        "margin_unfiltered": 0.03487756848335266,
+        "margin_filtered": 0.16427955031394958,
+        "top1_unfiltered": "3.3 Heat transfer  \uf0b7 Modes of heat transfer i",
+        "candidates_filtered": 8
+      }
+    ],
+    "top1_unfiltered": 0.6428571428571429,
+    "top1_filtered": 1.0
+  },
+  "test_d": [
+    {
+      "area": "English",
+      "n": 57,
+      "top1": 0.3333333333333333,
+      "mrr": 0.45425443165756246
+    },
+    {
+      "area": "Kiswahili",
+      "n": 52,
+      "top1": 0.23076923076923078,
+      "mrr": 0.34976229139942994
+    },
+    {
+      "area": "Foreign Languages",
+      "n": 35,
+      "top1": 0.4,
+      "mrr": 0.5354170923558133
+    },
+    {
+      "area": "Religious Education (IRE)",
+      "n": 25,
+      "top1": 0.8,
+      "mrr": 0.8866666666666666
+    },
+    {
+      "area": "Indigenous Language",
+      "n": 25,
+      "top1": 0.16,
+      "mrr": 0.2753958474404703
+    },
+    {
+      "area": "Religious Education (CRE)",
+      "n": 22,
+      "top1": 0.6363636363636364,
+      "mrr": 0.7553030303030304
+    },
+    {
+      "area": "Creative Arts",
+      "n": 21,
+      "top1": 0.6666666666666666,
+      "mrr": 0.7777777777777779
+    },
+    {
+      "area": "Mathematics",
+      "n": 16,
+      "top1": 0.25,
+      "mrr": 0.4140625
+    },
+    {
+      "area": "Religious Education (HRE)",
+      "n": 15,
+      "top1": 0.9333333333333333,
+      "mrr": 0.9666666666666667
+    },
+    {
+      "area": "Social Studies",
+      "n": 14,
+      "top1": 0.7142857142857143,
+      "mrr": 0.8333333333333333
+    },
+    {
+      "area": "Agriculture and Nutrition",
+      "n": 7,
+      "top1": 1.0,
+      "mrr": 1.0
+    },
+    {
+      "area": "Environmental Activities",
+      "n": 6,
+      "top1": 0.5,
+      "mrr": 0.6722222222222222
+    },
+    {
+      "area": "Science and Technology",
+      "n": 3,
+      "top1": 1.0,
+      "mrr": 1.0
+    },
+    {
+      "area": "Unclassified",
+      "n": 2,
+      "top1": 0.5,
+      "mrr": 0.75
+    }
+  ]
+}

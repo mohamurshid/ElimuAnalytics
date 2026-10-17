@@ -12,7 +12,7 @@ It refuses more often than it succeeds, and each refusal is deliberate.
 
   * No learning area on the strand -> 400. Retrieval filters on grade AND
     learning area before similarity, and that filter is the only reason
-    retrieval works: 45.3% top-1 unfiltered against 100% filtered. Guessing
+    retrieval works: 64.3% top-1 unfiltered against 100% filtered. Guessing
     the learning area would quietly produce a report grounded in the wrong
     subject's curriculum.
   * No ability estimate -> 409. The engine declines to estimate below five

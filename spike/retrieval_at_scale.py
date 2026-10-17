@@ -51,6 +51,12 @@ from pathlib import Path
 
 import numpy as np
 
+# The backend is not importable from here by default: this script runs from
+# the repo root and `app` lives under backend/. Measuring a copy of
+# embedding_text would defeat the point of measuring at all.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
+from app.curriculum import embedding_text  # noqa: E402
+
 CORPUS = Path("data/kicd/kicd_curriculum_chunks_full.json")
 
 STOPWORDS = set(
@@ -225,7 +231,16 @@ def main():
     data = json.loads(path.read_text(encoding="utf-8"))
     chunks = data["chunks"]
     rubrics = data.get("rubrics", [])
-    texts = [c["text"] for c in chunks]
+    # Embedded through the PRODUCTION function, not over the whole chunk.
+    #
+    # This measured `c["text"]` until 17 October, which made every figure it
+    # produced a description of a system that is not running: ingest embeds
+    # embedding_text(...), the curriculum head alone, because all-MiniLM-L6-v2
+    # truncates at 256 word-pieces and the full chunks are longer than that -
+    # which is how five different sub-strands came to have bit-identical
+    # embeddings. An instrument holding its own copy of the thing under test
+    # can pass while the real system drifts, so this imports the real one.
+    texts = [embedding_text(c["text"]) for c in chunks]
 
     print(f"corpus: {len(chunks)} curriculum chunks, {len(rubrics)} rubric rows")
     if any(not re.match(r"^\s*\d+\.\d", c.get("sub_strand", "")) for c in chunks):

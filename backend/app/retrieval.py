@@ -6,17 +6,33 @@ Filtered retrieval over the curriculum corpus.
 
 THE FILTER IS NOT AN OPTIMISATION
 ---------------------------------
-Measured on the full 1,617-chunk corpus with 300 queries: top-1 accuracy 45.3%,
-top-5 72.3%, MRR 0.569, and a mean top1-top2 margin of 0.044 - which is to say
-the leading candidates were effectively tied and retrieval was guessing. With
-grade and learning area applied as a pre-filter, top-1 was 100% and the margin
-0.209.
+Measured 17 October against the corpus as it is actually embedded - the
+curriculum head, not the whole chunk - by spike/retrieval_at_scale.py, which
+now imports embedding_text from this package rather than keeping its own copy.
 
-The collapse is worst where sub-strand wording repeats across the six grades:
-unfiltered top-1 was 16% for Indigenous Language, 23% for Kiswahili, 25% for
-Mathematics and 26% for English, against 84-100% for the Religious Education
-and Agriculture designs. Semantic similarity cannot separate six grades of
-"Listening and Speaking"; only the metadata can.
+Two tests, and they are not interchangeable:
+
+  * 300 heading queries over all 1,617 chunks: top-1 46.3%, top-5 72.0%,
+    MRR 0.577, mean top1-top2 margin 0.042. The margin is the finding - the
+    leading candidates are effectively tied, so retrieval on wording alone is
+    guessing. There is no filtered counterpart to this test.
+  * 14 realistic queries, teacher phrasing and failed items with curriculum
+    vocabulary deliberately avoided: top-1 64.3% unfiltered against 100% with
+    grade and learning area applied first, which cuts the candidate set to 8.
+    Fourteen queries is a small sample and the figure belongs with its n.
+
+Embedding the head rather than the whole chunk, which was done to stop
+MiniLM's 256 word-piece truncation producing identical vectors for different
+sub-strands, cost nothing at scale: the September full-text run measured 45.3%
+and 64.3% on the same two tests.
+
+The collapse is worst where sub-strand wording repeats across the six grades.
+On the 300-query test: 16% for Indigenous Language, 23% for Kiswahili, 25% for
+Mathematics, 33% for English - against 93% for Religious Education (HRE), 80%
+for IRE and 100% for Agriculture and Nutrition, whose sub-strand names are
+distinctive. Religious Education (CRE) sits between at 64%. Semantic
+similarity cannot separate six grades of "Listening and Speaking"; only the
+metadata can.
 
 So `grade` and `learning_area` are required arguments with no defaults. Passing
 None for either is allowed, because the unfiltered case has to remain

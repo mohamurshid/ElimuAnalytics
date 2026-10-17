@@ -20,6 +20,7 @@ from app.reports import (
     MAX_TOKENS,
     MAX_WORDS,
     MODEL,
+    NO_GENDER,
     PRICING,
     RUBRIC_LEVELS,
     STRICT_CITATION,
@@ -140,6 +141,25 @@ def test_the_word_limit_is_stated():
     assert f"Maximum {MAX_WORDS} words" in build_prompt(CHEBET, [CHUNK])
 
 
+def test_the_word_limit_allows_for_a_failure_pattern():
+    # The spike's 200 was measured on a report with no failure pattern. The
+    # first live report, describing twelve wrong answers, came in at 265.
+    assert MAX_WORDS >= 250
+
+
+def test_the_learner_is_never_gendered():
+    """The first live report said "She answered 12 items".
+
+    Gender is not recorded anywhere and was inferred from the name. No
+    grounding check can catch a misgendered child in a document that goes home
+    to a parent.
+    """
+    prompt = build_prompt(CHEBET, [CHUNK])
+    assert NO_GENDER in prompt
+    assert "Do NOT use he, she" in prompt
+    assert 'as "the learner"' in prompt
+
+
 # --------------------------------------------------------------------------
 # Language
 # --------------------------------------------------------------------------
@@ -170,6 +190,26 @@ def test_the_pattern_lists_each_wrong_answer_with_what_was_chosen():
     assert "Which of these is the best conductor of heat?" in prompt
     assert "chose:   A cotton cloth" in prompt
     assert "correct: A metal spoon" in prompt
+
+
+def test_the_wrong_answers_are_not_numbered():
+    """The defect the first live report exposed.
+
+    The block used to number the list 1., 2., 3. and the model duly wrote
+    "Items 4, 5, 6 and 8" - indices that exist only inside the prompt. A
+    teacher holding that report has no way to discover which questions those
+    were, so the most actionable paragraph was unactionable.
+    """
+    block = failure_block(PATTERN)
+    assert "1." not in block
+    assert "2." not in block
+    assert block.count("  - ") == len(PATTERN["failed_items"])
+
+
+def test_the_model_is_told_to_name_the_question_not_a_number():
+    block = failure_block(PATTERN)
+    assert "NEVER by a number" in block
+    assert "not numbered anywhere the teacher can see" in block
 
 
 def test_the_pattern_uses_no_gendered_pronoun():

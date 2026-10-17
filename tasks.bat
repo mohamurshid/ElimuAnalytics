@@ -8,6 +8,7 @@ REM   tasks seed    rebuild the schema and demonstration data (--reset to drop f
 REM   tasks extract rebuild the curriculum corpus JSON from the KICD PDFs
 REM   tasks ingest  load the KICD curriculum corpus into curriculum_chunk
 REM   tasks check   verify pgvector retrieval against numpy on the stored vectors
+REM   tasks query   retrieve against the corpus: tasks query "text" "Grade 5" "Science and Technology"
 REM   tasks run     start the backend development server
 REM   tasks web     start the Next.js frontend (http://localhost:3000)
 REM   tasks webci   frontend lint, typecheck and build
@@ -64,6 +65,12 @@ cd backend
 python -m app.retrieval --check %2 %3
 goto end
 
+:query
+call .venv\Scripts\activate
+cd backend
+python -m app.retrieval --query %2 --grade %3 --area %4 --top-k 8 --no-floor
+goto end
+
 :run
 call .venv\Scripts\activate
 cd backend
@@ -98,7 +105,7 @@ echo CI checks FAILED. Fix before pushing.
 exit /b 1
 
 :help
-echo Usage: tasks [setup^|test^|lint^|fix^|seed^|extract^|ingest^|check^|run^|web^|webci^|ci]
+echo Usage: tasks [setup^|test^|lint^|fix^|seed^|extract^|ingest^|check^|query^|run^|web^|webci^|ci]
 goto end
 
 :end

@@ -53,7 +53,12 @@ from typing import Any
 from .irt import CONFIDENT_RESPONSES, MIN_RESPONSES, TIER_CUTS
 
 RUBRIC_LEVELS = [name for _cut, name in TIER_CUTS]
-MAX_WORDS = 200
+# Raised from the spike's 200 after the first live report came in at 265
+# English words. The spike measured a report with no failure pattern; one that
+# describes up to twelve wrong answers, by what each question asked rather than
+# by a number, cannot do it in 200. A limit that is always breached teaches the
+# model to ignore limits.
+MAX_WORDS = 250
 
 # claude-sonnet-5-5 was dropped after the 14 October run: 9.5x the cost of
 # haiku-5-5 ($0.009944 against $0.001139 for the same Kiswahili report) for an
@@ -86,6 +91,19 @@ KISWAHILI_INSTRUCTION = (
     "brackets rather than inventing a word."
 )
 ENGLISH_INSTRUCTION = "Use clear, professional English."
+
+# The first live report said "She answered 12 items" and "she may treat metals
+# as poor conductors", inferring gender from the name "Chebet K." Nothing in
+# the database records a learner's gender, so that is a guess - and no
+# grounding check can catch a misgendered child in a document that goes home to
+# a parent. Kenyan names are not uniformly gendered, and the cost of being
+# wrong is a credibility failure that has nothing to do with the system's
+# actual accuracy.
+NO_GENDER = (
+    "Refer to the learner by name, or as \"the learner\". Do NOT use he, she, "
+    "him, her, his or hers: the learner's gender is not recorded and must not "
+    "be inferred from their name."
+)
 
 STRICT_CITATION = (
     "In Paragraph 3 you MUST quote the chosen activity verbatim from the SUGGESTED "
@@ -132,10 +150,10 @@ def failure_block(pattern: dict | None) -> str:
         f"answered correctly). The {len(failed)} wrong answers, each with the option "
         f"the learner chose:",
     ]
-    for n, item in enumerate(failed, 1):
-        lines.append(f"  {n}. {item['question']}")
-        lines.append(f"     chose:   {item['chose']}")
-        lines.append(f"     correct: {item['correct']}")
+    for item in failed:
+        lines.append(f"  - {item['question']}")
+        lines.append(f"      chose:   {item['chose']}")
+        lines.append(f"      correct: {item['correct']}")
 
     if pattern.get("unreported_failures"):
         lines.append(
@@ -143,6 +161,12 @@ def failure_block(pattern: dict | None) -> str:
             f"recorded without the option chosen, and cannot be described here."
         )
 
+    lines.append(
+        "  Refer to any of these by what the question asked - for example \"the "
+        "question about the metal spoon in hot porridge\" - and NEVER by a number "
+        "or a position in this list. These items are not numbered anywhere the "
+        "teacher can see them, so \"items 4 to 6\" is unusable in a report."
+    )
     lines.append(
         "  Read these together. If they share one misconception, name it in plain "
         "words a teacher can use. If they do not share one, say so plainly and name "
@@ -201,6 +225,8 @@ Paragraph 2: Identify the specific gap, referencing the Specific Learning Outcom
 Paragraph 3: Recommend ONE concrete classroom activity, drawn directly from the
              Suggested Learning Experiences in the curriculum context.
 {citation_line}
+{NO_GENDER}
+
 {language_line} Maximum {MAX_WORDS} words. Do not invent curriculum content that is
 not present in the context above. If the curriculum context does not cover this
 learner's sub-strand, say so explicitly instead of writing a recommendation."""

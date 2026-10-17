@@ -210,6 +210,11 @@ def main() -> None:
     ap.add_argument("--grade", default="Grade 5")
     ap.add_argument("--area", default="Science and Technology")
     ap.add_argument("--top-k", type=int, default=DEFAULT_TOP_K)
+    ap.add_argument(
+        "--no-floor",
+        action="store_true",
+        help="show the raw ranking without the similarity floor",
+    )
     args = ap.parse_args()
 
     with get_session_factory()() as session:
@@ -217,12 +222,29 @@ def main() -> None:
             raise SystemExit(0 if check(session, args.grade, args.area) else 1)
         if not args.query:
             ap.error("pass --query or --check")
-        for result in retrieve(
-            session, args.query, grade=args.grade, learning_area=args.area, top_k=args.top_k
-        ):
-            print(f"[{result.similarity:.3f}] {result.grade} / {result.learning_area}")
-            print(f"  {result.sub_strand}")
-            print(f"  source_row {result.source_row} ({result.source_id})\n")
+        # Without --no-floor this prints what would reach the prompt, which is
+        # usually one chunk: at a top score near 0.40 the cutoff is
+        # max(0.25, 0.5 x 0.40) = 0.25 and nothing else clears it. That makes
+        # --top-k look broken when inspecting a ranking, which is what
+        # --no-floor is for.
+        results = retrieve(
+            session,
+            args.query,
+            grade=args.grade,
+            learning_area=args.area,
+            top_k=args.top_k,
+            floor=not args.no_floor,
+        )
+        if not args.no_floor and len(results) < args.top_k:
+            print(
+                f"(similarity floor applied: {len(results)} of up to {args.top_k} "
+                f"admitted. Use --no-floor to see the raw ranking.)\n"
+            )
+        for position, result in enumerate(results, 1):
+            where = f"{result.grade} / {result.learning_area}"
+            print(f"{position:>2}. [{result.similarity:.4f}] {where}")
+            print(f"    {result.sub_strand}")
+            print(f"    source_row {result.source_row} ({result.source_id})\n")
 
 
 if __name__ == "__main__":

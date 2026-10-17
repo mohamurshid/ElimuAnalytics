@@ -21,6 +21,15 @@ It refuses more often than it succeeds, and each refusal is deliberate.
   * No curriculum for that grade and learning area -> 409. Nothing to ground
     against. Grade 2 Kiswahili, for instance, extracted zero chunks because
     pdfminer cannot read that PDF's encryption dictionary.
+  * No API key on the server -> 503. The model client's own sentence says what
+    to set and how; it is passed through unchanged.
+  * The model provider refusing or unreachable -> 502. Nothing is saved.
+
+Those last two used to surface as a bare 500. FastAPI replaces any exception
+that is not an `HTTPException` with the string "Internal Server Error", so the
+one sentence that said what to fix never left the server, and reading a
+uvicorn log was the only way to learn that a key was missing. Anything this
+endpoint can explain, it now explains in the response.
 
 SAVE, FLAG, REFUSE EXPORT
 -------------------------
@@ -40,11 +49,26 @@ Both languages are generated in one request and stored on one Report, because
 that is what the row was designed for and what the measured bilingual cost
 refers to. The verdict is the WORSE of the two and export requires BOTH to
 pass: a report sent home is only as good as the half the parent can read.
+
+The two calls run concurrently. Sequentially they took 32 to 38 seconds
+measured end to end, and the development proxy in front of Next gives up at
+about thirty: the work completed, the row was committed, and the reply had
+nowhere to go - so a teacher saw an error for a report that exists and has
+been paid for. They are independent calls and there was never a reason to
+wait for the first before starting the second.
+
+Everything downstream of the two calls is still done in `languages` order,
+not completion order. With both in flight the faster one finishes first, and
+keying any of it by position would file the Kiswahili report as English -
+which is the same mistake that once priced the bilingual run from the wrong
+list positions.
 """
 
 from __future__ import annotations
 
+import time
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -112,6 +136,40 @@ def worst_verdict(verdicts: list[str]) -> str | None:
     return min(verdicts, key=lambda v: VERDICT_RANK.get(v, -1))
 
 
+def provider_errors() -> tuple[type[BaseException], ...]:
+    """The model provider's own exception classes, or none if it is absent.
+
+    Imported on demand for the same reason `reports.py` imports the client on
+    demand: this module has to be importable without the `anthropic` package,
+    and the test suite never reaches the live API. An empty tuple in an
+    `except` clause matches nothing, which is the correct behaviour when the
+    package is not installed - there is then no provider call to fail.
+    """
+    try:
+        from anthropic import APIError
+    except ImportError:  # pragma: no cover - declared in requirements.txt
+        return ()
+    return (APIError,)
+
+
+def provider_detail(exc: BaseException) -> str:
+    """What the teacher is told when the provider refuses.
+
+    The provider's own message is deliberately NOT forwarded. It can carry a
+    request id, an organisation id or a billing hint, and this string is
+    rendered in a browser and may be read over a teacher's shoulder. The full
+    message is in the server log, where the person who can act on it already
+    is.
+    """
+    status = getattr(exc, "status_code", None)
+    named = type(exc).__name__ + (f", HTTP {status}" if status else "")
+    return (
+        f"The model provider did not answer ({named}), so no report was "
+        f"generated and nothing was saved. Trying again is reasonable; the "
+        f"server log carries the provider's own message."
+    )
+
+
 def _out(report: Report, learner: str, detail: str) -> ReportOut:
     return ReportOut(
         report_id=str(report.report_id),
@@ -175,17 +233,34 @@ def compose_report(
     chunk_texts = [r.syllabus_text for r in retrieved]
     context = "\n\n".join(chunk_texts)
 
+    started = time.perf_counter()
     content: dict[str, str] = {}
     checks: dict[str, dict] = {}
     totals = {"input": 0, "output": 0, "thinking": 0, "cost": 0.0}
     unusable: list[str] = []
     model = effort = None
 
+    # Submitted together, read back in a fixed order. `future.result()`
+    # re-raises whatever the call raised, so a missing API key or a provider
+    # error still reaches the endpoint's handlers unchanged - the cost is
+    # that a failure in one language now wastes the other's spend, because
+    # both were already in flight.
+    with ThreadPoolExecutor(max_workers=len(languages)) as pool:
+        pending = {
+            language: pool.submit(
+                generate,
+                build_prompt(
+                    facts, chunk_texts, language=language, failure_pattern=pattern
+                ),
+            )
+            for language in languages
+        }
+        results = {
+            language: future.result() for language, future in pending.items()
+        }
+
     for language in languages:
-        prompt = build_prompt(
-            facts, chunk_texts, language=language, failure_pattern=pattern
-        )
-        result = generate(prompt)
+        result = results[language]
         content[language] = result.text
         model, effort = result.model, result.effort
 
@@ -228,6 +303,15 @@ def compose_report(
     )
     session.add(report)
     session.commit()
+
+    # Printed because the wall clock turned out to matter as much as the
+    # money: a generation slow enough for the proxy in front of it to give up
+    # is indistinguishable, from the browser, from a server that crashed.
+    print(
+        f"report: {time.perf_counter() - started:.1f}s, "
+        f"{len(languages)} languages, {totals['output']} output tokens, "
+        f"${round(totals['cost'], 4)}"
+    )
 
     if unusable:
         detail = (
@@ -283,11 +367,15 @@ def create_report(
 
     try:
         diagnosis = repo.diagnose_student(session, strand_id, student_id)
+    except ResponseMatrixError as exc:
+        # Caught BEFORE ValueError, not after. ResponseMatrixError subclasses
+        # ValueError, and the first matching clause wins, so the order this
+        # was written in made this branch unreachable: a violated Phase 0 rule
+        # - a server bug - was being reported as a 409 the teacher was
+        # expected to act on.
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
-    except ResponseMatrixError as exc:
-        # A violated Phase 0 rule is a server bug, not a bad request.
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
     if diagnosis["theta"] is None:
         raise HTTPException(status_code=409, detail=diagnosis["message"])
@@ -305,7 +393,16 @@ def create_report(
             ),
         )
 
-    report, detail = compose_report(session, student, strand, grade, retrieved)
+    try:
+        report, detail = compose_report(session, student, strand, grade, retrieved)
+    except RuntimeError as exc:
+        # A misconfigured server, which in practice means no API key. The
+        # client raises a sentence written for whoever can fix it, and that
+        # sentence is the whole value of the error - so it is passed through
+        # rather than replaced with something tidier.
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except provider_errors() as exc:
+        raise HTTPException(status_code=502, detail=provider_detail(exc)) from exc
     return _out(report, student.name, detail)
 
 

@@ -77,6 +77,7 @@ reach a vector.
 from __future__ import annotations
 
 import re
+import threading
 from collections import Counter
 from collections.abc import Callable, Sequence
 
@@ -123,6 +124,12 @@ HEAD_ENDS_AT = re.compile(
 Embedder = Callable[[Sequence[str]], list[list[float]]]
 
 _embedder: Embedder | None = None
+
+# Guards the lazy build below. The warm-up thread started at application
+# startup and a request that arrives before it finishes would otherwise both
+# construct a model, and the loser's 90MB of weights would sit in memory with
+# nothing referencing them.
+_embedder_lock = threading.Lock()
 
 
 def normalise(text: str | None) -> str:
@@ -180,9 +187,33 @@ def set_embedder(embedder: Embedder | None) -> None:
 
 def get_embedder() -> Embedder:
     global _embedder
+    # Checked once outside the lock so the warm path stays free, then again
+    # inside it: by the time a waiter acquires the lock the model it was
+    # waiting for usually exists.
     if _embedder is None:
-        _embedder = _load_sentence_transformer()
+        with _embedder_lock:
+            if _embedder is None:
+                _embedder = _load_sentence_transformer()
     return _embedder
+
+
+def warm_embedder() -> None:
+    """Build the model before anyone needs it.
+
+    Measured on the development machine: 30.2 seconds to load, 0.14 seconds
+    to encode once loaded. Paid lazily, those 30 seconds landed on the first
+    report request of a worker's life - on top of a generation that already
+    takes ten to thirty - and the dev proxy in front of Next closed the
+    connection before the backend answered. The browser then showed a 500
+    that no server had produced, and the second teacher to click never saw
+    the fault at all.
+
+    A no-op when an embedder is already installed, which is how the test
+    suite stays model-free: the suite installs a stub, so warming finds one
+    and returns.
+    """
+    if _embedder is None:
+        get_embedder()
 
 
 def _load_sentence_transformer() -> Embedder:

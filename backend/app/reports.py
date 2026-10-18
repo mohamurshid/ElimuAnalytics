@@ -105,12 +105,33 @@ NO_GENDER = (
     "be inferred from their name."
 )
 
+# The second half of this was added on 18 October, after a spike run scored a
+# good report FABRICATED. The model had quoted the KICD project correctly AND
+# put quotation marks around its own plain-words statement of the learner's
+# misconception - "A material that is bad at carrying heat also lets heat out
+# fast." The grounding check treats every quoted span of five or more words as
+# a citation claim, so a quoted misconception is indistinguishable from an
+# invented curriculum quotation, and the report was refused export.
+#
+# The check is not what changed. Its strictness is what makes a GROUNDED
+# verdict mean anything, and softening it to guess which quotations are
+# citations would be guessing on exactly the question it exists to answer.
+# What was missing was any statement of what quotation marks are FOR. The
+# prompt forbade quoting outside the context and never said what to do
+# instead, and naming a misconception "in plain words a teacher can use" is
+# an invitation to quote it.
 STRICT_CITATION = (
     "In Paragraph 3 you MUST quote the chosen activity verbatim from the SUGGESTED "
     "LEARNING EXPERIENCES or PROJECTS above, inside double quotation marks, exactly "
     "as written, before explaining how the teacher should run it. Prefer a named "
     "PROJECT where one exists. Do not paraphrase the quoted part, and do not quote "
-    "anything that is not in the context above."
+    "anything that is not in the context above.\n"
+    "Quotation marks are reserved for that citation and for nothing else. Do NOT "
+    "put quotation marks around a misconception you are naming, around the "
+    "learner's own reasoning, around a question you are referring to, or around a "
+    "phrase you want to emphasise - write all of those in plain prose. Any quoted "
+    "span that is not in the curriculum context above is recorded as a fabricated "
+    "citation and the whole report is refused, however good the rest of it is."
 )
 
 
@@ -169,9 +190,10 @@ def failure_block(pattern: dict | None) -> str:
     )
     lines.append(
         "  Read these together. If they share one misconception, name it in plain "
-        "words a teacher can use. If they do not share one, say so plainly and name "
-        "which Specific Learning Outcomes the wrong answers fall under instead. Do "
-        "not describe a pattern that is not there."
+        "words a teacher can use, WITHOUT quotation marks around it. If they do not "
+        "share one, say so plainly and name which Specific Learning Outcomes the "
+        "wrong answers fall under instead. Do not describe a pattern that is not "
+        "there."
     )
     return "\n".join(lines)
 

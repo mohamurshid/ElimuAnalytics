@@ -452,3 +452,57 @@ def test_clearing_the_generator_does_not_load_the_client():
     from app import reports
 
     assert reports._generator is None
+
+
+# --------------------------------------------------------------------------
+# Quotation marks
+#
+# Added 18 October, after a report with a verified KICD citation was refused
+# export because the model also quoted the misconception it had identified.
+# The prompt forbade quoting outside the context but never said what
+# quotation marks were for, and `failure_block` asks for a misconception "in
+# plain words a teacher can use" - an invitation to quote it.
+# --------------------------------------------------------------------------
+def test_the_prompt_says_what_quotation_marks_are_for():
+    assert "reserved for that citation" in STRICT_CITATION
+    assert "misconception" in STRICT_CITATION
+
+
+def test_the_prompt_says_what_a_stray_quotation_costs():
+    """A rule with no stated consequence is advice."""
+    assert "refused" in STRICT_CITATION
+
+
+def test_the_failure_pattern_asks_for_a_misconception_without_quotes():
+    pattern = {
+        "answered": 12,
+        "correct": 8,
+        "failed_items": [
+            {
+                "question": "Which is the best conductor of heat?",
+                "chose": "A cotton cloth",
+                "correct": "A metal spoon",
+            }
+        ],
+        "unreported_failures": 0,
+    }
+    assert "WITHOUT quotation marks" in failure_block(pattern)
+
+
+def test_the_rule_travels_with_the_citation_requirement():
+    """Only the strict prompt carries it, because only it demands a quote."""
+    facts = LearnerFacts(
+        name="Chebet K.",
+        grade="Grade 5",
+        strand="3.0 Force and Energy",
+        sub_strand="3.3 Heat Transfer",
+        theta=-1.74,
+        tier="Below expectation",
+        items_answered=12,
+        consecutive_flags=2,
+    )
+    strict = build_prompt(facts, ["some curriculum"], strict=True)
+    loose = build_prompt(facts, ["some curriculum"], strict=False)
+
+    assert "reserved for that citation" in strict
+    assert "reserved for that citation" not in loose

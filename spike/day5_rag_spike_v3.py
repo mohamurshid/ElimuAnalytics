@@ -123,10 +123,23 @@ import os
 import re
 import sys
 from datetime import datetime
+from collections import Counter
+from pathlib import Path
+from statistics import mean
 
 import numpy as np
 
-from kicd_curriculum_chunks import CURRICULUM_CHUNKS, RUBRIC_LEVELS
+from kicd_curriculum_chunks import CURRICULUM_CHUNKS
+
+# The production prompt, imported rather than copied. `app` lives under
+# backend/, which is not on the path when this script runs from the repo root.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
+from app.reports import MAX_WORDS, RUBRIC_LEVELS, LearnerFacts  # noqa: E402
+from app.reports import build_prompt as production_prompt  # noqa: E402
+
+# RUBRIC_LEVELS comes from production too, where it is derived from TIER_CUTS -
+# the thresholds that actually decide a learner's tier - rather than being a
+# second hand-written list that can disagree with them.
 
 # Current as of 14 Oct 2026. The 4-5 generation this spike originally used is on
 # its way out (sonnet-4-5 retires 30 Nov 2026; haiku-4-5 is dated "not sooner
@@ -594,85 +607,75 @@ def run_retrieval_tests(embedder, chunk_matrix, top_k):
 # ---------------------------------------------------------------------------
 # Part D: prompts, generation, grounding checker
 # ---------------------------------------------------------------------------
-def failure_block(learner):
-    """The learner's actual wrong answers, as the model asked for them."""
-    lines = [
-        f"\nITEM-LEVEL FAILURE PATTERN "
-        f"({learner['items_correct']} of {learner['items_answered']} answered "
-        f"correctly; the {len(learner['failed_items'])} she got wrong are listed "
-        f"with the option she chose):"
-    ]
-    for n, it in enumerate(learner["failed_items"], 1):
-        lines.append(f"  {n}. {it['question']}")
-        lines.append(f"     she chose: {it['chose']}")
-        lines.append(f"     correct:   {it['correct']}")
-    lines.append(
-        "  Read these together. Name the misconception they share, in plain words "
-        "a teacher can use, instead of listing the Specific Learning Outcomes."
+def facts_of(learner):
+    """The spike's learner fixture, as the production prompt's own input type."""
+    return LearnerFacts(
+        name=learner["name"],
+        grade=learner["grade"],
+        strand=learner["strand"],
+        sub_strand=learner["sub_strand"],
+        theta=learner["theta"],
+        tier=learner["ability_tier"],
+        items_answered=learner["items_answered"],
+        consecutive_flags=learner["consecutive_flags"],
     )
-    return "\n".join(lines)
+
+
+def failure_pattern_of(learner):
+    """The fixture as repository.learner_failure_pattern would return it.
+
+    `unreported_failures` is 0 because every failed item in the fixture has
+    both the chosen option and the key. In production that count is the number
+    of wrong answers that cannot be described - hand-marked items - and the
+    prompt says so rather than leaving the gap silent.
+    """
+    return {
+        "answered": learner["items_answered"],
+        "correct": learner["items_correct"],
+        "failed_items": learner["failed_items"],
+        "unreported_failures": 0,
+    }
 
 
 def build_prompt(learner, retrieved, language="English", strict=False, items=False):
-    context = "\n\n".join(c["text"] for c in retrieved)
-    tiers = ", ".join(RUBRIC_LEVELS)
-    lang_line = (
-        "Use clear, professional English."
-        if language == "English"
-        else (
-            "Andika ripoti yote kwa Kiswahili sanifu kinachotumika shuleni Kenya. "
-            "Write the entire report in the standard Kiswahili used in Kenyan schools. "
-            "Use respectful language about the learner at all times; never use words "
-            "that imply the child is stupid or ignorant. Where an accurate Kiswahili "
-            "technical term does not exist, give the Kiswahili term followed by the "
-            "English term in brackets rather than inventing a word."
-        )
+    """The PRODUCTION prompt, assembled from this spike's fixtures.
+
+    This file carried its own copy of the prompt until 18 October, and the
+    copy had drifted: production states the five- and ten-item evidence
+    thresholds, forbids gendered pronouns (added after the first live report
+    said "She answered 12 items" about a learner whose sex the system does not
+    know), allows 250 words rather than 200, and names the learner's actual
+    grade instead of hard-coding Grade 5. Every grounding figure this script
+    produced therefore described a prompt that is not the one being shipped,
+    and it would have gone on passing while the two drifted further apart.
+
+    The same fault, in a different place, cost a morning on 17 October: an
+    instrument that holds a copy of the thing under test reports on the copy.
+
+    Conditions 1 and 2 now differ by exactly one variable - the verbatim
+    citation requirement - because both are built here with strict=False and
+    strict=True. That is a cleaner comparison than before, when the loose
+    condition was a whole separate prompt, but it does mean condition 1's
+    recorded verdict from the 14 October run is not comparable with this one.
+    Condition 5 keeps its own prompt below: production has no no-context
+    variant, because refusing to generate without curriculum is the point.
+    """
+    return production_prompt(
+        facts_of(learner),
+        [c["text"] for c in retrieved],
+        language=language,
+        strict=strict,
+        failure_pattern=failure_pattern_of(learner) if items else None,
     )
-    # v3: the v2 run produced paragraph 3 recommendations that paraphrased the
-    # curriculum generically and never reached the distinctive KICD projects
-    # ("make oven gloves using locally available materials"). Strict mode forces
-    # an explicit verbatim citation so grounding becomes checkable rather than
-    # a matter of opinion.
-    strict_line = (
-        "\nIn Paragraph 3 you MUST quote the chosen activity verbatim from the "
-        "SUGGESTED LEARNING EXPERIENCES or PROJECTS above, inside double quotation "
-        "marks, exactly as written, before explaining how the teacher should run it. "
-        "Prefer a named PROJECT where one exists. Do not paraphrase the quoted part, "
-        "and do not quote anything that is not in the context above.\n"
-        if strict
-        else ""
-    )
-    return f"""You are an educational advisor writing a diagnostic report for a Kenyan primary school teacher.
-
-CURRICULUM CONTEXT (retrieved from the official KICD Grade 5 curriculum design):
-{context}
-
-LEARNER PERFORMANCE:
-- Learner: {learner['name']}, {learner['grade']}
-- Strand: {learner['strand']}
-- Sub-strand: {learner['sub_strand']}
-- Estimated ability (IRT theta): {learner['theta']}
-- KICD rubric level: {learner['ability_tier']}
-- Items answered in this sub-strand: {learner['items_answered']}
-- Flagged as at-risk for {learner['consecutive_flags']} consecutive assessments
-{failure_block(learner) if items else ""}
-
-The KICD rubric levels are: {tiers}
-
-Write a 3-paragraph report addressed to the class teacher:
-Paragraph 1: Summarise the learner's current standing against the KICD rubric level.
-Paragraph 2: Identify the specific gap, referencing the Specific Learning Outcomes
-             from the curriculum context above.
-Paragraph 3: Recommend ONE concrete classroom activity, drawn directly from the
-             Suggested Learning Experiences in the curriculum context.
-{strict_line}
-{lang_line} Maximum 200 words. Do not invent curriculum content that is not
-present in the context above. If the curriculum context does not cover this
-learner's sub-strand, say so explicitly instead of writing a recommendation."""
 
 
 def build_prompt_no_context(learner):
-    """Ablation: same task, no curriculum. Shows what RAG is actually adding."""
+    """Ablation: same task, no curriculum. Shows what RAG is actually adding.
+
+    The word limit is production's, not a literal 200. An ablation has to
+    differ from the conditions it is compared against by ONE thing - the
+    curriculum context - and a different length budget would be a second.
+    """
     tiers = ", ".join(RUBRIC_LEVELS)
     return f"""You are an educational advisor writing a diagnostic report for a Kenyan primary school teacher.
 
@@ -691,7 +694,7 @@ Paragraph 1: Summarise the learner's current standing against the KICD rubric le
 Paragraph 2: Identify the specific gap.
 Paragraph 3: Recommend ONE concrete classroom activity.
 
-Use clear, professional English. Maximum 200 words."""
+Use clear, professional English. Maximum {MAX_WORDS} words."""
 
 
 def verbatim_quotes(report, context_chunk_ids, min_words=5):
@@ -768,6 +771,13 @@ def check_grounding(report, target_id, context_chunk_ids):
     if quoted_fabricated:
         verdict = "FABRICATED"
     elif other_hits:
+        # LEAKED means wording distinctive to another chunk APPEARS. It cannot
+        # tell use from mention, and a correct refusal mentions the wrong
+        # curriculum on purpose - naming what it is declining to use is the
+        # most transparent answer available. Read it with the verified quotes
+        # beside it: wording plus a verified quote is the wrong curriculum
+        # being recommended; wording alone is usually a refusal explaining
+        # itself.
         verdict = "LEAKED"
     elif evidence >= 2 and not vague_hits:
         verdict = "GROUNDED"
@@ -930,6 +940,90 @@ def selftest():
 
 
 # ---------------------------------------------------------------------------
+def run_condition(client, label, prompt, cids, mdl, expect, effort):
+    """One call, checked and printed. Returns the generation record.
+
+    Lifted out of main's loop when --repeat arrived: the same condition now
+    runs N times and the body cannot live inside the loop that repeats it.
+    """
+    gen = call_claude(client, mdl, prompt, label, effort=effort)
+    gen["grounding"] = check_grounding(gen["text"], TARGET_ID, cids)
+    g = gen["grounding"]
+
+    # A control's result is only meaningful if the call itself was sound, so
+    # truncation or an empty body fails it outright.
+    gen["is_control"] = expect is not None
+    if expect is None:
+        gen["passed"] = None
+    else:
+        # Forbidden outcomes, not permitted ones. Both controls were written
+        # with allow-lists of verdicts and both failed on a verdict that was
+        # correct but not listed - a refusal scoring WEAK, an ablation
+        # scoring FABRICATED. An allow-list has to anticipate every
+        # acceptable outcome; a forbid-list only has to name the failure, and
+        # the failure is the thing we actually understand.
+        gen["passed"] = (
+            g["verdict"] not in expect.get("forbid_verdicts", ())
+            and not (expect.get("no_leak") and g["wrong_chunk_anchors"])
+            and not (
+                expect.get("no_verified_quotes") and g["verbatim_quotes_verified"]
+            )
+            and not (expect.get("no_distinctive") and g["target_anchors"])
+            and not gen["truncated"]
+            and not gen["empty"]
+        )
+
+    if expect is None:
+        wanted = ""
+    elif expect.get("forbid_verdicts"):
+        requirement = (
+            "must not quote the wrong curriculum"
+            if expect.get("no_verified_quotes")
+            else "must not leak or recommend"
+        )
+        wanted = (
+            f" - must not be {' or '.join(expect['forbid_verdicts'])}, "
+            f"{requirement}"
+        )
+    else:
+        wanted = " - must not leak or recommend"
+    print(f"  verdict: {g['verdict']}"
+          + ("" if expect is None else
+             f"   [CONTROL: {'PASS' if gen['passed'] else 'FAIL'}{wanted}]"))
+    if expect is not None and not gen["passed"]:
+        print(f"  why this control exists: {expect['why']}")
+    print(f"  DISTINCTIVE KICD anchors (count as evidence): {g['target_anchors'] or 'none'}")
+    print(f"  generic science terms (prove nothing):        {g['generic_terms'] or 'none'}")
+    print(f"  verbatim quotes verified in context:          {g['verbatim_quotes_verified'] or 'none'}")
+    print(f"  verbatim quotes NOT in context (fabricated):  {g['verbatim_quotes_fabricated'] or 'none'}")
+    print(f"  wrong-chunk anchors: {g['wrong_chunk_anchors'] or 'none'}")
+    print(f"  vague phrases: {g['vague_phrases'] or 'none'}")
+    print(f"  lexical overlap with supplied context: {g['context_overlap']}")
+    return gen
+
+
+# Worst first, so one FABRICATED in five cannot hide behind four GROUNDEDs.
+VERDICT_ORDER = ["FABRICATED", "UNGROUNDED", "WEAK", "MIXED", "GROUNDED"]
+
+
+def tally(generations):
+    """Per condition, in the order they were first run: what happened, N times.
+
+    Keyed by label and ordered by first appearance rather than sorted, so the
+    summary reads in the same order as the conditions themselves - 1 through
+    7 - whatever the repeat count.
+    """
+    order, by_label = [], {}
+    for gen in generations:
+        label = gen["label"]
+        if label not in by_label:
+            order.append(label)
+            by_label[label] = []
+        by_label[label].append(gen)
+    return [(label, by_label[label]) for label in order]
+
+
+# ---------------------------------------------------------------------------
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--model", default=DEFAULT_MODEL)
@@ -943,6 +1037,10 @@ def main():
     ap.add_argument("--no-api", action="store_true", help="retrieval tests only")
     ap.add_argument("--embedder", choices=["minilm", "tfidf"], default="minilm")
     ap.add_argument("--selftest", action="store_true")
+    ap.add_argument(
+        "--repeat", type=int, default=1, metavar="N",
+        help="run Part D N times and report counts instead of single verdicts",
+    )
     args = ap.parse_args()
 
     if args.selftest:
@@ -1027,16 +1125,73 @@ def main():
                 ("4. MEASURED / KISWAHILI / Sonnet 5.5 (quality comparison)",
                  build_prompt(FAKE_LEARNER, retrieved, "Kiswahili", strict=True),
                  ctx_ids, COMPARISON_MODEL, None),
+                # Stated as what must NOT happen. This control allowed
+                # ("UNGROUNDED", "MIXED") until 18 October and then failed on
+                # FABRICATED - which is not a worse outcome than UNGROUNDED
+                # here, it is a stronger one: with no context, any quoted span
+                # of five or more words is unverifiable by construction, so a
+                # report that happens to quote a phrase scores FABRICATED and
+                # one that happens not to scores UNGROUNDED. The same prompt
+                # produced both on consecutive runs.
+                #
+                # What must not happen is the checker CLAIMING grounding when
+                # nothing was supplied to ground against - GROUNDED or WEAK -
+                # or crediting distinctive KICD phrasing the model produced
+                # from its own memory, which is precisely the v2 bug.
                 ("5. CONTROL - NO CURRICULUM CONTEXT (ablation)",
                  build_prompt_no_context(FAKE_LEARNER), [], args.model,
-                 {"verdicts": ("UNGROUNDED", "MIXED"), "no_leak": True,
+                 {"forbid_verdicts": ("GROUNDED", "WEAK"),
+                  "no_leak": True, "no_distinctive": True,
                   "why": "with no curriculum supplied, nothing can be grounded; "
-                         "anything else means the checker is crediting the "
-                         "model's own knowledge, which is the v2 bug"}),
+                         "a GROUNDED or WEAK verdict, or a distinctive KICD "
+                         "anchor, means the checker is crediting the model's "
+                         "own knowledge, which is the v2 bug"}),
+                # No `verdicts` key, deliberately. This control passed on a
+                # verdict label until 18 October, when the model did exactly
+                # the right thing and the control failed anyway: it refused,
+                # recommended nothing, leaked no plant content - and quoted
+                # the wrong chunk's own strand name while NAMING the mismatch
+                # ("the retrieved material covers Living Things and their
+                # Environment"). The checker counted that as a verified
+                # citation, which lifts UNGROUNDED to WEAK, and the label
+                # test failed a correct refusal.
+                #
+                # The label was always a proxy. What this control exists to
+                # protect is that no plant activity reaches a teacher, and
+                # that shows up as anchors, not as a verdict: target_anchors
+                # empty means nothing distinctive was recommended,
+                # wrong_chunk_anchors empty means nothing leaked. The verdict
+                # is still printed, because it is informative - a refusal
+                # scoring WEAK is worth knowing about - but it no longer
+                # decides.
                 ("6. CONTROL - WRONG CONTEXT (plants for a heat learner)",
                  build_prompt(FAKE_LEARNER, plants, "English", strict=True),
                  ["sci_1_1"], args.model,
-                 {"verdicts": ("UNGROUNDED",), "no_leak": True,
+                 # Third revision of this control, and the same lesson each
+                 # time. It tested the verdict label, which failed a refusal
+                 # that scored WEAK. It then tested wrong-chunk anchors,
+                 # which failed a refusal that NAMED the plants outcomes in
+                 # order to explain why they could not be used - "the
+                 # Specific Learning Outcomes provided (classifying plants as
+                 # flowering and non-flowering...) therefore cannot be used
+                 # to locate the learner's gap in heat transfer". Both were
+                 # proxies for use, and both punished transparency.
+                 #
+                 # The sharp test is available here: the ONLY context
+                 # supplied is the wrong chunk, so any verified verbatim
+                 # quote is necessarily a quote of the wrong curriculum,
+                 # while a mention inside a refusal carries none. Anchors are
+                 # still printed, because a human should read them when they
+                 # appear.
+                 #
+                 # Known limitation, for Chapter 6: a recommendation
+                 # PARAPHRASED from the wrong chunk would carry no verified
+                 # quote and would pass this control. The strict prompt
+                 # requires a verbatim citation for any recommendation, so
+                 # such a report would be violating the prompt in two ways at
+                 # once, but the instrument would not catch it.
+                 {"forbid_verdicts": ("GROUNDED", "WEAK"),
+                  "no_verified_quotes": True, "no_distinctive": True,
                   "why": "the only safe answer is to refuse; a recommendation "
                          "built from plants curriculum for a heat learner would "
                          "be a wrong-chunk leak reaching a teacher"}),
@@ -1049,63 +1204,79 @@ def main():
             print("1 vs 2 isolates the prompt wording; 3 vs 4 isolates the model;")
             print("2 vs 7 isolates the item-level failure pattern; 5 and 6 are")
             print("controls with known-correct answers and print PASS or FAIL.\n")
-            for label, prompt, cids, mdl, expect in conditions:
-                gen = call_claude(client, mdl, prompt, label, effort=args.effort)
-                gen["grounding"] = check_grounding(gen["text"], TARGET_ID, cids)
-                g = gen["grounding"]
+            if args.repeat > 1:
+                print(f"{args.repeat} passes over every condition, same prompts "
+                      f"each time.\nOne pass is an anecdote: across four runs of "
+                      f"an unchanged prompt,\ncondition 1 came back GROUNDED, "
+                      f"WEAK and UNGROUNDED, and condition 7\nfabricated a "
+                      f"citation once. Counts, not samples.\n")
 
-                # A control's result is only meaningful if the call itself was
-                # sound, so truncation or an empty body fails it outright.
-                gen["is_control"] = expect is not None
-                if expect is None:
-                    gen["passed"] = None
-                else:
-                    gen["passed"] = (
-                        g["verdict"] in expect["verdicts"]
-                        and not (expect.get("no_leak") and g["wrong_chunk_anchors"])
-                        and not gen["truncated"]
-                        and not gen["empty"]
+            for attempt in range(1, args.repeat + 1):
+                if args.repeat > 1:
+                    hr(f"PASS {attempt} OF {args.repeat}")
+                for label, prompt, cids, mdl, expect in conditions:
+                    gen = run_condition(
+                        client, label, prompt, cids, mdl, expect, args.effort
                     )
+                    gen["pass"] = attempt
+                    results["generations"].append(gen)
 
-                print(f"  verdict: {g['verdict']}"
-                      + ("" if expect is None else
-                         f"   [CONTROL: {'PASS' if gen['passed'] else 'FAIL'}"
-                         f" - expected {' or '.join(expect['verdicts'])}]"))
-                if expect is not None and not gen["passed"]:
-                    print(f"  why this control exists: {expect['why']}")
-                print(f"  DISTINCTIVE KICD anchors (count as evidence): {g['target_anchors'] or 'none'}")
-                print(f"  generic science terms (prove nothing):        {g['generic_terms'] or 'none'}")
-                print(f"  verbatim quotes verified in context:          {g['verbatim_quotes_verified'] or 'none'}")
-                print(f"  verbatim quotes NOT in context (fabricated):  {g['verbatim_quotes_fabricated'] or 'none'}")
-                print(f"  wrong-chunk anchors: {g['wrong_chunk_anchors'] or 'none'}")
-                print(f"  vague phrases: {g['vague_phrases'] or 'none'}")
-                print(f"  lexical overlap with supplied context: {g['context_overlap']}")
-                results["generations"].append(gen)
 
             hr("SUMMARY")
-            print(f"{'condition':<48}{'verdict':<12}{'dist':>5}{'quote':>6}"
-                  f"{'gen':>5}{'vague':>7}{'  control':<10}")
-            for gen in results["generations"]:
-                g = gen["grounding"]
-                if gen.get("empty"):
-                    flag = "  <-- EMPTY, verdict not valid"
-                elif gen.get("truncated"):
-                    flag = "  <-- TRUNCATED, verdict not valid"
-                elif gen["passed"] is True:
-                    flag = "  PASS"
-                elif gen["passed"] is False:
-                    flag = "  FAIL"
-                else:
-                    flag = "  (measured)"
-                print(f"{gen['label'][:46]:<48}{g['verdict']:<12}"
-                      f"{len(g['target_anchors']):>5}{len(g['verbatim_quotes_verified']):>6}"
-                      f"{len(g['generic_terms']):>5}{len(g['vague_phrases']):>7}{flag}")
+            if args.repeat == 1:
+                print(f"{'condition':<48}{'verdict':<12}{'dist':>5}{'quote':>6}"
+                      f"{'gen':>5}{'vague':>7}{'  control':<10}")
+                for gen in results["generations"]:
+                    g = gen["grounding"]
+                    if gen.get("empty"):
+                        flag = "  <-- EMPTY, verdict not valid"
+                    elif gen.get("truncated"):
+                        flag = "  <-- TRUNCATED, verdict not valid"
+                    elif gen["passed"] is True:
+                        flag = "  PASS"
+                    elif gen["passed"] is False:
+                        flag = "  FAIL"
+                    else:
+                        flag = "  (measured)"
+                    print(f"{gen['label'][:46]:<48}{g['verdict']:<12}"
+                          f"{len(g['target_anchors']):>5}"
+                          f"{len(g['verbatim_quotes_verified']):>6}"
+                          f"{len(g['generic_terms']):>5}"
+                          f"{len(g['vague_phrases']):>7}{flag}")
+            else:
+                # Counts, with the worst outcome first so a single FABRICATED
+                # in five cannot hide behind four GROUNDEDs. dist and quote
+                # are means across the passes.
+                print(f"{'condition':<40}{'verdicts over ' + str(args.repeat) + ' passes':<42}"
+                      f"{'dist':>5}{'quote':>6}  control")
+                for label, runs in tally(results["generations"]):
+                    counted = Counter(r["grounding"]["verdict"] for r in runs)
+                    worst_first = sorted(
+                        counted.items(),
+                        key=lambda kv: VERDICT_ORDER.index(kv[0])
+                        if kv[0] in VERDICT_ORDER else 0,
+                    )
+                    verdicts = ", ".join(f"{v} {n}" for v, n in worst_first)
+                    dist = mean(len(r["grounding"]["target_anchors"]) for r in runs)
+                    quote = mean(
+                        len(r["grounding"]["verbatim_quotes_verified"]) for r in runs
+                    )
+                    if runs[0]["is_control"]:
+                        ok = sum(1 for r in runs if r["passed"])
+                        flag = f"  {'PASS' if ok == len(runs) else 'FAIL'} {ok}/{len(runs)}"
+                    else:
+                        flag = "  (measured)"
+                    print(f"{label[:38]:<40}{verdicts[:40]:<42}"
+                          f"{dist:>5.1f}{quote:>6.1f}{flag}")
 
+            # Every pass, not most of them. A control that passes four times
+            # in five is a broken control, and averaging it away is how an
+            # instrument stops reporting its own failures.
             controls = [g for g in results["generations"] if g["is_control"]]
             ctl_ok = all(g["passed"] for g in controls)
             results["controls_passed"] = ctl_ok
             print(f"\nCONTROLS: {sum(1 for g in controls if g['passed'])}/"
-                  f"{len(controls)} passed."
+                  f"{len(controls)} control runs passed."
                   + ("" if ctl_ok else
                      " A failed control invalidates the measured conditions -"
                      " fix it before quoting any of them."))
@@ -1125,10 +1296,15 @@ def main():
                 g["cost_usd"] for g in results["generations"]
                 if g["cost_usd"] and g["label"].startswith(("2.", "3."))
             )
+            # Divided by the pass count: `bilingual` sums conditions 2 and 3
+            # across every pass, and the figure that means anything is the
+            # cost of ONE report.
+            per_report = bilingual / args.repeat
             print(f"\nTotal this run ({len(costs)} calls): ${total:.5f}")
-            print(f"Bilingual report (EN strict + SW Haiku): ${bilingual:.5f} "
-                  f"= {bilingual*100:.2f} cents")
-            print(f"Projected 60 UAT bilingual reports: ${bilingual*60:.2f}")
+            print(f"Bilingual report (EN strict + SW Haiku): ${per_report:.5f} "
+                  f"= {per_report*100:.2f} cents"
+                  + (f"  (mean of {args.repeat})" if args.repeat > 1 else ""))
+            print(f"Projected 60 UAT bilingual reports: ${per_report*60:.2f}")
             think_total = sum(
                 g["thinking_tokens"] or 0 for g in results["generations"]
             )
@@ -1140,7 +1316,11 @@ def main():
             print("Different models at different prices, and a tokenizer from 4.7")
             print("onwards that emits ~30% more tokens for the same text. Quote this")
             print("number, and say which models produced it.")
-            results["cost"] = {"run_total_usd": total, "bilingual_report_usd": bilingual}
+            results["cost"] = {
+                "run_total_usd": total,
+                "bilingual_report_usd": per_report,
+                "passes": args.repeat,
+            }
 
         out = os.path.join(here, f"day5_results_{stamp}.json")
         with open(out, "w", encoding="utf-8") as f:
@@ -1153,11 +1333,23 @@ def main():
             misses = [f"{r['expected']}->{r['retrieved']}" for r in rows if not r["correct"]]
             print(f"  retrieval {style:<8} top-1 {acc:5.1f}%  mean margin {mm:.3f}"
                   + (f"  misses: {', '.join(misses)}" if misses else ""))
-        for gen in results.get("generations", []):
-            g = gen["grounding"]
-            print(f"  {gen['label'][:44]:<46} {g['verdict']:<11} "
-                  f"dist={len(g['target_anchors'])} quote={len(g['verbatim_quotes_verified'])} "
-                  f"gen={len(g['generic_terms'])} vague={len(g['vague_phrases'])}")
+        for label, runs in tally(results.get("generations", [])):
+            if len(runs) == 1:
+                g = runs[0]["grounding"]
+                print(f"  {label[:44]:<46} {g['verdict']:<11} "
+                      f"dist={len(g['target_anchors'])} "
+                      f"quote={len(g['verbatim_quotes_verified'])} "
+                      f"gen={len(g['generic_terms'])} "
+                      f"vague={len(g['vague_phrases'])}")
+            else:
+                counted = Counter(r["grounding"]["verdict"] for r in runs)
+                worst_first = sorted(
+                    counted.items(),
+                    key=lambda kv: VERDICT_ORDER.index(kv[0])
+                    if kv[0] in VERDICT_ORDER else 0,
+                )
+                print(f"  {label[:44]:<46} "
+                      + ", ".join(f"{v} {n}/{len(runs)}" for v, n in worst_first))
         if results.get("cost"):
             print(f"  cost this run: ${results['cost']['run_total_usd']:.5f}")
         print(f"\n  files: day5_results_{stamp}.json / day5_transcript_{stamp}.txt")

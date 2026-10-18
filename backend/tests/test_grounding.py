@@ -221,3 +221,50 @@ def test_overlap_is_recorded_but_cannot_earn_a_verdict():
 def test_overlap_of_nothing_is_zero_not_an_error():
     assert lexical_overlap("", V4_CHUNK) == 0.0
     assert check("", V4_CHUNK)["verdict"] == "WEAK"
+
+
+# --------------------------------------------------------------------------
+# Why the checker stays strict
+#
+# On 18 October a spike run produced a good report - a verified KICD citation,
+# three distinctive anchors, a correctly identified misconception - and scored
+# it FABRICATED, because the model had also put quotation marks around its own
+# plain-words statement of the learner's mistake. The fix went into the
+# prompt, which now reserves quotation marks for citations. These tests pin
+# the checker's side of that decision: it must keep treating an unverifiable
+# quoted span as fabricated, because it cannot tell a misquoted curriculum
+# line from a quoted paraphrase, and guessing would be guessing at exactly
+# the question it exists to answer.
+# --------------------------------------------------------------------------
+QUOTED_MISCONCEPTION = (
+    'I recommend the project: "Learners to make oven gloves using locally '
+    'available materials". The learner appears to believe that "A material '
+    'that is bad at carrying heat also lets heat out fast."'
+)
+
+
+def test_a_quoted_non_citation_is_fabricated_even_beside_a_real_one():
+    """The exact report shape that failed on 18 October."""
+    result = check(QUOTED_MISCONCEPTION, V4_CHUNK)
+
+    assert result["verdict"] == "FABRICATED"
+    assert result["exportable"] is False
+    assert any(
+        "oven gloves" in quote for quote in result["verbatim_quotes_verified"]
+    )
+    assert any(
+        "lets heat out fast" in quote
+        for quote in result["verbatim_quotes_fabricated"]
+    )
+
+
+def test_the_same_report_without_the_quotation_marks_is_grounded():
+    """One pair of quotation marks is the whole difference."""
+    plain = QUOTED_MISCONCEPTION.replace(
+        '"A material that is bad at carrying heat also lets heat out fast."',
+        "a material that is bad at carrying heat also lets heat out fast.",
+    )
+    result = check(plain, V4_CHUNK)
+
+    assert result["verdict"] == "GROUNDED"
+    assert result["verbatim_quotes_fabricated"] == []

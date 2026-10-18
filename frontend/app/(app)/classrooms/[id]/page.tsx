@@ -1,29 +1,48 @@
 "use client";
 
 /**
- * A classroom's competency heatmap — the default view of a class.
+ * A classroom: how it is doing, and what to do next.
  *
- * It leads rather than hiding behind the intervention queue because the
- * queue is a conclusion and this is the evidence for it. A teacher who only
- * ever sees the queue has to take the flagging on trust.
+ * It leads with the evidence rather than hiding behind the support list,
+ * because that list is a conclusion and this is the evidence for it. A
+ * teacher who only ever sees the list has to take the flagging on trust.
+ *
+ * The five actions that used to sit in one row are really three jobs, and are
+ * grouped as such:
+ *
+ *   - Giving a quiz, two ways: on this device, or marking a paper one. As two
+ *     unrelated links a teacher could not tell they were the same task.
+ *   - Class records: recording levels, and recalibrating the questions. The
+ *     first was called "Run assessment" and was the dominant button, which
+ *     invited a teacher who wanted to quiz their class to run a statistics job
+ *     instead. It is also the ONLY way a learner reaches the support list - a
+ *     flag needs two consecutive low records - so it stays prominent enough
+ *     to find, just not the thing pressed by mistake.
+ *   - Managing learners, which is the roll.
  */
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
-import { Heatmap, Legend } from "@/components/Heatmap";
-import { Button, Empty, Loading, Note } from "@/components/ui";
+import { ClassSummary, Heatmap, Legend } from "@/components/Heatmap";
+import { Button, ButtonLink, Card, Empty, Loading, Note, PageHeader } from "@/components/ui";
 import { api, ApiError, errorMessage } from "@/lib/api";
+import { HOME } from "@/lib/routes";
 import type { Assessment, Heatmap as HeatmapData } from "@/lib/types";
 
-export default function ClassHeatmapPage() {
+function plural(n: number, one: string, many: string) {
+  return `${n} ${n === 1 ? one : many}`;
+}
+
+export default function ClassPage() {
   const { id: classId } = useParams<{ id: string }>();
 
   const [data, setData] = useState<HeatmapData | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState<{ text: string; link?: boolean } | null>(null);
+  const [busy, setBusy] = useState<"record" | "calibrate" | null>(null);
+  const [order, setOrder] = useState<"need" | "name">("need");
 
   const fetchHeatmap = useCallback(
     () => api.get<HeatmapData>(`/api/classrooms/${classId}/heatmap`),
@@ -33,8 +52,8 @@ export default function ClassHeatmapPage() {
   const failure = useCallback(
     (e: unknown) =>
       e instanceof ApiError && e.status === 404
-        ? "No such classroom at your school."
-        : errorMessage(e, "Could not load the heatmap"),
+        ? "This class isn’t at your school, or it no longer exists."
+        : errorMessage(e, "Could not load this class"),
     [],
   );
 
@@ -65,31 +84,29 @@ export default function ClassHeatmapPage() {
     }
   }, [fetchHeatmap, failure]);
 
-  /** Recalibrate every strand, then re-read. */
+  /** Re-estimate item difficulty and discrimination, then re-read. */
   async function calibrate() {
     if (!data) return;
-    setBusy(true);
+    setBusy("calibrate");
     setError(null);
     setNotice(null);
     try {
       const results = await Promise.all(
         data.strands.map((s) =>
-          api.post<{ items_calibrated: number }>(
-            `/api/strands/${s.strand_id}/calibrate`,
-          ),
+          api.post<{ items_calibrated: number }>(`/api/strands/${s.strand_id}/calibrate`),
         ),
       );
       const items = results.reduce((n, r) => n + r.items_calibrated, 0);
-      setNotice(
-        `Calibrated ${items} items across ${results.length} strand(s). ` +
-          "Item difficulty and discrimination are re-estimated from the " +
-          "responses recorded so far.",
-      );
+      setNotice({
+        text:
+          `Re-checked ${plural(items, "question", "questions")} against the ` +
+          "answers recorded so far. Levels below now use the updated questions.",
+      });
       await reload();
     } catch (e) {
-      setError(errorMessage(e, "Calibration failed"));
+      setError(errorMessage(e, "Could not recalibrate the questions"));
     } finally {
-      setBusy(false);
+      setBusy(null);
     }
   }
 
@@ -98,138 +115,176 @@ export default function ClassHeatmapPage() {
    *
    * Separate from calibration on purpose, and separate from viewing: an
    * assessment is an event in a learner's record, not a side effect of
-   * opening a page. It is also the only way a flag can ever be raised, and a
-   * flag needs two of these — so the notice says how many were recorded and
-   * how many learners were skipped for want of evidence, which is usually the
-   * question a teacher has next.
+   * opening a page. The notice says how many were saved and how many learners
+   * were skipped for want of evidence, which is usually the next question.
    */
-  async function assess() {
+  async function record() {
     if (!data) return;
-    setBusy(true);
+    setBusy("record");
     setError(null);
     setNotice(null);
     try {
       const results = await Promise.all(
-        data.strands.map((s) =>
-          api.post<Assessment>(`/api/strands/${s.strand_id}/assess`),
-        ),
+        data.strands.map((s) => api.post<Assessment>(`/api/strands/${s.strand_id}/assess`)),
       );
       const recorded = results.reduce((n, r) => n + r.estimates_recorded, 0);
-      const skipped = results.reduce(
-        (n, r) => n + r.skipped_insufficient_evidence,
-        0,
-      );
+      const skipped = results.reduce((n, r) => n + r.skipped_insufficient_evidence, 0);
       const flags = results.reduce((n, r) => n + r.new_flags, 0);
-      setNotice(
-        `Recorded ${recorded} estimate(s). ` +
-          `${skipped} learner(s) were skipped for too little evidence — no ` +
-          "number is stored for them, so they can never accumulate a flag. " +
-          (flags > 0
-            ? `${flags} new flag(s) raised; see the intervention queue.`
-            : "No new flags: a flag needs two consecutive below-threshold " +
-              "assessments, so run this again to see one."),
+      const parts = [`Saved levels for ${plural(recorded, "learner", "learners")}.`];
+      if (skipped > 0) {
+        parts.push(
+          `${plural(skipped, "learner hasn’t", "learners haven’t")} answered enough ` +
+            "questions yet, so no level was saved for them.",
+        );
+      }
+      parts.push(
+        flags > 0
+          ? `${plural(flags, "learner now needs", "learners now need")} support.`
+          : "Nobody new needs support — a learner is added after two low results in a row.",
       );
+      setNotice({ text: parts.join(" "), link: flags > 0 });
       await reload();
     } catch (e) {
-      setError(errorMessage(e, "Assessment failed"));
+      setError(errorMessage(e, "Could not record levels"));
     } finally {
-      setBusy(false);
+      setBusy(null);
     }
   }
 
-  const title = data
-    ? `${data.grade}${data.name ? ` ${data.name}` : ""}`
-    : "Classroom";
+  const title = data ? `${data.grade}${data.name ? ` ${data.name}` : ""}` : "Class";
+  const counts = data
+    ? `${plural(data.learners.length, "learner", "learners")} · ` +
+      plural(data.strands.length, "strand", "strands")
+    : undefined;
 
   return (
     <>
-      <Link
-        href="/classrooms"
-        className="text-sm text-neutral-500 hover:text-neutral-900"
-      >
-        ← All classrooms
-      </Link>
+      <PageHeader
+        back={{ href: "/classrooms", label: "Classes" }}
+        title={title}
+        description={counts}
+        actions={
+          <ButtonLink href={`/classrooms/${classId}/roll`} variant="ghost" className="-ml-2 sm:ml-0">
+            Manage learners
+          </ButtonLink>
+        }
+      />
 
-      <div className="mt-2 flex flex-wrap items-baseline justify-between gap-3">
-        <h1 className="text-2xl font-semibold">{title}</h1>
-        <div className="flex items-center gap-3">
-          <Link
-            href={`/classrooms/${classId}/roll`}
-            className="text-sm underline underline-offset-2
-                       hover:text-neutral-500"
-          >
-            Roll
-          </Link>
-          <Link
-            href={`/classrooms/${classId}/quiz`}
-            className="text-sm underline underline-offset-2
-                       hover:text-neutral-500"
-          >
-            Mark a quiz
-          </Link>
-          <Link
-            href={`/classrooms/${classId}/administer`}
-            className="text-sm underline underline-offset-2
-                       hover:text-neutral-500"
-          >
-            Administer
-          </Link>
-          <Button variant="secondary" disabled={busy || !data} onClick={calibrate}>
-            Recalibrate
-          </Button>
-          <Button disabled={busy || !data} onClick={assess}>
-            Run assessment
-          </Button>
-        </div>
-      </div>
-
-      <p className="mt-1 max-w-3xl text-sm text-neutral-600">
-        Estimated competency per learner, per strand. A learner who has
-        answered fewer than {data?.minimum_responses ?? 5} items in a strand
-        gets no estimate at all — that is the system refusing to report a
-        number derived from too little evidence, not missing data.
-      </p>
-
-      <div className="mt-4 space-y-3">
+      <div className="space-y-3">
         <Note tone="error">{error}</Note>
-        <Note>{notice}</Note>
+        {notice && (
+          <Note tone="ok">
+            {notice.text}{" "}
+            {notice.link && (
+              <Link href={HOME} className="font-semibold underline underline-offset-2">
+                See who
+              </Link>
+            )}
+          </Note>
+        )}
       </div>
 
-      {!data && !error && (
-        <div className="mt-6">
-          <Loading what="the heatmap" />
-        </div>
-      )}
+      {!data && !error && <Loading what="the class" />}
 
       {data && data.learners.length === 0 && (
-        <div className="mt-6">
-          <Empty>
-            No learners enrolled.{" "}
-            <Link
-              href={`/classrooms/${classId}/roll`}
-              className="underline underline-offset-2"
-            >
-              Enrol some on the roll
-            </Link>
-            .
-          </Empty>
-        </div>
+        <Empty
+          title="No learners in this class yet"
+          action={
+            <ButtonLink href={`/classrooms/${classId}/roll`} variant="primary">
+              Add learners
+            </ButtonLink>
+          }
+        >
+          Add your learners first, then give the class a quiz to see where each
+          one is.
+        </Empty>
       )}
 
       {data && data.learners.length > 0 && (
-        <>
-          <div className="mt-6">
-            <Legend minimum={data.minimum_responses} />
+        <div className="space-y-6">
+          <div className="grid gap-3 md:grid-cols-2">
+            <Card className="p-4">
+              <h2 className="text-base font-semibold text-ink">Give a quiz</h2>
+              <p className="mt-1 text-sm text-ink-muted">
+                Learners answer on this device, or you mark a paper quiz.
+              </p>
+              <div className="mt-4 grid grid-cols-2 gap-2">
+                <ButtonLink href={`/classrooms/${classId}/administer`} variant="primary">
+                  On this device
+                </ButtonLink>
+                <ButtonLink href={`/classrooms/${classId}/quiz`} variant="secondary">
+                  Mark paper quiz
+                </ButtonLink>
+              </div>
+            </Card>
+
+            <Card className="divide-y divide-line">
+              <div className="flex flex-wrap items-center justify-between gap-3 p-4">
+                <div className="min-w-0 flex-1 basis-48">
+                  <h2 className="text-base font-semibold text-ink">Record levels</h2>
+                  <p className="mt-0.5 text-sm text-ink-muted">
+                    Saves each learner’s level after a quiz. Two low results in a
+                    row add a learner to Support.
+                  </p>
+                </div>
+                <Button variant="secondary" disabled={busy !== null} onClick={record}>
+                  {busy === "record" ? "Saving…" : "Record levels"}
+                </Button>
+              </div>
+              <div className="flex flex-wrap items-center justify-between gap-3 p-4">
+                <div className="min-w-0 flex-1 basis-48">
+                  <h2 className="text-base font-semibold text-ink">Recalibrate questions</h2>
+                  <p className="mt-0.5 text-sm text-ink-muted">
+                    Re-checks how hard each question is, using every answer so far.
+                  </p>
+                </div>
+                <Button variant="secondary" disabled={busy !== null} onClick={calibrate}>
+                  {busy === "calibrate" ? "Working…" : "Recalibrate"}
+                </Button>
+              </div>
+            </Card>
           </div>
-          <div className="mt-3">
-            <Heatmap data={data} />
-          </div>
-          <p className="mt-4 text-xs text-neutral-500">
-            θ is the latent ability estimate for that strand. An estimate from
-            fewer than {data.confident_responses} items is marked provisional:
-            usable, but not yet firm enough to act on alone.
-          </p>
-        </>
+
+          <Card className="p-4">
+            <h2 className="mb-4 text-base font-semibold text-ink">How the class is doing</h2>
+            <ClassSummary data={data} />
+          </Card>
+
+          <section aria-labelledby="learners-heading">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+              <h2 id="learners-heading" className="text-lg font-semibold text-ink">
+                Learners
+              </h2>
+              <div
+                role="group"
+                aria-label="Sort learners"
+                className="inline-flex rounded-md border border-line-strong bg-surface p-0.5"
+              >
+                {(["need", "name"] as const).map((value) => (
+                  <button
+                    key={value}
+                    type="button"
+                    aria-pressed={order === value}
+                    onClick={() => setOrder(value)}
+                    className={`min-h-10 rounded px-3 text-sm font-medium
+                                ${order === value ? "bg-sunken text-ink" : "text-ink-muted hover:text-ink"}`}
+                  >
+                    {value === "need" ? "Most need first" : "A–Z"}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="mb-3">
+              <Legend minimum={data.minimum_responses} />
+            </div>
+            <Heatmap data={data} order={order} />
+            <p className="mt-4 text-sm text-ink-subtle">
+              Levels are estimated from the answers recorded so far. A level
+              marked provisional is based on fewer than {data.confident_responses}{" "}
+              answers — useful, but check it before acting on it alone.
+            </p>
+          </section>
+        </div>
       )}
     </>
   );

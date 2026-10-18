@@ -1,89 +1,217 @@
 "use client";
 
 /**
- * Stage 1 placeholder. It exists to prove the chain end to end: sign in,
- * reach a protected page, call an authenticated endpoint with the in-memory
- * token, and survive a reload on the refresh cookie alone.
+ * Overview: the teacher's classes at a glance.
  *
- * Stages 2 and 3 replace the body with classrooms and the competency heatmap.
+ * Built only from data that exists. In particular there is no "progress over
+ * time" chart: levels are stored per learner per strand, but nothing exposes
+ * their history yet and with at most one recording there is nothing to plot.
+ * An empty trend line would be decoration, and the brief for this page was
+ * explicit about charts that exist to fill space.
+ *
+ * Each class's levels load independently. The heatmap endpoint takes several
+ * seconds, so one slow or failing class must not hold the others back - every
+ * card renders straight away with its name and count, and its bar arrives
+ * when it arrives.
+ *
+ * This page replaced a Stage 1 placeholder whose only job was to prove the
+ * sign-in chain worked; its explanation of the refresh cookie was written for
+ * whoever was testing it, not for a teacher.
  */
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 
-import { api, ApiError } from "@/lib/api";
+import { ClassSummary } from "@/components/Heatmap";
+import { Badge, ButtonLink, Card, Empty, Loading, Note, PageHeader } from "@/components/ui";
+import { api, errorMessage } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import type { Strand } from "@/lib/types";
+import { HOME } from "@/lib/routes";
+import type { Classroom, Flag, Heatmap as HeatmapData, Strand } from "@/lib/types";
 
-export default function DashboardPage() {
-  const { profile } = useAuth();
-  const [strands, setStrands] = useState<Strand[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
+type Loadable<T> = { data: T } | { error: string } | null;
+
+function plural(n: number, one: string, many: string) {
+  return `${n} ${n === 1 ? one : many}`;
+}
+
+function ClassCard({ classroom }: { classroom: Classroom }) {
+  const [levels, setLevels] = useState<Loadable<HeatmapData>>(null);
 
   useEffect(() => {
+    let cancelled = false;
+    api
+      .get<HeatmapData>(`/api/classrooms/${classroom.class_id}/heatmap`)
+      .then((data) => !cancelled && setLevels({ data }))
+      .catch((e) => !cancelled && setLevels({ error: errorMessage(e, "Could not load levels") }));
+    return () => {
+      cancelled = true;
+    };
+  }, [classroom.class_id]);
+
+  const title = `${classroom.grade}${classroom.name ? ` ${classroom.name}` : ""}`;
+
+  return (
+    <Card className="overflow-hidden">
+      <Link
+        href={`/classrooms/${classroom.class_id}`}
+        className="flex min-h-14 items-center justify-between gap-3 border-b border-line px-4 py-3 hover:bg-sunken"
+      >
+        <span className="min-w-0">
+          <span className="block truncate text-base font-semibold text-ink">{title}</span>
+          <span className="block text-sm text-ink-muted">
+            {plural(classroom.student_count, "learner", "learners")}
+          </span>
+        </span>
+        <span className="shrink-0 text-sm font-medium text-ink-muted">
+          Open <span aria-hidden="true">›</span>
+        </span>
+      </Link>
+      <div className="p-4">
+        {levels === null && <Loading what="levels" />}
+        {levels && "error" in levels && <Note tone="error">{levels.error}</Note>}
+        {levels && "data" in levels &&
+          (levels.data.learners.length === 0 ? (
+            <p className="text-[15px] text-ink-muted">No learners in this class yet.</p>
+          ) : levels.data.strands.length === 0 ? (
+            <p className="text-[15px] text-ink-muted">No strands are assessed yet.</p>
+          ) : (
+            <ClassSummary data={levels.data} />
+          ))}
+      </div>
+    </Card>
+  );
+}
+
+export default function OverviewPage() {
+  const { profile } = useAuth();
+  const [flags, setFlags] = useState<Loadable<Flag[]>>(null);
+  const [classes, setClasses] = useState<Loadable<Classroom[]>>(null);
+  const [strands, setStrands] = useState<Loadable<Strand[]>>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    // Settled separately: the support count failing should not blank the
+    // classes, and the reverse.
+    api
+      .get<Flag[]>("/api/flags")
+      .then((data) => !cancelled && setFlags({ data }))
+      .catch((e) => !cancelled && setFlags({ error: errorMessage(e, "Could not load support list") }));
+    api
+      .get<Classroom[]>("/api/classrooms")
+      .then((data) => !cancelled && setClasses({ data }))
+      .catch((e) => !cancelled && setClasses({ error: errorMessage(e, "Could not load classes") }));
     api
       .get<Strand[]>("/api/strands")
-      .then(setStrands)
-      .catch((e) =>
-        setError(e instanceof ApiError ? e.message : "Request failed"),
-      );
+      .then((data) => !cancelled && setStrands({ data }))
+      .catch((e) => !cancelled && setStrands({ error: errorMessage(e, "Could not load questions") }));
+    return () => {
+      cancelled = true;
+    };
   }, []);
+
+  const supportCount = flags && "data" in flags ? flags.data.length : null;
+  const classList = classes && "data" in classes ? classes.data.filter((c) => c.is_active) : null;
+  const firstName = profile?.name?.split(" ")[0];
 
   return (
     <>
-      <h1 className="text-2xl font-semibold">Dashboard</h1>
-      <p className="mt-1 text-sm text-neutral-600">
-        Signed in as {profile?.email}. Reload this page — the access token is
-        held in memory and dies with it, and the session is restored from the
-        httpOnly refresh cookie before anything renders.
-      </p>
+      <PageHeader
+        title="Overview"
+        description={firstName ? `Your classes at a glance, ${firstName}.` : "Your classes at a glance."}
+      />
 
-      <section className="mt-8">
-        <h2 className="text-sm font-medium uppercase tracking-wide
-                       text-neutral-500">
-          Strands
-        </h2>
+      <div className="space-y-8">
+        {/* The one number on this page a teacher acts on. */}
+        <Link
+          href={HOME}
+          className="flex min-h-20 items-center justify-between gap-4 rounded-lg border border-line bg-surface px-5 py-4 hover:bg-sunken"
+        >
+          <span>
+            <span className="block text-sm font-medium text-ink-muted">Need support</span>
+            <span className="mt-0.5 block text-[15px] text-ink">
+              {supportCount === null
+                ? flags && "error" in flags
+                  ? flags.error
+                  : "Checking…"
+                : supportCount === 0
+                  ? "No one yet"
+                  : `${plural(supportCount, "learner", "learners")} to look at`}
+            </span>
+          </span>
+          <span className="flex items-center gap-3">
+            {supportCount !== null && (
+              <span className="text-3xl font-semibold tabular-nums text-ink">{supportCount}</span>
+            )}
+            <span aria-hidden="true" className="text-xl text-ink-subtle">›</span>
+          </span>
+        </Link>
 
-        {error && (
-          <p role="alert" className="mt-3 text-sm text-red-700">
-            {error}
-          </p>
-        )}
-
-        {!strands && !error && (
-          <p className="mt-3 text-sm text-neutral-500">Loading…</p>
-        )}
-
-        {strands && (
-          <table className="mt-3 w-full border-collapse text-sm">
-            <thead>
-              <tr className="border-b border-neutral-300 text-left">
-                <th className="py-2 pr-4 font-medium">Strand</th>
-                <th className="py-2 pr-4 font-medium">Level</th>
-                <th className="py-2 pr-4 font-medium">Active items</th>
-                <th className="py-2 font-medium">Calibrated</th>
-              </tr>
-            </thead>
-            <tbody>
-              {strands.map((s) => (
-                <tr key={s.strand_id} className="border-b border-neutral-200">
-                  <td className="py-2 pr-4">{s.name}</td>
-                  <td className="py-2 pr-4 text-neutral-600">{s.level}</td>
-                  <td className="py-2 pr-4">{s.active_items}</td>
-                  <td className="py-2">
-                    {s.calibrated_items === 0 ? (
-                      <span className="text-neutral-500">
-                        not yet calibrated
-                      </span>
-                    ) : (
-                      s.calibrated_items
-                    )}
-                  </td>
-                </tr>
+        <section aria-labelledby="classes-heading">
+          <h2 id="classes-heading" className="mb-3 text-lg font-semibold text-ink">
+            Your classes
+          </h2>
+          {classes === null && <Loading what="classes" />}
+          {classes && "error" in classes && <Note tone="error">{classes.error}</Note>}
+          {classList && classList.length === 0 && (
+            <Empty
+              title="No classes yet"
+              action={<ButtonLink href="/classrooms" variant="primary">Go to Classes</ButtonLink>}
+            >
+              Create a class and add your learners to see how they’re doing here.
+            </Empty>
+          )}
+          {classList && classList.length > 0 && (
+            <div className="grid gap-4 md:grid-cols-2">
+              {classList.map((c) => (
+                <ClassCard key={c.class_id} classroom={c} />
               ))}
-            </tbody>
-          </table>
-        )}
-      </section>
+            </div>
+          )}
+        </section>
+
+        <section aria-labelledby="questions-heading">
+          <h2 id="questions-heading" className="text-lg font-semibold text-ink">
+            Questions
+          </h2>
+          <p className="mb-3 mt-1 text-sm text-ink-muted">
+            The strands your classes are quizzed on. A strand’s questions are
+            calibrated once enough learners have answered them — use
+            Recalibrate on a class page.
+          </p>
+          {strands === null && <Loading what="questions" />}
+          {strands && "error" in strands && <Note tone="error">{strands.error}</Note>}
+          {strands && "data" in strands && strands.data.length === 0 && (
+            <Empty>No strands have questions yet.</Empty>
+          )}
+          {strands && "data" in strands && strands.data.length > 0 && (
+            <ul className="divide-y divide-line overflow-hidden rounded-lg border border-line bg-surface">
+              {strands.data.map((s) => {
+                const [strandName, sub] = s.name.split(" / ");
+                const calibrated = s.calibrated_items > 0;
+                return (
+                  <li key={s.strand_id} className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3">
+                    <span className="min-w-0">
+                      <span className="block font-semibold text-ink">{sub ?? strandName}</span>
+                      <span className="block text-sm text-ink-muted">
+                        {sub ? `${strandName} · ` : ""}
+                        {plural(s.active_items, "question", "questions")}
+                      </span>
+                    </span>
+                    {/* Calibration is system state, so the semantic colours
+                        apply here - they never touch a learner. */}
+                    {calibrated ? (
+                      <Badge tone="ok">{s.calibrated_items} calibrated</Badge>
+                    ) : (
+                      <Badge tone="warn">Not calibrated</Badge>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </section>
+      </div>
     </>
   );
 }

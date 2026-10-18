@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 
 import { AuthProvider } from "@/lib/auth";
 
@@ -10,12 +10,25 @@ export const metadata: Metadata = {
     "Learning gap detection for Kenya's Competency-Based Education",
 };
 
+// viewportFit "cover" lets the bottom tab bar extend under a phone's home
+// indicator and pad itself with env(safe-area-inset-bottom), instead of
+// floating above a strip of dead space.
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#fcfcfb" },
+    { media: "(prefers-color-scheme: dark)", color: "#1a1a19" },
+  ],
+};
+
 export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en">
-      <body className="min-h-screen bg-neutral-50 text-neutral-900">
+      <body className="min-h-screen bg-canvas text-ink">
         <AuthProvider>{children}</AuthProvider>
       </body>
     </html>

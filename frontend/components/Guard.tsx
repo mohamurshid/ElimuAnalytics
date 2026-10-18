@@ -24,7 +24,7 @@ export function Guard({ children }: { children: React.ReactNode }) {
   if (!resolved) {
     return (
       <main className="flex min-h-screen items-center justify-center">
-        <p className="text-sm text-neutral-500">Restoring your session…</p>
+        <p className="text-[15px] text-ink-muted">Signing you in…</p>
       </main>
     );
   }

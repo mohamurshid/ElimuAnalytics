@@ -1,10 +1,24 @@
 "use client";
 
+/**
+ * Sign-in.
+ *
+ * The first screen a UAT teacher sees, so it says in one line what the
+ * product is for, in their terms. No Google button: that is planned, not
+ * built, and a button that does nothing is worse than its absence.
+ *
+ * On a phone the form fills the screen without a card around it - a bordered
+ * box on a 360px screen only wastes the margin. From sm up it becomes a card.
+ */
+
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
+import { Logo } from "@/components/Logo";
+import { Button, Field, Note } from "@/components/ui";
 import { ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { HOME } from "@/lib/routes";
 
 export default function LoginPage() {
   const { profile, resolved, signIn } = useAuth();
@@ -17,7 +31,7 @@ export default function LoginPage() {
 
   // Already signed in - a reload landed here, or the back button did.
   useEffect(() => {
-    if (resolved && profile) router.replace("/dashboard");
+    if (resolved && profile) router.replace(HOME);
   }, [resolved, profile, router]);
 
   async function submit(event: React.FormEvent) {
@@ -26,12 +40,14 @@ export default function LoginPage() {
     setBusy(true);
     try {
       await signIn(email, password);
-      router.replace("/dashboard");
+      router.replace(HOME);
     } catch (e) {
       // 429 is the login throttle, and says when to come back. Showing the
       // server's own message avoids inventing a second vocabulary for it.
       setError(
-        e instanceof ApiError ? e.message : "Could not reach the server.",
+        e instanceof ApiError
+          ? e.message
+          : "Could not reach the server. Check your connection and try again.",
       );
     } finally {
       setBusy(false);
@@ -39,65 +55,60 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center px-4">
-      <form
-        onSubmit={submit}
-        className="w-full max-w-sm rounded-lg border border-neutral-200
-                   bg-white p-6 shadow-sm"
-      >
-        <h1 className="text-xl font-semibold">Elimu Analytics</h1>
-        <p className="mt-1 text-sm text-neutral-500">
-          Sign in to your school account.
-        </p>
+    <main className="flex min-h-screen flex-col px-5 pt-10 pb-8 sm:items-center sm:justify-center sm:px-4 sm:pt-8">
+      <div className="w-full sm:max-w-sm">
+        <Logo />
 
-        <label className="mt-6 block text-sm font-medium" htmlFor="email">
-          Email
-        </label>
-        <input
-          id="email"
-          type="email"
-          required
-          autoComplete="username"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          className="mt-1 w-full rounded border border-neutral-300 px-3 py-2
-                     text-sm focus:border-neutral-900 focus:outline-none"
-        />
-
-        <label className="mt-4 block text-sm font-medium" htmlFor="password">
-          Password
-        </label>
-        <input
-          id="password"
-          type="password"
-          required
-          autoComplete="current-password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          className="mt-1 w-full rounded border border-neutral-300 px-3 py-2
-                     text-sm focus:border-neutral-900 focus:outline-none"
-        />
-
-        {error && (
-          <p
-            role="alert"
-            className="mt-4 rounded border border-red-200 bg-red-50 px-3 py-2
-                       text-sm text-red-800"
-          >
-            {error}
-          </p>
-        )}
-
-        <button
-          type="submit"
-          disabled={busy}
-          className="mt-6 w-full rounded bg-neutral-900 px-3 py-2 text-sm
-                     font-medium text-white hover:bg-neutral-800
-                     disabled:opacity-50"
+        <form
+          onSubmit={submit}
+          className="mt-10 sm:mt-6 sm:rounded-lg sm:border sm:border-line sm:bg-surface sm:p-6"
         >
-          {busy ? "Signing in…" : "Sign in"}
-        </button>
-      </form>
+          <h1 className="text-2xl font-semibold tracking-tight text-ink">Sign in</h1>
+          <p className="mt-1.5 text-[15px] leading-relaxed text-ink-muted">
+            See which learners need support, and what to teach them next.
+          </p>
+
+          <div className="mt-7 space-y-5">
+            <Field
+              label="Email"
+              id="email"
+              name="email"
+              type="email"
+              inputMode="email"
+              required
+              autoComplete="username"
+              autoCapitalize="none"
+              spellCheck={false}
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
+            <Field
+              label="Password"
+              id="password"
+              name="password"
+              type="password"
+              required
+              autoComplete="current-password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
+          </div>
+
+          {error && (
+            <div className="mt-5">
+              <Note tone="error">{error}</Note>
+            </div>
+          )}
+
+          <Button type="submit" disabled={busy} className="mt-7 w-full">
+            {busy ? "Signing in…" : "Sign in"}
+          </Button>
+        </form>
+
+        <p className="mt-8 text-center text-sm text-ink-subtle">
+          Kenya CBE · Grades 1–6
+        </p>
+      </div>
     </main>
   );
 }

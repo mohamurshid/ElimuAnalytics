@@ -1,21 +1,42 @@
 "use client";
 
 /**
- * The intervention queue.
+ * Learners to support - the home screen.
  *
  * Every row here survived two filters that matter more than the list itself:
  * the learner had a confident estimate, and it fell below threshold on two
  * consecutive assessments. A learner with too little evidence can never
- * appear, however poorly they seem to be doing — which is the point, and is
- * said on the page so nobody reads an empty queue as nothing being wrong.
+ * appear, however poorly they seem to be doing. That rationale belongs here,
+ * in the code; on the screen a teacher needs the plain version and a next
+ * step.
+ *
+ * The empty state matters more than the list. Nobody is flagged until a class
+ * has had two assessments, so every teacher's first sight of the app is this
+ * page with nothing in it - which is why it points at the classes rather than
+ * explaining the statistics.
  */
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
-import { Empty, Loading, Note } from "@/components/ui";
+import { ButtonLink, Empty, Loading, Note, PageHeader } from "@/components/ui";
 import { api, errorMessage } from "@/lib/api";
+import { shortTier, tierColour } from "@/lib/tiers";
 import type { Flag } from "@/lib/types";
+
+/** "3.0 Force and Energy / 3.3 Heat Transfer" -> the sub-strand leads. */
+function splitStrand(name: string): { strand: string; sub: string } {
+  const [strand, sub] = name.split(" / ");
+  return sub ? { strand, sub } : { strand: "", sub: name };
+}
+
+function flaggedOn(iso: string | null): string {
+  if (!iso) return "";
+  return new Date(iso).toLocaleDateString(undefined, {
+    day: "numeric",
+    month: "short",
+  });
+}
 
 export default function FlagsPage() {
   const [rows, setRows] = useState<Flag[] | null>(null);
@@ -33,7 +54,7 @@ export default function FlagsPage() {
           setError(null);
         }
       } catch (e) {
-        if (!cancelled) setError(errorMessage(e, "Could not load the queue"));
+        if (!cancelled) setError(errorMessage(e, "Could not load this list"));
       }
     })();
     return () => {
@@ -43,66 +64,79 @@ export default function FlagsPage() {
 
   return (
     <>
-      <h1 className="text-2xl font-semibold">Intervention queue</h1>
-      <p className="mt-1 max-w-3xl text-sm text-neutral-600">
-        Learners flagged after <strong>two consecutive</strong> below-threshold
-        assessments in the same strand. One weak result is not enough: a single
-        bad day should not put a child into an intervention queue.
-      </p>
+      <PageHeader
+        title="Learners to support"
+        description="Learners who were below expectation in two assessments in a row. One weak result on its own isn’t enough to appear here."
+      />
 
-      <div className="mt-4">
-        <Note tone="error">{error}</Note>
-      </div>
+      <Note tone="error">{error}</Note>
 
-      {!rows && !error && (
-        <div className="mt-6">
-          <Loading what="the queue" />
-        </div>
-      )}
+      {!rows && !error && <Loading what="learners" />}
 
       {rows && rows.length === 0 && (
-        <div className="mt-6">
-          <Empty>
-            Nobody is flagged. A flag needs two consecutive below-threshold
-            assessments, so an empty queue early in a term is expected rather
-            than reassuring.
-          </Empty>
-        </div>
+        <Empty
+          title="No one needs support yet"
+          action={
+            <ButtonLink href="/classrooms" variant="primary">
+              Go to your classes
+            </ButtonLink>
+          }
+        >
+          Learners appear here after two assessments in a row below
+          expectation. Give your class a quiz to get started.
+        </Empty>
       )}
 
       {rows && rows.length > 0 && (
-        <table className="mt-6 w-full border-collapse text-sm">
-          <thead>
-            <tr className="border-b border-neutral-300 text-left">
-              <th className="py-2 pr-4 font-medium">Learner</th>
-              <th className="py-2 pr-4 font-medium">Strand</th>
-              <th className="py-2 pr-4 font-medium">Severity</th>
-              <th className="py-2 font-medium">Flagged</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((flag) => (
-              <tr key={flag.flag_id} className="border-b border-neutral-200">
-                <td className="py-2 pr-4">
+        <>
+          <p className="mb-3 text-sm text-ink-subtle">
+            {rows.length} {rows.length === 1 ? "learner" : "learners"}
+          </p>
+          <ul className="divide-y divide-line overflow-hidden rounded-lg border border-line bg-surface">
+            {rows.map((flag) => {
+              const { strand, sub } = splitStrand(flag.strand);
+              return (
+                <li key={flag.flag_id}>
                   <Link
                     href={`/students/${flag.student_id}`}
-                    className="underline underline-offset-2
-                               hover:text-neutral-500"
+                    className="flex min-h-16 items-center gap-3 px-4 py-3 hover:bg-sunken"
                   >
-                    {flag.learner}
+                    {/* Severity is the learner's KICD tier when flagged, so it
+                        separates Approaches from Below - the triage a teacher
+                        needs. The band carries it in colour and the subline in
+                        words, because colour must never be the only signal. */}
+                    <span
+                      aria-hidden="true"
+                      className="h-10 w-1 shrink-0 rounded-full"
+                      style={{ background: tierColour(flag.severity) }}
+                    />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-base font-semibold text-ink">
+                        {flag.learner}
+                      </span>
+                      <span className="block truncate text-sm text-ink-muted">
+                        <span className="font-medium text-ink">{shortTier(flag.severity)}</span>
+                        {" · "}
+                        {sub}
+                        {strand && <span className="text-ink-subtle"> · {strand}</span>}
+                      </span>
+                    </span>
+                    <span className="shrink-0 text-right">
+                      {flag.flagged_at && (
+                        <span className="block text-xs text-ink-subtle">
+                          {flaggedOn(flag.flagged_at)}
+                        </span>
+                      )}
+                      <span aria-hidden="true" className="text-xl leading-none text-ink-subtle">
+                        ›
+                      </span>
+                    </span>
                   </Link>
-                </td>
-                <td className="py-2 pr-4">{flag.strand}</td>
-                <td className="py-2 pr-4">{flag.severity}</td>
-                <td className="py-2 text-neutral-600">
-                  {flag.flagged_at
-                    ? new Date(flag.flagged_at).toLocaleDateString()
-                    : "—"}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+                </li>
+              );
+            })}
+          </ul>
+        </>
       )}
     </>
   );

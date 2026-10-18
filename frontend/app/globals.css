@@ -1,10 +1,39 @@
 @import "tailwindcss";
 
+/*
+ * Elimu Analytics - design tokens.
+ *
+ * ONE RULE holds the palette together: saturated blue only ever means a
+ * KICD tier. Chrome is warm neutral and actions are ink, so a teacher never
+ * has to wonder whether a blue thing is a button or a result. The semantic
+ * colours (ok / warn / risk) describe SYSTEM state - a report that can be
+ * sent home, a generation that failed - and are never applied to a learner.
+ */
 :root {
+  color-scheme: light dark;
+
+  /* Neutrals. Warm rather than grey: reads as paper, survives a projector. */
   --background: #f9f9f7;
   --surface: #fcfcfb;
+  --sunken: #f1f0ec;
+  --border: #e3e1da;
+  --border-strong: #c9c6bc;
   --foreground: #0b0b0b;
   --muted: #52514e;
+  --subtle: #7a786f;
+
+  /* Actions are ink, deliberately not blue. */
+  --action: #141413;
+  --action-hover: #2b2a27;
+  --action-ink: #fcfcfb;
+
+  /* System state only - never a learner's standing. */
+  --ok: #1f6f43;
+  --ok-fill: #e8f2ec;
+  --warn: #8a5a00;
+  --warn-fill: #fbf1dd;
+  --risk: #9b2226;
+  --risk-fill: #fbeaea;
 
   /* KICD tier ramp - one hue, ordinal, darker = more need for intervention.
      Validated against the light surface: monotone lightness, every adjacent
@@ -26,8 +55,23 @@
   :root:where(:not([data-theme="light"])) {
     --background: #0d0d0d;
     --surface: #1a1a19;
+    --sunken: #242321;
+    --border: #302f2c;
+    --border-strong: #45443f;
     --foreground: #f0efec;
     --muted: #c3c2b7;
+    --subtle: #8e8c83;
+
+    --action: #f0efec;
+    --action-hover: #d9d7d0;
+    --action-ink: #0d0d0d;
+
+    --ok: #7fcfa3;
+    --ok-fill: #17271e;
+    --warn: #e3b457;
+    --warn-fill: #2a2114;
+    --risk: #f08a8d;
+    --risk-fill: #2b1718;
 
     /* Same hue, stepped for the dark surface rather than flipped. On dark,
        prominence runs the other way, so the ordering inverts to keep
@@ -40,10 +84,49 @@
   }
 }
 
+/* Tokens as Tailwind colours: bg-surface, text-ink-muted, border-line... */
+@theme inline {
+  --color-canvas: var(--background);
+  --color-surface: var(--surface);
+  --color-sunken: var(--sunken);
+  --color-line: var(--border);
+  --color-line-strong: var(--border-strong);
+  --color-ink: var(--foreground);
+  --color-ink-muted: var(--muted);
+  --color-ink-subtle: var(--subtle);
+  --color-action: var(--action);
+  --color-action-hover: var(--action-hover);
+  --color-action-ink: var(--action-ink);
+  --color-ok: var(--ok);
+  --color-ok-fill: var(--ok-fill);
+  --color-warn: var(--warn);
+  --color-warn-fill: var(--warn-fill);
+  --color-risk: var(--risk);
+  --color-risk-fill: var(--risk-fill);
+  --color-tier-exceeds: var(--tier-exceeds);
+  --color-tier-meets: var(--tier-meets);
+  --color-tier-approaches: var(--tier-approaches);
+  --color-tier-below: var(--tier-below);
+  --color-tier-none: var(--tier-none);
+
+  /* No webfont. system-ui costs nothing to download on a school connection
+     and is already tuned for the screen it is on. */
+  --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* One focus style everywhere, in ink rather than a new hue, so the palette
+   rule holds and keyboard users can always see where they are. */
+:focus-visible {
+  outline: 2px solid var(--foreground);
+  outline-offset: 2px;
+  border-radius: 4px;
 }
 
 /* A cell is a tint plus a solid band. The text never sits on the ramp colour,

@@ -14,16 +14,12 @@
  */
 
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 
 import { Logo } from "@/components/Logo";
 import { useAuth } from "@/lib/auth";
+import { initials, ROLE_LABEL } from "@/lib/people";
 import { HOME } from "@/lib/routes";
-
-const ROLE: Record<string, string> = {
-  teacher: "Teacher",
-  school_admin: "Head teacher",
-};
 
 function SupportIcon() {
   return (
@@ -71,14 +67,9 @@ function useActive() {
 }
 
 export function TopBar() {
-  const { profile, signOut } = useAuth();
-  const router = useRouter();
+  const { profile } = useAuth();
   const isActive = useActive();
-
-  async function handleSignOut() {
-    await signOut();
-    router.replace("/login");
-  }
+  const onProfile = usePathname().startsWith("/profile");
 
   return (
     <header className="sticky top-0 z-20 border-b border-line bg-surface/95 backdrop-blur">
@@ -104,24 +95,32 @@ export function TopBar() {
           ))}
         </nav>
 
-        <div className="flex items-center gap-3">
+        {/* Initials, the pattern every phone user already knows. Sign-out
+            moved into the profile page, one tap further away - and placed at
+            the top of it, because school devices are shared. */}
+        <Link
+          href="/profile"
+          aria-label={profile ? `Your profile: ${profile.name}` : "Your profile"}
+          aria-current={onProfile ? "page" : undefined}
+          className="-mr-1 flex min-h-11 items-center gap-3 rounded-md px-1 hover:bg-sunken"
+        >
           {profile && (
             <span className="hidden text-right leading-tight md:block">
               <span className="block text-sm font-medium text-ink">{profile.name}</span>
               <span className="block text-xs text-ink-subtle">
-                {ROLE[profile.role] ?? profile.role}
+                {ROLE_LABEL[profile.role] ?? profile.role}
               </span>
             </span>
           )}
-          <button
-            type="button"
-            onClick={handleSignOut}
-            className="inline-flex min-h-11 items-center rounded-md px-3 text-[15px]
-                       text-ink-muted hover:bg-sunken hover:text-ink"
+          <span
+            aria-hidden="true"
+            className={`flex size-9 items-center justify-center rounded-full border text-sm
+                        font-semibold text-ink
+                        ${onProfile ? "border-ink bg-sunken" : "border-line-strong bg-sunken"}`}
           >
-            Sign out
-          </button>
-        </div>
+            {initials(profile?.name)}
+          </span>
+        </Link>
       </div>
     </header>
   );

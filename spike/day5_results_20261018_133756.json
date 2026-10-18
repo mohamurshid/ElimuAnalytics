@@ -1,0 +1,549 @@
+{
+  "run": "20261018_133756",
+  "embedder": "all-MiniLM-L6-v2 (sentence-transformers)",
+  "model": "claude-haiku-5-5",
+  "comparison_model": "claude-sonnet-5-5",
+  "effort": "low",
+  "max_tokens": 4000,
+  "top_k": 2,
+  "learner": {
+    "name": "Chebet K.",
+    "grade": "Grade 5",
+    "strand": "3.0 Force and Energy",
+    "sub_strand": "3.3 Heat Transfer",
+    "theta": -1.8,
+    "ability_tier": "Below expectation",
+    "consecutive_flags": 2,
+    "items_answered": 12,
+    "items_correct": 8,
+    "failed_items": [
+      {
+        "question": "Which of these is the best conductor of heat?",
+        "chose": "A cotton cloth",
+        "correct": "A metal spoon"
+      },
+      {
+        "question": "Why is the handle of a cooking pot covered with plastic?",
+        "chose": "Because plastic carries heat away quickly",
+        "correct": "Because plastic is a poor conductor of heat"
+      },
+      {
+        "question": "A metal cup and a clay cup are filled with equally hot water and left on a table. Which one cools faster?",
+        "chose": "The clay cup",
+        "correct": "The metal cup"
+      },
+      {
+        "question": "Heat from the sun reaches the earth mainly by",
+        "chose": "conduction",
+        "correct": "radiation"
+      }
+    ]
+  },
+  "retrieval": {
+    "per_style": {
+      "heading": [
+        {
+          "expected": "sci_1_1",
+          "query": "1.0 Living Things and their Environment 1.1 Classification of plants",
+          "retrieved": "sci_1_1",
+          "sim": 0.5429531569816599,
+          "margin": 0.20484803564083282,
+          "correct": true,
+          "runner_up": "sci_1_2"
+        },
+        {
+          "expected": "sci_1_2",
+          "query": "1.0 Living Things and their Environment 1.2 Vertebrates",
+          "retrieved": "sci_1_2",
+          "sim": 0.5572311688873227,
+          "margin": 0.2999971244156294,
+          "correct": true,
+          "runner_up": "sci_1_1"
+        },
+        {
+          "expected": "sci_1_3",
+          "query": "1.0 Living Things and their Environment 1.3 The Human Breathing System",
+          "retrieved": "sci_1_3",
+          "sim": 0.5124182353045551,
+          "margin": 0.21489945714858238,
+          "correct": true,
+          "runner_up": "sci_1_2"
+        },
+        {
+          "expected": "sci_2_1",
+          "query": "2.0 Mixtures 2.1 Mixtures",
+          "retrieved": "sci_2_1",
+          "sim": 0.42936631128398506,
+          "margin": 0.28304018708748224,
+          "correct": true,
+          "runner_up": "sci_2_2"
+        },
+        {
+          "expected": "sci_2_2",
+          "query": "2.0 Mixtures 2.2 Water Pollution",
+          "retrieved": "sci_2_2",
+          "sim": 0.5533776994101243,
+          "margin": 0.3020245241732547,
+          "correct": true,
+          "runner_up": "sci_2_1"
+        },
+        {
+          "expected": "sci_3_1",
+          "query": "3.0 Force and Energy 3.1 Floating and Sinking",
+          "retrieved": "sci_3_1",
+          "sim": 0.43587620855600884,
+          "margin": 0.29638518439520023,
+          "correct": true,
+          "runner_up": "sci_3_2"
+        },
+        {
+          "expected": "sci_3_2",
+          "query": "3.0 Force and Energy 3.2 Sound Energy",
+          "retrieved": "sci_3_2",
+          "sim": 0.47056963250686507,
+          "margin": 0.37617769625229946,
+          "correct": true,
+          "runner_up": "sci_3_1"
+        },
+        {
+          "expected": "sci_3_3",
+          "query": "3.0 Force and Energy 3.3 Heat Transfer",
+          "retrieved": "sci_3_3",
+          "sim": 0.36636273197930175,
+          "margin": 0.2634823485362646,
+          "correct": true,
+          "runner_up": "sci_3_2"
+        }
+      ],
+      "teacher": [
+        {
+          "expected": "sci_1_1",
+          "query": "The learner cannot tell apart plants that produce flowers from those that do not, and cannot name the parts of a flower or say what each part does.",
+          "retrieved": "sci_1_1",
+          "sim": 0.5900275654244242,
+          "margin": 0.3991995834336512,
+          "correct": true,
+          "runner_up": "sci_2_2"
+        },
+        {
+          "expected": "sci_1_2",
+          "query": "The learner keeps grouping animals wrongly, calling a frog a reptile and a bat a bird, and cannot list features shared by animals that have a backbone.",
+          "retrieved": "sci_1_2",
+          "sim": 0.5483513874528245,
+          "margin": 0.18981720777567263,
+          "correct": true,
+          "runner_up": "sci_1_1"
+        },
+        {
+          "expected": "sci_1_3",
+          "query": "The learner cannot name the parts air passes through when we breathe in, and cannot state how to keep those parts healthy.",
+          "retrieved": "sci_1_3",
+          "sim": 0.4852739190954861,
+          "margin": 0.212567132497534,
+          "correct": true,
+          "runner_up": "sci_3_3"
+        },
+        {
+          "expected": "sci_2_1",
+          "query": "The learner cannot choose a suitable way of getting sand out of water, and cannot say which mixtures look uniform and which do not.",
+          "retrieved": "sci_2_1",
+          "sim": 0.39449203563798513,
+          "margin": 0.06780794475040619,
+          "correct": true,
+          "runner_up": "sci_2_2"
+        },
+        {
+          "expected": "sci_2_2",
+          "query": "The learner cannot say what makes the water in the river unsafe, and cannot name a way of making it safe for drinking at home.",
+          "retrieved": "sci_2_2",
+          "sim": 0.5100735600753626,
+          "margin": 0.2414528157907183,
+          "correct": true,
+          "runner_up": "sci_3_1"
+        },
+        {
+          "expected": "sci_3_1",
+          "query": "The learner insists that heavy things always go to the bottom, and cannot explain why a large metal boat stays on top of the water.",
+          "retrieved": "sci_3_1",
+          "sim": 0.470876033732579,
+          "margin": 0.2248534795482624,
+          "correct": true,
+          "runner_up": "sci_2_2"
+        },
+        {
+          "expected": "sci_3_2",
+          "query": "The learner cannot explain how a drum makes a noise and does not connect shaking or vibration with what the ear hears.",
+          "retrieved": "sci_3_2",
+          "sim": 0.48082666646630157,
+          "margin": 0.32240388012144644,
+          "correct": true,
+          "runner_up": "sci_3_3"
+        },
+        {
+          "expected": "sci_3_3",
+          "query": "The learner cannot explain why a metal spoon left in hot porridge becomes hot while a wooden one stays cool, and cannot say which materials are safe for holding hot pots.",
+          "retrieved": "sci_3_3",
+          "sim": 0.3908463884010438,
+          "margin": 0.2142185565503632,
+          "correct": true,
+          "runner_up": "sci_3_1"
+        }
+      ],
+      "item": [
+        {
+          "expected": "sci_1_1",
+          "query": "Look at the drawing of the plant. Name the part labelled A and state one thing it does for the plant. Does this plant produce seeds inside a fruit?",
+          "retrieved": "sci_1_1",
+          "sim": 0.35872063113486535,
+          "margin": 0.23337728399059407,
+          "correct": true,
+          "runner_up": "sci_2_1"
+        },
+        {
+          "expected": "sci_1_2",
+          "query": "An animal has moist skin, lays its eggs in water and lives both in water and on land. Which group does it belong to? Give one feature that supports your answer.",
+          "retrieved": "sci_1_2",
+          "sim": 0.42233612831117,
+          "margin": 0.1715634744375092,
+          "correct": true,
+          "runner_up": "sci_1_1"
+        },
+        {
+          "expected": "sci_1_3",
+          "query": "Arrange these in the order air passes through them when a person breathes in: lungs, nose, windpipe. State one way of keeping them healthy.",
+          "retrieved": "sci_1_3",
+          "sim": 0.4886848051147727,
+          "margin": 0.2900507237544582,
+          "correct": true,
+          "runner_up": "sci_2_1"
+        },
+        {
+          "expected": "sci_2_1",
+          "query": "You are given a jar containing iron nails, sand and salt mixed together. Describe how you would get each one out on its own, naming the method used at each step.",
+          "retrieved": "sci_2_1",
+          "sim": 0.39052022242793866,
+          "margin": 0.18348937974776852,
+          "correct": true,
+          "runner_up": "sci_3_2"
+        },
+        {
+          "expected": "sci_2_2",
+          "query": "Name two things that make water in a stream unsafe to drink, and describe one method used at home to make that water safe.",
+          "retrieved": "sci_2_2",
+          "sim": 0.574972657417015,
+          "margin": 0.26989055468316203,
+          "correct": true,
+          "runner_up": "sci_3_1"
+        },
+        {
+          "expected": "sci_3_1",
+          "query": "A stone goes to the bottom of a basin of water but a dry piece of wood of the same size stays on top. Give one reason for the difference and name one thing that affects it.",
+          "retrieved": "sci_3_1",
+          "sim": 0.3097139730592483,
+          "margin": 0.1478144229550169,
+          "correct": true,
+          "runner_up": "sci_2_2"
+        },
+        {
+          "expected": "sci_3_2",
+          "query": "A learner plucks a tight string and a noise is heard. Explain how the noise is produced and state one effect of very loud noise on people.",
+          "retrieved": "sci_3_2",
+          "sim": 0.6325199155616286,
+          "margin": 0.31801961716099336,
+          "correct": true,
+          "runner_up": "sci_3_3"
+        },
+        {
+          "expected": "sci_3_3",
+          "query": "A cooking pot is made of metal but its handle is covered with plastic. Explain why the handle is made of a different material, and name a material that would keep food warm for longer.",
+          "retrieved": "sci_3_3",
+          "sim": 0.3551089578825283,
+          "margin": 0.2222086201832473,
+          "correct": true,
+          "runner_up": "sci_1_1"
+        }
+      ]
+    },
+    "full_ranking": [
+      {
+        "rank": 1,
+        "id": "sci_3_3",
+        "sub_strand": "3.3 Heat Transfer",
+        "sim": 0.3551089578825283
+      },
+      {
+        "rank": 2,
+        "id": "sci_1_1",
+        "sub_strand": "1.1 Classification of plants",
+        "sim": 0.13290033769928097
+      },
+      {
+        "rank": 3,
+        "id": "sci_3_2",
+        "sub_strand": "3.2 Sound Energy",
+        "sim": 0.12740690290223508
+      },
+      {
+        "rank": 4,
+        "id": "sci_2_1",
+        "sub_strand": "2.1 Mixtures",
+        "sim": 0.12346591562236074
+      },
+      {
+        "rank": 5,
+        "id": "sci_3_1",
+        "sub_strand": "3.1 Floating and Sinking",
+        "sim": 0.11339955128820577
+      },
+      {
+        "rank": 6,
+        "id": "sci_2_2",
+        "sub_strand": "2.2 Water Pollution",
+        "sim": 0.08931089733660229
+      },
+      {
+        "rank": 7,
+        "id": "sci_1_3",
+        "sub_strand": "1.3 The Human Breathing System",
+        "sim": 0.08906783859294777
+      },
+      {
+        "rank": 8,
+        "id": "sci_1_2",
+        "sub_strand": "1.2 Vertebrates",
+        "sim": 0.0526585602030668
+      }
+    ]
+  },
+  "generations": [
+    {
+      "label": "1. MEASURED / EN / loose prompt (v2 wording)",
+      "text": "**Paragraph 1: Current standing**\nChebet K. (the learner) is currently rated **Below expectation** for the Heat Transfer sub-strand under Force and Energy, with an estimated ability of -1.8 on the IRT scale. This estimate is based on 12 answered items, which exceeds the minimum of 10 needed for confidence, so the result can be treated as a reliable indication of current standing. The learner has also been flagged as at-risk for two consecutive assessments, which points to a persistent difficulty rather than a single poor result.\n\n**Paragraph 2: The gap**\nThe performance data provided gives an overall ability estimate but does not show which Specific Learning Outcomes were missed, so the precise gap cannot be confirmed from this report. The sub-strand outcomes that the learner's results may relate to are: (a) demonstrating the modes of heat transfer in nature, (b) classifying conductors of heat as good or poor, (c) explaining the uses of heat transfer in day-to-day life, and (d) acknowledging safety precautions when handling heat. A review of the learner's 12 item responses against these four outcomes is recommended before support is targeted.\n\n**Paragraph 3: Recommended activity**\nGuide the learner through the suggested experience of performing experiments to demonstrate the modes of heat transfer. Begin with a brainstorm on the meanings of conduction, convection and radiation, then have the learner carry out a simple demonstration of each mode and explain what was observed. Observe the learner during the activity and record which mode, if any, is misunderstood, so that the next lesson can address that specific point.",
+      "model": "claude-haiku-5-5",
+      "effort": "low",
+      "stop_reason": "end_turn",
+      "truncated": false,
+      "empty": false,
+      "input_tokens": 943,
+      "output_tokens": 1369,
+      "thinking_tokens": 838,
+      "cost_usd": 0.0007788000000000001,
+      "grounding": {
+        "verdict": "UNGROUNDED",
+        "target_anchors": [],
+        "generic_terms": [
+          "conduction",
+          "convection",
+          "radiation",
+          "safety precautions"
+        ],
+        "verbatim_quotes_verified": [],
+        "verbatim_quotes_fabricated": [],
+        "wrong_chunk_anchors": [],
+        "vague_phrases": [],
+        "context_overlap": 0.296,
+        "words": 258
+      },
+      "is_control": false,
+      "passed": null
+    },
+    {
+      "label": "2. MEASURED / EN / STRICT verbatim-citation prompt",
+      "text": "**Paragraph 1: Current standing**\nChebet K. is currently rated **Below expectation** in the Heat Transfer sub-strand (3.3), with an estimated ability of **-1.8** on the IRT scale. This estimate is based on 12 answered items, which is above the minimum of 10 needed for confidence. The learner has also been flagged as at-risk for two consecutive assessments, so the low performance is sustained rather than a single poor result.\n\n**Paragraph 2: The gap**\nThe available data give an overall ability estimate but do not show which Specific Learning Outcomes are weakest. Outcome (b), classifying conductors of heat into good or poor conductors, is a priority to check, because the learner's ability to explain how materials conduct heat is needed for the practical work in this sub-strand. Outcome (a), demonstrating the modes of heat transfer, is also a likely area of difficulty. Before planning further teaching, please review the learner's item-level responses against outcomes (a) to (d) to identify the specific gaps.\n\n**Paragraph 3: Recommended activity**\nI recommend the named project: \"Learners to make oven gloves using locally available materials\". Ask Chebet K. to work with a supportive peer and test local materials such as cloth, sacking, and paper. Heat a metal tin, place each material on it for a short time, and have the learner record which materials keep the heat away from the hand. Use the results to classify the materials as good or poor conductors (outcome b). Finish by discussing safety precautions when handling heat (outcome d). Check the learner's recorded classifications against the criteria in the sub-strand before deciding on next steps.",
+      "model": "claude-haiku-5-5",
+      "effort": "low",
+      "stop_reason": "end_turn",
+      "truncated": false,
+      "empty": false,
+      "input_tokens": 1073,
+      "output_tokens": 1490,
+      "thinking_tokens": 950,
+      "cost_usd": 0.0008523000000000001,
+      "grounding": {
+        "verdict": "GROUNDED",
+        "target_anchors": [
+          "oven gloves",
+          "poor conductors",
+          "locally available materials"
+        ],
+        "generic_terms": [
+          "safety precautions"
+        ],
+        "verbatim_quotes_verified": [
+          "Learners to make oven gloves using locally available materials"
+        ],
+        "verbatim_quotes_fabricated": [],
+        "wrong_chunk_anchors": [],
+        "vague_phrases": [],
+        "context_overlap": 0.263,
+        "words": 265
+      },
+      "is_control": false,
+      "passed": null
+    },
+    {
+      "label": "3. MEASURED / KISWAHILI / Haiku 5.5",
+      "text": "**Ripoti ya Uchunguzi: Chebet K., Darasa la Tano**\n**Kwa:** Mwalimu wa Darasa\n\n**Hali ya sasa:** Chebet K. yuko katika kiwango cha \"Below expectation\" (Chini ya Matarajio) kwa kipengele cha 3.3 Uhamishaji wa Joto (Heat Transfer) chini ya Nguvu na Nishati (Force and Energy). Makadirio ya uwezo (IRT theta) ni -1.8. Mwanafunzi amejibu maswali 12, idadi inayotosha kwa makadirio ya kuaminika (kiwango cha chini ni 10). Mwanafunzi pia ametambuliwa kuwa yuko hatarini kwa tathmini mbili mfululizo, hivyo anahitaji usaidizi wa haraka na wa karibu.\n\n**Pengo:** Pengo liko katika matokeo ya kujifunza ya kipengele hiki: (a) kuonyesha njia za uhamishaji wa joto katika mazingira; (b) kuainisha vikondakta vya joto (conductors of heat) kuwa vizuri au dhaifu; (c) kueleza matumizi ya uhamishaji wa joto katika maisha ya kila siku; na (d) kuonyesha uelewa wa tahadhari za usalama wakati wa kushughulikia joto. Rekodi hii haionyeshi ni matokeo gani kati ya a–d ambayo mwanafunzi bado hajayafikia, kwa hiyo tunapendekeza ukague majibu ya kila swali kwa matokeo haya kabla ya kupanga hatua zaidi.\n\n**Pendekezo:** Tumia mradi uliopo katika mtaala: \"Learners to make oven gloves using locally available materials.\" Mwongoze Chebet K. na kikundi chake kutengeneza glavu za kupikia (oven gloves) kwa kutumia vifaa vinavyopatikana shuleni au nyumbani. Kabla ya kuanza, jaribu vifaa mbalimbali kwa maji ya moto au chanzo salama cha joto, kisha mwombe mwanafunzi aainishe kila kifaa kuwa kondakta mzuri au dhaifu wa joto (matokeo b). Jadili tahadhari za kushughulikia joto (matokeo d), na mwombe mwanafunzi aeleze kwa maneno yake kwa nini glavu hiyo inamlinda mtumiaji. Baada ya mradi, tathmini tena kwa maswali machache ili kuona maendeleo.",
+      "model": "claude-haiku-5-5",
+      "effort": "low",
+      "stop_reason": "end_turn",
+      "truncated": false,
+      "empty": false,
+      "input_tokens": 1207,
+      "output_tokens": 2927,
+      "thinking_tokens": 2018,
+      "cost_usd": 0.0015842,
+      "grounding": {
+        "verdict": "GROUNDED",
+        "target_anchors": [
+          "oven gloves",
+          "locally available materials"
+        ],
+        "generic_terms": [],
+        "verbatim_quotes_verified": [
+          "Learners to make oven gloves using locally available materials."
+        ],
+        "verbatim_quotes_fabricated": [],
+        "wrong_chunk_anchors": [],
+        "vague_phrases": [],
+        "context_overlap": 0.07,
+        "words": 262
+      },
+      "is_control": false,
+      "passed": null
+    },
+    {
+      "label": "4. MEASURED / KISWAHILI / Sonnet 5.5 (quality comparison)",
+      "text": "**Ripoti ya Uchunguzi: Chebet K., Darasa la 5**\n**Mada Ndogo: 3.3 Uhamishaji wa Joto (Heat Transfer)**\n\nMwalimu mpendwa, Chebet yuko katika kiwango cha \"Chini ya matarajio\" (Below expectation) kwenye mada ndogo ya Uhamishaji wa Joto. Makadirio ya uwezo (IRT theta) ni -1.8, na yametokana na maswali 12, idadi inayozidi 10 inayohitajika kwa uhakika wa kutosha. Chebet ameainishwa kuwa katika hatari kwa tathmini mbili mfululizo. Hali hii inahitaji usaidizi wa haraka, ingawa si kielelezo cha uwezo wa mwanafunzi kujifunza.\n\nPengo linahusu Matokeo Maalum ya Kujifunza yafuatayo: (a) kuonyesha njia za uhamishaji joto katika mazingira, yaani upitishaji (conduction), uhamishaji kwa mzunguko (convection) na mnururisho (radiation); (b) kuainisha vitu kuwa vipitisha joto vizuri au hafifu; na (c) kueleza matumizi ya uhamishaji joto katika maisha ya kila siku. Inaonekana Chebet bado hajamudu dhana hizi za msingi. Mwalimu anaweza kuthibitisha hili kwa kumwuliza maswali ya mdomo na kumwangalia akifanya shughuli za vitendo.\n\nShughuli inayopendekezwa ni mradi huu: \"Learners to make oven gloves using locally available materials.\" Mwalimu awagawe wanafunzi katika vikundi vidogo na Chebet awe mshiriki hai. Kila kikundi kikusanye vifaa vinavyopatikana kwa urahisi, kama vitambaa, karatasi na majani makavu. Kisha wajaribu kila kifaa kwa kushika chombo chenye maji ya uvuguvugu (si ya moto sana, kwa usalama) ili kubaini kipi hupitisha joto kidogo. Chebet aeleze kwa maneno yake kwa nini vifaa fulani vinafaa zaidi, kisha waunde glavu. Mwalimu asisitize tahadhari za usalama wakati wa kushika joto. Kwa njia hii, Chebet atajifunza vipitisha joto vizuri na hafifu kwa vitendo. Tathmini ifanywe tena baada ya wiki chache ili kupima maendeleo.",
+      "model": "claude-sonnet-5-5",
+      "effort": "low",
+      "stop_reason": "end_turn",
+      "truncated": false,
+      "empty": false,
+      "input_tokens": 1207,
+      "output_tokens": 909,
+      "thinking_tokens": 0,
+      "cost_usd": 0.011503999999999999,
+      "grounding": {
+        "verdict": "GROUNDED",
+        "target_anchors": [
+          "oven gloves",
+          "locally available materials"
+        ],
+        "generic_terms": [
+          "conduction",
+          "convection",
+          "radiation"
+        ],
+        "verbatim_quotes_verified": [
+          "Learners to make oven gloves using locally available materials."
+        ],
+        "verbatim_quotes_fabricated": [],
+        "wrong_chunk_anchors": [],
+        "vague_phrases": [],
+        "context_overlap": 0.06,
+        "words": 253
+      },
+      "is_control": false,
+      "passed": null
+    },
+    {
+      "label": "5. CONTROL - NO CURRICULUM CONTEXT (ablation)",
+      "text": "**Paragraph 1: Current Standing**\n\nChebet K. (Grade 5) is currently performing at the **Below expectation** level on the KICD rubric for Sub-strand 3.3, Heat Transfer, under Strand 3.0, Force and Energy. Her estimated ability (IRT θ = −1.8) is well below the expected range for this stage, and she has been flagged as at risk in two consecutive assessments. This pattern suggests that the difficulty is persistent rather than a one-off result, and that she has not yet acquired the core understanding this sub-strand requires.\n\n**Paragraph 2: Specific Gap**\n\nThe assessment summary does not identify item-level errors, so you should confirm this from her scripts. The most likely gap is that Chebet has not yet distinguished between the three modes of heat transfer (conduction, convection and radiation) or applied them to everyday situations. Learners at this level often confuse heat moving through a solid with heat moving through a liquid or gas, and they struggle to explain why a metal object feels hotter than a wooden one at the same temperature. Identifying which mode she confuses will help you target support precisely.\n\n**Paragraph 3: Recommended Activity**\n\nRun a **\"Metal and Wood Spoon Test\"** with Chebet and a small group. Attach a small dab of margarine or wax to the handle end of a metal spoon and a wooden spoon of similar size. Place the bowl ends in a container of hot water, which you should handle for safety. Ask learners to predict which wax will melt first, observe and record the order, and explain in their own words how heat travelled along each spoon. Finish with a short oral explanation to you, using the terms \"conduction\" and \"particles.\" This hands-on task links an abstract concept to a visible result and gives you direct evidence of her understanding.",
+      "model": "claude-haiku-5-5",
+      "effort": "low",
+      "stop_reason": "end_turn",
+      "truncated": false,
+      "empty": false,
+      "input_tokens": 320,
+      "output_tokens": 1429,
+      "thinking_tokens": 837,
+      "cost_usd": 0.0007465,
+      "grounding": {
+        "verdict": "FABRICATED",
+        "target_anchors": [],
+        "generic_terms": [
+          "conduction",
+          "convection",
+          "radiation"
+        ],
+        "verbatim_quotes_verified": [],
+        "verbatim_quotes_fabricated": [
+          "Metal and Wood Spoon Test"
+        ],
+        "wrong_chunk_anchors": [],
+        "vague_phrases": [],
+        "context_overlap": 0.0,
+        "words": 297
+      },
+      "is_control": true,
+      "passed": false
+    },
+    {
+      "label": "6. CONTROL - WRONG CONTEXT (plants for a heat learner)",
+      "text": "**Subject: Diagnostic Report for Chebet K., Grade 5**\n\n**Current standing:** Chebet K. is currently rated *Below expectation* on the KICD rubric in Strand 3.0, Force and Energy, Sub-strand 3.3, Heat Transfer. The IRT ability estimate is θ = -1.8. The estimate rests on 12 items answered in this sub-strand, which exceeds the 10-item threshold for confidence, so the result can be treated as reasonably reliable. The learner has also been flagged as at-risk for two consecutive assessments, which indicates a sustained rather than a one-off pattern.\n\n**Identified gap:** A specific gap cannot be stated against the Specific Learning Outcomes in the curriculum context retrieved for this report. That context covers Grade 5 Classification of plants (Strand: Living Things and their Environment), not Heat Transfer. Its outcomes concern classifying plants, describing flower parts, and the importance of flowers. Mapping these to Chebet K.'s heat transfer results would be an inference rather than a curriculum-referenced finding. The teacher should review the Heat Transfer outcomes directly to pinpoint where the learner's understanding breaks down.\n\n**Recommendation:** No classroom activity is recommended at this stage. The curriculum context provided does not cover Sub-strand 3.3, Heat Transfer, so no activity can be quoted from it. The plant classification activities are not a suitable substitute. Please provide the KICD Grade 5 Heat Transfer sub-strand, including its Specific Learning Outcomes and Suggested Learning Experiences. A targeted recommendation can then be written from that material.",
+      "model": "claude-haiku-5-5",
+      "effort": "low",
+      "stop_reason": "end_turn",
+      "truncated": false,
+      "empty": false,
+      "input_tokens": 1015,
+      "output_tokens": 1245,
+      "thinking_tokens": 682,
+      "cost_usd": 0.000724,
+      "grounding": {
+        "verdict": "UNGROUNDED",
+        "target_anchors": [],
+        "generic_terms": [],
+        "verbatim_quotes_verified": [],
+        "verbatim_quotes_fabricated": [],
+        "wrong_chunk_anchors": [],
+        "vague_phrases": [],
+        "context_overlap": 0.242,
+        "words": 236
+      },
+      "is_control": true,
+      "passed": true
+    },
+    {
+      "label": "7. MEASURED / EN / STRICT + item-level failure pattern",
+      "text": "**Paragraph 1: Current standing.** Chebet K. is currently rated **Below expectation** on the KICD rubric for Strand 3.0 (Force and Energy), Sub-strand 3.3 (Heat Transfer). The learner answered 12 items in this sub-strand, enough for a confident estimate, and answered 8 correctly. The ability estimate (IRT theta) is -1.8. Because the learner has been flagged as at-risk for two consecutive assessments, this should be treated as a persistent gap rather than a one-off result.\n\n**Paragraph 2: The specific gap.** Three of the four errors share one misconception: the learner appears to believe that poor conductors pass heat on quickly and good conductors hold it. This explains choosing the cotton cloth as the best conductor over the metal spoon in hot porridge, judging that plastic \"carries heat away quickly\" on the cooking pot handle, and expecting the clay cup to cool faster than the metal cup. These errors fall under Specific Learning Outcome (b), classifying conductors as good or poor. The fourth error, choosing conduction instead of radiation for heat from the sun, is a separate gap under Specific Learning Outcome (a), demonstrating the modes of heat transfer in nature. No errors were recorded for outcomes (c) or (d).\n\n**Paragraph 3: Recommended activity.** Use the named project: \"Learners to make oven gloves using locally available materials.\" Before the learner sews or assembles the gloves, have the learner predict which available material will keep a hand coolest when touching a metal tin of hot water, then test each material by placing it between the hot tin and the hand, with an adult handling the hot water. Ask the learner to explain the result using the words \"good conductor\" and \"poor conductor.\" The prediction-then-test sequence directly challenges the belief that cotton conducts heat well, and the glove-making task links the classification to a daily use of heat transfer.",
+      "model": "claude-haiku-5-5",
+      "effort": "low",
+      "stop_reason": "end_turn",
+      "truncated": false,
+      "empty": false,
+      "input_tokens": 1493,
+      "output_tokens": 2345,
+      "thinking_tokens": 1708,
+      "cost_usd": 0.0013218,
+      "grounding": {
+        "verdict": "GROUNDED",
+        "target_anchors": [
+          "oven gloves",
+          "poor conductors",
+          "locally available materials"
+        ],
+        "generic_terms": [
+          "conduction",
+          "radiation"
+        ],
+        "verbatim_quotes_verified": [
+          "Learners to make oven gloves using locally available materials."
+        ],
+        "verbatim_quotes_fabricated": [],
+        "wrong_chunk_anchors": [],
+        "vague_phrases": [],
+        "context_overlap": 0.25,
+        "words": 305
+      },
+      "is_control": false,
+      "passed": null
+    }
+  ],
+  "controls_passed": false,
+  "cost": {
+    "run_total_usd": 0.0175116,
+    "bilingual_report_usd": 0.0024365000000000003
+  }
+}

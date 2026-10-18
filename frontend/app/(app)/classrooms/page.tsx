@@ -1,46 +1,76 @@
 "use client";
 
 /**
- * The school's classrooms.
+ * The school's classes.
  *
- * Every row here came back scoped: the API returns the caller's own school
- * and nothing else, so there is no school filter in this interface and no way
- * to ask for one.
+ * Every row came back scoped: the API returns the caller's own school and
+ * nothing else, so there is no school filter here and no way to ask for one.
  *
- * Creating and withdrawing are school_admin actions. The buttons are hidden
- * from a plain teacher rather than shown and rejected - but the hiding is
- * cosmetic, and the server enforces it either way. An interface that only
+ * Creating, removing and restoring are school_admin actions. The controls are
+ * hidden from a plain teacher rather than shown and rejected - but the hiding
+ * is cosmetic, and the server enforces it either way. An interface that only
  * hides is not access control.
+ *
+ * Three presentation decisions:
+ *
+ * **Status appears only when it is the exception.** The old table had a
+ * Status column reading "active" on every class anyone normally sees. Now an
+ * active class shows no status; a withdrawn one says so, and Current and
+ * Withdrawn are two views rather than one mixed list behind a checkbox.
+ *
+ * **Remove asks first.** It used to act on a single tap, from a button beside
+ * every class on a phone. It is a two-step confirmation inline, not a pop-up.
+ *
+ * **The grade is chosen, not typed.** Report retrieval matches a class's grade
+ * to the curriculum's by equality, so a typed "grade 5" made a class whose
+ * reports could never find any curriculum. The server now refuses anything
+ * but the six values too; the picker just stops the mistake earlier.
  */
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
+import { Badge, Button, Card, Empty, Loading, Note, PageHeader } from "@/components/ui";
 import { api, errorMessage } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import type { Classroom, Removal, Restore } from "@/lib/types";
-import { Button, Empty, Field, Loading, Note } from "@/components/ui";
 
-export default function ClassroomsPage() {
+const GRADES = ["Grade 1", "Grade 2", "Grade 3", "Grade 4", "Grade 5", "Grade 6"];
+
+function className(row: Classroom) {
+  return `${row.grade}${row.name ? ` ${row.name}` : ""}`;
+}
+
+function learners(n: number) {
+  return n === 0 ? "No learners yet" : `${n} ${n === 1 ? "learner" : "learners"}`;
+}
+
+/** "Grade 5" -> "5". Anything unexpected is shown whole rather than guessed at. */
+function gradeNumber(grade: string) {
+  return grade.match(/^Grade (\d)$/)?.[1] ?? grade;
+}
+
+export default function ClassesPage() {
   const { profile } = useAuth();
   const isAdmin = profile?.role !== "teacher";
 
+  const [view, setView] = useState<"current" | "withdrawn">("current");
   const [rows, setRows] = useState<Classroom[] | null>(null);
-  const [showWithdrawn, setShowWithdrawn] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  const [adding, setAdding] = useState(false);
   const [grade, setGrade] = useState("");
-  const [name, setName] = useState("");
+  const [stream, setStream] = useState("");
+  const [confirming, setConfirming] = useState<string | null>(null);
 
   // Fetching and storing are kept apart. `react-hooks/set-state-in-effect`
   // rejects an effect that calls a function which sets state, so the effect
   // below owns its own setState and this only returns data.
   const fetchRows = useCallback(
-    () =>
-      api.get<Classroom[]>(`/api/classrooms?include_inactive=${showWithdrawn}`),
-    [showWithdrawn],
+    () => api.get<Classroom[]>(`/api/classrooms?include_inactive=${view === "withdrawn"}`),
+    [view],
   );
 
   useEffect(() => {
@@ -52,7 +82,7 @@ export default function ClassroomsPage() {
         setRows(data);
         setError(null);
       } catch (e) {
-        if (!cancelled) setError(errorMessage(e, "Could not load classrooms"));
+        if (!cancelled) setError(errorMessage(e, "Could not load classes"));
       }
     })();
     return () => {
@@ -66,22 +96,25 @@ export default function ClassroomsPage() {
       setRows(await fetchRows());
       setError(null);
     } catch (e) {
-      setError(errorMessage(e, "Could not load classrooms"));
+      setError(errorMessage(e, "Could not load classes"));
     }
   }, [fetchRows]);
 
   async function create(event: React.FormEvent) {
     event.preventDefault();
+    if (!grade) return;
     setBusy(true);
     setError(null);
     setNotice(null);
     try {
-      await api.post<Classroom>("/api/classrooms", { grade, name });
+      const created = await api.post<Classroom>("/api/classrooms", { grade, name: stream.trim() });
+      setNotice(`${className(created)} added.`);
       setGrade("");
-      setName("");
+      setStream("");
+      setAdding(false);
       await reload();
     } catch (e) {
-      setError(errorMessage(e, "Could not create the class"));
+      setError(errorMessage(e, "Could not add the class"));
     } finally {
       setBusy(false);
     }
@@ -97,6 +130,7 @@ export default function ClassroomsPage() {
       // something was deleted when it was kept.
       const result = await api.del<Removal>(`/api/classrooms/${row.class_id}`);
       setNotice(result.detail);
+      setConfirming(null);
       await reload();
     } catch (e) {
       setError(errorMessage(e, "Could not remove the class"));
@@ -110,9 +144,7 @@ export default function ClassroomsPage() {
     setError(null);
     setNotice(null);
     try {
-      const result = await api.post<Restore>(
-        `/api/classrooms/${row.class_id}/restore`,
-      );
+      const result = await api.post<Restore>(`/api/classrooms/${row.class_id}/restore`);
       setNotice(result.detail);
       await reload();
     } catch (e) {
@@ -122,136 +154,225 @@ export default function ClassroomsPage() {
     }
   }
 
+  // The withdrawn view asks the API for everything, then keeps only the
+  // withdrawn classes - two clean lists instead of one mixed one.
+  const shown =
+    rows === null ? null : rows.filter((r) => (view === "withdrawn" ? !r.is_active : r.is_active));
+
   return (
     <>
-      <div className="flex items-baseline justify-between">
-        <h1 className="text-2xl font-semibold">Classrooms</h1>
-        <label className="flex items-center gap-2 text-sm text-neutral-600">
-          <input
-            type="checkbox"
-            checked={showWithdrawn}
-            onChange={(e) => setShowWithdrawn(e.target.checked)}
-          />
-          Show withdrawn
-        </label>
-      </div>
-      <p className="mt-1 text-sm text-neutral-600">
-        Classes at your school. Other schools&apos; classes are not returned by
-        the API and cannot be reached from here. Removing a class withdraws it
-        rather than deleting it when learners have answered anything — tick
-        <em> Show withdrawn</em> to find and restore one.
-      </p>
+      <PageHeader
+        title="Classes"
+        description="The classes at your school."
+        actions={
+          isAdmin && !adding ? (
+            <Button onClick={() => setAdding(true)} className="w-full sm:w-auto">
+              Add a class
+            </Button>
+          ) : undefined
+        }
+      />
 
-      <div className="mt-4 space-y-3">
+      {isAdmin && adding && (
+        <Card className="mb-6 p-4 sm:p-5">
+          <form onSubmit={create}>
+            <h2 className="text-base font-semibold text-ink">Add a class</h2>
+            <div className="mt-4 grid gap-4 sm:grid-cols-2">
+              <label className="block">
+                <span className="text-sm font-medium text-ink">Grade</span>
+                <select
+                  required
+                  value={grade}
+                  onChange={(e) => setGrade(e.target.value)}
+                  className="mt-1.5 block min-h-11 w-full rounded-md border border-line-strong
+                             bg-surface px-3 text-base text-ink focus:border-ink focus:outline-none"
+                >
+                  <option value="" disabled>
+                    Choose a grade
+                  </option>
+                  {GRADES.map((g) => (
+                    <option key={g} value={g}>
+                      {g}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="block">
+                <span className="text-sm font-medium text-ink">
+                  Stream <span className="font-normal text-ink-subtle">(optional)</span>
+                </span>
+                <input
+                  value={stream}
+                  maxLength={100}
+                  onChange={(e) => setStream(e.target.value)}
+                  placeholder="e.g. Blue"
+                  className="mt-1.5 block min-h-11 w-full rounded-md border border-line-strong
+                             bg-surface px-3 text-base text-ink placeholder:text-ink-subtle
+                             focus:border-ink focus:outline-none"
+                />
+              </label>
+            </div>
+            <p className="mt-2 text-sm text-ink-subtle">
+              Add a stream if your school has more than one class in this grade.
+            </p>
+            <div className="mt-5 flex flex-wrap gap-2">
+              <Button type="submit" disabled={busy || !grade}>
+                {busy ? "Adding…" : "Add class"}
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => {
+                  setAdding(false);
+                  setGrade("");
+                  setStream("");
+                }}
+              >
+                Cancel
+              </Button>
+            </div>
+          </form>
+        </Card>
+      )}
+
+      <div
+        role="group"
+        aria-label="Which classes to show"
+        className="mb-4 inline-flex rounded-md border border-line-strong bg-surface p-0.5"
+      >
+        {(["current", "withdrawn"] as const).map((value) => (
+          <button
+            key={value}
+            type="button"
+            aria-pressed={view === value}
+            onClick={() => {
+              setView(value);
+              setRows(null);
+              setConfirming(null);
+            }}
+            className={`min-h-10 rounded px-4 text-sm font-medium
+                        ${view === value ? "bg-sunken text-ink" : "text-ink-muted hover:text-ink"}`}
+          >
+            {value === "current" ? "Current" : "Withdrawn"}
+          </button>
+        ))}
+      </div>
+
+      <div className="mb-4 space-y-3">
         <Note tone="error">{error}</Note>
         <Note>{notice}</Note>
       </div>
 
-      {isAdmin && (
-        <form
-          onSubmit={create}
-          className="mt-6 flex flex-wrap items-end gap-3 rounded border
-                     border-neutral-200 bg-white p-4"
+      {shown === null && !error && <Loading what="classes" />}
+
+      {shown && shown.length === 0 && (
+        <Empty
+          title={view === "current" ? "No classes yet" : "No withdrawn classes"}
+          action={
+            view === "current" && isAdmin && !adding ? (
+              <Button onClick={() => setAdding(true)}>Add a class</Button>
+            ) : undefined
+          }
         >
-          <div className="w-40">
-            <Field
-              label="Grade"
-              required
-              placeholder="Grade 5"
-              value={grade}
-              onChange={(e) => setGrade(e.target.value)}
-            />
-          </div>
-          <div className="w-40">
-            <Field
-              label="Stream"
-              placeholder="Blue"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-            />
-          </div>
-          <Button type="submit" disabled={busy}>
-            Add class
-          </Button>
-          <p className="w-full text-xs text-neutral-500">
-            A stream name is optional, but most schools run more than one class
-            per grade and grade alone cannot tell them apart.
-          </p>
-        </form>
+          {view === "withdrawn"
+            ? "A class with recorded answers is withdrawn rather than deleted when it’s removed, and appears here so it can be restored."
+            : isAdmin
+              ? "Add your first class, then its learners."
+              : "Your head teacher adds classes. Once they have, they’ll appear here."}
+        </Empty>
       )}
 
-      <section className="mt-6">
-        {!rows && !error && <Loading what="classrooms" />}
-
-        {rows && rows.length === 0 && (
-          <Empty>
-            No classrooms yet.
-            {isAdmin
-              ? " Add one above."
-              : " A school administrator can add the first one."}
-          </Empty>
-        )}
-
-        {rows && rows.length > 0 && (
-          <table className="w-full border-collapse text-sm">
-            <thead>
-              <tr className="border-b border-neutral-300 text-left">
-                <th className="py-2 pr-4 font-medium">Class</th>
-                <th className="py-2 pr-4 font-medium">Learners</th>
-                <th className="py-2 pr-4 font-medium">Status</th>
-                <th className="py-2 font-medium" />
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row) => (
-                <tr
-                  key={row.class_id}
-                  className="border-b border-neutral-200 align-middle"
-                >
-                  <td className="py-2 pr-4">
-                    <Link
-                      href={`/classrooms/${row.class_id}`}
-                      className="font-medium underline underline-offset-2
-                                 hover:text-neutral-600"
+      {shown && shown.length > 0 && (
+        <ul className="divide-y divide-line overflow-hidden rounded-lg border border-line bg-surface">
+          {shown.map((row) => {
+            const asking = confirming === row.class_id;
+            return (
+              <li key={row.class_id}>
+                <div className="flex items-center">
+                  <Link
+                    href={`/classrooms/${row.class_id}`}
+                    className="flex min-h-18 min-w-0 flex-1 items-center gap-3.5 px-4 py-3 hover:bg-sunken"
+                  >
+                    {/* Neutral, not blue: blue is reserved for levels. */}
+                    <span
+                      aria-hidden="true"
+                      className={`flex size-12 shrink-0 flex-col items-center justify-center rounded-lg
+                                  border border-line bg-sunken
+                                  ${row.is_active ? "text-ink" : "text-ink-subtle"}`}
                     >
-                      {row.grade}
-                      {row.name ? ` ${row.name}` : ""}
-                    </Link>
-                  </td>
-                  <td className="py-2 pr-4">{row.student_count}</td>
-                  <td className="py-2 pr-4">
-                    {row.is_active ? (
-                      <span className="text-neutral-600">active</span>
-                    ) : (
-                      <span className="text-neutral-400">withdrawn</span>
-                    )}
-                  </td>
-                  <td className="py-2 text-right">
-                    {isAdmin && row.is_active && (
-                      <Button
-                        variant="danger"
-                        disabled={busy}
-                        onClick={() => remove(row)}
+                      <span className="text-[9px] font-semibold uppercase leading-none tracking-wider text-ink-subtle">
+                        Grade
+                      </span>
+                      <span className="mt-0.5 text-xl font-semibold leading-none tabular-nums">
+                        {gradeNumber(row.grade)}
+                      </span>
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span
+                        className={`block truncate text-base font-semibold
+                                    ${row.is_active ? "text-ink" : "text-ink-muted"}`}
                       >
-                        Remove
+                        {className(row)}
+                      </span>
+                      <span className="mt-0.5 flex flex-wrap items-center gap-2 text-sm text-ink-muted">
+                        {learners(row.student_count)}
+                        {!row.is_active && <Badge>Withdrawn</Badge>}
+                      </span>
+                    </span>
+                    <span aria-hidden="true" className="text-xl leading-none text-ink-subtle">
+                      ›
+                    </span>
+                  </Link>
+
+                  {isAdmin && row.is_active && !asking && (
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => setConfirming(row.class_id)}
+                      className="mr-2 min-h-11 shrink-0 rounded-md px-3 text-sm font-medium
+                                 text-ink-muted hover:bg-risk-fill hover:text-risk disabled:opacity-50"
+                    >
+                      Remove
+                    </button>
+                  )}
+                  {isAdmin && !row.is_active && (
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      disabled={busy}
+                      onClick={() => restore(row)}
+                      className="mr-3 shrink-0"
+                    >
+                      Restore
+                    </Button>
+                  )}
+                </div>
+
+                {asking && (
+                  <div
+                    role="alertdialog"
+                    aria-label={`Remove ${className(row)}`}
+                    className="border-t border-line bg-risk-fill px-4 py-3"
+                  >
+                    <p className="text-[15px] text-ink">
+                      Remove <strong>{className(row)}</strong>? If its learners have
+                      answered anything, it’s withdrawn instead and can be restored.
+                    </p>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <Button variant="danger" disabled={busy} onClick={() => remove(row)}>
+                        {busy ? "Removing…" : "Remove class"}
                       </Button>
-                    )}
-                    {isAdmin && !row.is_active && (
-                      <Button
-                        variant="secondary"
-                        disabled={busy}
-                        onClick={() => restore(row)}
-                      >
-                        Restore
+                      <Button variant="secondary" disabled={busy} onClick={() => setConfirming(null)}>
+                        Keep it
                       </Button>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </section>
+                    </div>
+                  </div>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
     </>
   );
 }

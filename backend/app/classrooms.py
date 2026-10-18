@@ -32,6 +32,7 @@ behind a button labelled "Remove".
 from __future__ import annotations
 
 import uuid
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -50,13 +51,23 @@ NOT_FOUND_STUDENT = "No such learner"
 
 
 # --- schemas ---------------------------------------------------------------
+# The six grades this system covers, spelled exactly as the KICD corpus spells
+# them. Report retrieval matches a class's grade against the curriculum's
+# grade by equality, so "grade 5" or "Gr 5" would create a class whose reports
+# could never find any curriculum - and the failure would surface weeks later,
+# at the first report, as a 409 nobody connects to a typo. Validated here
+# rather than trusted to the form: the interface offers a picker, but the
+# server is what has to be right.
+Grade = Literal["Grade 1", "Grade 2", "Grade 3", "Grade 4", "Grade 5", "Grade 6"]
+
+
 class ClassroomCreate(BaseModel):
-    grade: str = Field(min_length=1, max_length=20, examples=["Grade 5"])
+    grade: Grade = Field(examples=["Grade 5"])
     name: str = Field(default="", max_length=100, examples=["Blue"])
 
 
 class ClassroomUpdate(BaseModel):
-    grade: str | None = Field(default=None, min_length=1, max_length=20)
+    grade: Grade | None = None
     name: str | None = Field(default=None, max_length=100)
     is_active: bool | None = None
 

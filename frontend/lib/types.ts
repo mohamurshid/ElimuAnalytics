@@ -26,6 +26,8 @@ export type Profile = {
   name: string;
   email: string;
   role: Role;
+  /** The school this account belongs to - the boundary of everything it sees. */
+  school: string;
 };
 
 export type Strand = {

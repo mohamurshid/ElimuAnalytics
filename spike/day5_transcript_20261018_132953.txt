@@ -1,0 +1,5 @@
+ELIMU ANALYTICS - DAY 5 RAG SPIKE (hardened, v3.1 model refresh)
+run: 2026-10-18T13:29:53
+chunks: 8  model: claude-haiku-5-5  top_k: 2
+kiswahili comparison model: claude-sonnet-5-5
+effort: low  max_tokens: 4000

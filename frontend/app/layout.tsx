@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 
 import { AuthProvider } from "@/lib/auth";
+import { THEME_BOOTSTRAP } from "@/lib/theme";
 
 import "./globals.css";
 
@@ -27,7 +28,12 @@ export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en">
+    // suppressHydrationWarning: the bootstrap script may set data-theme on
+    // <html> before React hydrates, which is the point of running it early.
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: THEME_BOOTSTRAP }} />
+      </head>
       <body className="min-h-screen bg-canvas text-ink">
         <AuthProvider>{children}</AuthProvider>
       </body>

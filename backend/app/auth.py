@@ -84,6 +84,10 @@ class ProfileResponse(BaseModel):
     name: str
     email: str
     role: str
+    # Shown on the profile page. Every query is already scoped to this
+    # school, so a teacher seeing its name is being told what they can see,
+    # not given anything new.
+    school: str
 
 
 def _issue_refresh(
@@ -324,4 +328,5 @@ def me(teacher: Teacher = Depends(current_teacher)) -> ProfileResponse:
         name=teacher.name,
         email=teacher.email,
         role=teacher.role,
+        school=teacher.school.name if teacher.school else "",
     )

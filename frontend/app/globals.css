@@ -84,6 +84,47 @@
   }
 }
 
+/* The same dark tokens, chosen explicitly on the profile page rather than
+   inherited from the phone's setting. Generated from the block above so the
+   two can never disagree; change one, regenerate the other. Duplicated
+   rather than written with light-dark(), which older Android browsers on
+   budget phones do not support. */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --background: #0d0d0d;
+  --surface: #1a1a19;
+  --sunken: #242321;
+  --border: #302f2c;
+  --border-strong: #45443f;
+  --foreground: #f0efec;
+  --muted: #c3c2b7;
+  --subtle: #8e8c83;
+
+  --action: #f0efec;
+  --action-hover: #d9d7d0;
+  --action-ink: #0d0d0d;
+
+  --ok: #7fcfa3;
+  --ok-fill: #17271e;
+  --warn: #e3b457;
+  --warn-fill: #2a2114;
+  --risk: #f08a8d;
+  --risk-fill: #2b1718;
+
+  /* Same hue, stepped for the dark surface rather than flipped. On dark,
+     prominence runs the other way, so the ordering inverts to keep
+     "most need stands out most". */
+  --tier-exceeds: #184f95;
+  --tier-meets: #2a78d6;
+  --tier-approaches: #6da7ec;
+  --tier-below: #b7d3f6;
+  --tier-none: #383835;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+}
+
 /* Tokens as Tailwind colours: bg-surface, text-ink-muted, border-line... */
 @theme inline {
   --color-canvas: var(--background);

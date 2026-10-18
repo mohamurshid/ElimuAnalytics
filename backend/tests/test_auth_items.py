@@ -210,3 +210,10 @@ def test_deactivated_items_leave_the_calibration_pool(client, teacher, session):
 def test_assessment_still_requires_a_token(client):
     r = client.post(f"/api/strands/{uuid.uuid4()}/assess")
     assert r.status_code == 401
+
+
+def test_me_names_the_teachers_school(client, teacher):
+    """The profile page shows it; the school is the boundary of every query."""
+    r = client.get("/api/auth/me", headers=auth(teacher))
+    assert r.json()["school"] == teacher.school.name
+    assert r.json()["school"] != ""

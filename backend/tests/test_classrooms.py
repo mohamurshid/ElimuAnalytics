@@ -364,3 +364,28 @@ def test_another_schools_classroom_cannot_be_restored(client, head, rival):
         f"/api/classrooms/{rival['classroom'].class_id}/restore", headers=auth(head)
     )
     assert r.status_code == 404
+
+
+# --- the grade is a fixed vocabulary -------------------------------------
+# Report retrieval matches a class's grade against the curriculum's by
+# equality. A class created as "grade 5" would never find any curriculum, and
+# nobody would learn why until its first report failed.
+@pytest.mark.parametrize("grade", ["grade 5", "Gr 5", "5", "Grade 7", "Grade 5 "])
+def test_a_grade_outside_the_six_is_refused(client, head, grade):
+    r = client.post("/api/classrooms", headers=auth(head), json={"grade": grade})
+    assert r.status_code == 422
+
+
+@pytest.mark.parametrize("grade", [f"Grade {n}" for n in range(1, 7)])
+def test_each_of_the_six_grades_is_accepted(client, head, grade):
+    r = client.post("/api/classrooms", headers=auth(head), json={"grade": grade})
+    assert r.status_code == 201
+    assert r.json()["grade"] == grade
+
+
+def test_renaming_a_grade_is_held_to_the_same_rule(client, head):
+    cid = client.post(
+        "/api/classrooms", headers=auth(head), json={"grade": "Grade 3"}
+    ).json()["class_id"]
+    r = client.patch(f"/api/classrooms/{cid}", headers=auth(head), json={"grade": "grade 3"})
+    assert r.status_code == 422

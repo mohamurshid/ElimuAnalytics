@@ -105,6 +105,9 @@ class Row:
     strand: str | None
     sub_strand: str | None
     syllabus_text: str = ""
+    # The corpus row, which survives re-ingest where chunk ids do not. What a
+    # generated question cites.
+    source_row: int | None = None
 
 
 def split_number(text: str | None) -> tuple[str | None, str]:
@@ -210,10 +213,12 @@ class _Sub:
     number: str
     names: Counter = field(default_factory=Counter)
     chunks: int = 0
+    rows: list[Row] = field(default_factory=list)
 
 
-def build(rows: Iterable[Row]) -> dict:
-    """The catalogue as plain data. Pure, so it is testable without Postgres."""
+def _index(rows: Iterable[Row]) -> tuple[dict, dict, int]:
+    """(grade, area) -> strand group -> key -> _Sub; strand spellings; and
+    how many rows could not be placed."""
     rows = [
         r for r in rows if r.grade in GRADES and r.learning_area in LEARNING_AREAS
     ]
@@ -250,6 +255,7 @@ def build(rows: Iterable[Row]) -> dict:
         )
         sub.names[sub_name] += 1
         sub.chunks += 1
+        sub.rows.append(r)
 
     # A row with no sub-strand number is either a continuation of a numbered
     # sub-strand (same name) or extraction debris such as an assessment-method
@@ -263,9 +269,15 @@ def build(rows: Iterable[Row]) -> dict:
                     target = sub
         if target:
             target.chunks += 1
+            target.rows.append(r)
         else:
             unplaced += 1
+    return tree, group_names, unplaced
 
+
+def build(rows: Iterable[Row]) -> dict:
+    """The catalogue as plain data. Pure, so it is testable without Postgres."""
+    tree, group_names, unplaced = _index(rows)
     grades = []
     for grade in GRADES:
         areas = []
@@ -314,6 +326,14 @@ class Entry:
     strand: str
     number: str
     name: str
+    # Its curriculum text: every corpus row placed under this sub-strand.
+    # Question generation writes from exactly these, rather than retrieving
+    # by similarity - the sub-strand is already known.
+    chunks: tuple[Row, ...] = ()
+
+    @property
+    def language(self) -> str:
+        return "Kiswahili" if self.learning_area == "Kiswahili" else "English"
 
     @property
     def strand_name(self) -> str:
@@ -325,11 +345,15 @@ def lookup(rows: Iterable[Row], key: str) -> Entry | None:
     """The catalogue entry for a key, or None if the catalogue has no such
     sub-strand - which is how a key typed by hand, or one from a corpus that
     has since been re-extracted, is refused."""
+    rows = list(rows)
+    tree, _, _ = _index(rows)
     for grade in build(rows)["grades"]:
         for area in grade["learning_areas"]:
             for strand in area["strands"]:
                 for sub in strand["sub_strands"]:
                     if sub["key"] == key:
+                        groups = tree[(grade["grade"], area["learning_area"])]
+                        found = next(g[key] for g in groups.values() if key in g)
                         return Entry(
                             key=key,
                             grade=grade["grade"],
@@ -337,6 +361,7 @@ def lookup(rows: Iterable[Row], key: str) -> Entry | None:
                             strand=strand["name"],
                             number=sub["number"],
                             name=sub["name"],
+                            chunks=tuple(found.rows),
                         )
     return None
 
@@ -388,6 +413,7 @@ def catalogue_rows(session: Session = Depends(get_session)) -> list[Row]:
             CurriculumChunk.strand,
             CurriculumChunk.sub_strand,
             CurriculumChunk.syllabus_text,
+            CurriculumChunk.source_row,
         ).where(
             CurriculumChunk.grade.in_(GRADES),
             CurriculumChunk.learning_area.in_(LEARNING_AREAS),

@@ -259,6 +259,10 @@ class Item(Base):
     # new ids, and a key would be nulled on every re-ingest.
     curriculum_excerpt: Mapped[str | None] = mapped_column(Text, nullable=True)
     curriculum_source_row: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # The generation run that wrote it; null for a teacher's own question.
+    generation_run_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("generation_run.run_id", ondelete="SET NULL"), nullable=True
+    )
 
     # Who did what. SET NULL, so removing an account never removes a question.
     created_by: Mapped[uuid.UUID | None] = mapped_column(
@@ -536,6 +540,49 @@ class Report(Base):
     # When the report was REQUESTED, not finished - the row now exists before
     # its content does. Completion is this plus duration_ms.
     generated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class GenerationRun(Base):
+    """One request to the model for draft questions, and what came of it.
+
+    Kept for three reasons: the daily cap counts these rows; the teacher's
+    screen polls one while it runs, as it does a report; and checkpoint 6
+    measures generation from them - how many questions each run produced,
+    how many the server's checks threw out and why, and what it cost.
+    """
+
+    __tablename__ = "generation_run"
+
+    run_id: Mapped[uuid.UUID] = _pk()
+    strand_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("strand.strand_id", ondelete="CASCADE"), nullable=False
+    )
+    # The cap is per school, so the run records whose it was.
+    school_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("school.school_id", ondelete="CASCADE"), nullable=False
+    )
+    requested_by: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("teacher.teacher_id", ondelete="SET NULL"), nullable=True
+    )
+    status: Mapped[str] = mapped_column(
+        String(10), nullable=False, default="pending", server_default="pending"
+    )
+    requested: Mapped[int] = mapped_column(Integer, nullable=False)
+    # Drafts saved, and questions the checks threw out with the reason for
+    # each - [{"question": ..., "problems": [...]}].
+    produced: Mapped[int] = mapped_column(Integer, nullable=False, default=0,
+                                          server_default="0")
+    dropped: Mapped[list[dict] | None] = mapped_column(JSON, nullable=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    model: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    effort: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    input_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    output_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    cost_usd: Mapped[float | None] = mapped_column(Float, nullable=True)
+    duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 

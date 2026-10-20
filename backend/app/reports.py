@@ -280,7 +280,7 @@ def get_generator() -> Generator:
 def _load_anthropic() -> Generator:
     if not os.environ.get("ANTHROPIC_API_KEY"):
         raise RuntimeError(
-            "ANTHROPIC_API_KEY is not set, so no report can be generated. "
+            "ANTHROPIC_API_KEY is not set, so nothing can be generated. "
             'Windows: setx ANTHROPIC_API_KEY "sk-ant-..." then reopen the terminal.'
         )
     # Imported here, not at module scope, so that importing this module does

@@ -107,10 +107,11 @@ def test_summary_table_rows_of_themed_designs_are_recognised():
 @pytest.fixture(scope="module")
 def corpus_rows() -> list[Row]:
     records = json.loads(CORPUS.read_text(encoding="utf-8"))["chunks"]
+    # source_row is the record's index in this file, as ingest stores it.
     return [
         Row(r["grade"], r["subject"], normalise(r["strand"]),
-            normalise(r["sub_strand"]), normalise(r["text"]))
-        for r in records
+            normalise(r["sub_strand"]), normalise(r["text"]), source_row=i)
+        for i, r in enumerate(records)
     ]
 
 

@@ -36,6 +36,7 @@ from .class_strands import router as class_strands_router
 from .classrooms import router as classrooms_router
 from .db import get_session, healthcheck
 from .diagnostics import router as diagnostics_router
+from .generation import router as generation_router
 from .irt import ResponseMatrixError
 from .items import router as items_router
 from .models import Teacher
@@ -97,6 +98,7 @@ app.include_router(assessments_router)
 app.include_router(diagnostics_router)
 app.include_router(catalogue_router)
 app.include_router(class_strands_router)
+app.include_router(generation_router)
 app.include_router(reports_router)
 
 

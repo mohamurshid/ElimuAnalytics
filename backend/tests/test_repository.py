@@ -44,7 +44,7 @@ PORTABLE_TABLES = [
     for n in (
         "school", "teacher", "refresh_token", "classroom", "student", "strand",
         "item", "assessment_batch", "response", "ability_score",
-        "gap_flag", "report", "class_strand",
+        "gap_flag", "report", "class_strand", "generation_run",
     )
 ]
 

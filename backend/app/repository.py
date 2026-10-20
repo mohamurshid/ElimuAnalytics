@@ -23,6 +23,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .irt import diagnose as irt_diagnose
+from .item_status import MEASURED
 from .models import AbilityScore, Classroom, ClassStrand, Item, Response, Strand, Student
 
 
@@ -89,12 +90,13 @@ def build_response_matrix(
 
     Shape is (n_items, n_students). Unanswered cells are INVALID_RESPONSE.
     """
-    # Deactivated items are excluded: they are withdrawn from the bank but
-    # their responses are kept, so historical estimates remain reproducible.
+    # Only questions that count (item_status.MEASURED). Retired, reported and
+    # draft questions are left out, but their responses are kept, so a
+    # question that is approved again counts again.
     items = list(
         session.scalars(
             select(Item)
-            .where(Item.strand_id == strand_id, Item.is_active.is_(True))
+            .where(Item.strand_id == strand_id, Item.status.in_(MEASURED))
             .order_by(Item.item_id)
         )
     )
@@ -268,11 +270,21 @@ def learner_failure_pattern(
 
     `unreported_failures` makes that gap visible instead of silent: it is the
     number of wrong answers that exist but cannot be described.
+
+    Only questions that count (item_status.MEASURED), the same set the
+    learner's level is estimated from. Otherwise a reported question - one a
+    teacher thinks has a wrong key - could be named in a report as the
+    learner's misconception, and `answered` would disagree with the level
+    printed beside it.
     """
     rows = session.execute(
         select(Response, Item)
         .join(Item, Item.item_id == Response.item_id)
-        .where(Response.student_id == student_id, Item.strand_id == strand_id)
+        .where(
+            Response.student_id == student_id,
+            Item.strand_id == strand_id,
+            Item.status.in_(MEASURED),
+        )
         .order_by(Item.question_text)
     ).all()
 

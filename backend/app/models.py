@@ -224,11 +224,60 @@ class Item(Base):
     # Null until the strand has been calibrated.
     difficulty_b: Mapped[float | None] = mapped_column(Float, nullable=True)
     discrimination_a: Mapped[float | None] = mapped_column(Float, nullable=True)
-    # Retiring an item must not delete the responses learners already gave to
-    # it: that would silently change every ability estimate ever computed from
-    # them. Withdrawn items are deactivated, and calibration ignores them.
-    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True,
-                                            server_default="true")
+
+    # Where the question is in its life. One field, replacing `is_active`, so
+    # "may a learner see it" and "does it count" can never disagree - see
+    # item_status.py for what each status permits. Retiring never deletes:
+    # the responses learners gave stay, because deleting them would silently
+    # change every ability estimate ever computed from them.
+    status: Mapped[str] = mapped_column(
+        String(10), nullable=False, default="approved", server_default="approved"
+    )
+    # "teacher" or "ai". Kept through edits: version 2 of an AI question is
+    # still an AI question a teacher corrected, which is what the approval
+    # rate measurement needs to see.
+    source: Mapped[str] = mapped_column(
+        String(10), nullable=False, default="teacher", server_default="teacher"
+    )
+    # Editing a question learners have answered makes a new row rather than
+    # rewriting this one: their answers were to THIS wording. The new row
+    # points back here and this one is retired.
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1,
+                                         server_default="1")
+    previous_item_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("item.item_id", ondelete="SET NULL"), nullable=True
+    )
+
+    # The mark scheme. `rationale` is one line on why the key is right;
+    # `misconceptions` is aligned with `options`, holding what choosing each
+    # wrong option suggests (None at the key). Neither may reach a learner's
+    # device: a misconception list reveals the key as surely as the key does.
+    rationale: Mapped[str | None] = mapped_column(Text, nullable=True)
+    misconceptions: Mapped[list[str | None] | None] = mapped_column(JSON, nullable=True)
+    # What the question was written from. Stored as text and the corpus row
+    # number, not a foreign key: `tasks ingest` rebuilds curriculum_chunk with
+    # new ids, and a key would be nulled on every re-ingest.
+    curriculum_excerpt: Mapped[str | None] = mapped_column(Text, nullable=True)
+    curriculum_source_row: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    # Who did what. SET NULL, so removing an account never removes a question.
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("teacher.teacher_id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    reviewed_by: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("teacher.teacher_id", ondelete="SET NULL"), nullable=True
+    )
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True),
+                                                         nullable=True)
+    reported_by: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("teacher.teacher_id", ondelete="SET NULL"), nullable=True
+    )
+    reported_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True),
+                                                         nullable=True)
+    report_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     strand: Mapped[Strand] = relationship(back_populates="items")
     responses: Mapped[list[Response]] = relationship(back_populates="item")

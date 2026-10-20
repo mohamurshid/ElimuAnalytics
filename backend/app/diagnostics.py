@@ -32,6 +32,7 @@ from .auth import current_teacher
 from .calibration import open_flags
 from .db import get_session
 from .irt import CONFIDENT_RESPONSES, MIN_RESPONSES, diagnose_all
+from .item_status import DRAFT, MEASURED, REPORTED
 from .models import Classroom, GapFlag, Item, Strand, Student, Teacher
 
 router = APIRouter(prefix="/api", tags=["diagnostics"])
@@ -45,8 +46,12 @@ class StrandOut(BaseModel):
     strand_id: str
     name: str
     level: str
+    # Approved questions: what a quiz can be given from and what counts.
     active_items: int
     calibrated_items: int
+    # Waiting on a teacher (drafts) or a head teacher (reported).
+    draft_items: int = 0
+    reported_items: int = 0
     # Null for strands made before the catalogue existed.
     grade: str | None = None
     learning_area: str | None = None
@@ -93,17 +98,19 @@ def _status(cell: dict) -> str:
 
 
 def strand_out(session: Session, strand: Strand) -> StrandOut:
-    active = session.scalar(
-        select(func.count())
-        .select_from(Item)
-        .where(Item.strand_id == strand.strand_id, Item.is_active.is_(True))
-    ) or 0
+    by_status = dict(
+        session.execute(
+            select(Item.status, func.count())
+            .where(Item.strand_id == strand.strand_id)
+            .group_by(Item.status)
+        ).all()
+    )
     calibrated = session.scalar(
         select(func.count())
         .select_from(Item)
         .where(
             Item.strand_id == strand.strand_id,
-            Item.is_active.is_(True),
+            Item.status.in_(MEASURED),
             Item.difficulty_b.is_not(None),
         )
     ) or 0
@@ -111,8 +118,10 @@ def strand_out(session: Session, strand: Strand) -> StrandOut:
         strand_id=str(strand.strand_id),
         name=strand.name,
         level=strand.level,
-        active_items=int(active),
+        active_items=int(sum(by_status.get(s, 0) for s in MEASURED)),
         calibrated_items=int(calibrated),
+        draft_items=int(by_status.get(DRAFT, 0)),
+        reported_items=int(by_status.get(REPORTED, 0)),
         grade=strand.grade,
         learning_area=strand.learning_area,
         curriculum_key=strand.curriculum_key,

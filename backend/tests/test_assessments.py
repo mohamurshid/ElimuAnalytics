@@ -191,14 +191,37 @@ def test_a_duplicate_inside_one_batch_is_refused(client, head, fresh):
 
 
 def test_a_withdrawn_item_is_refused(client, head, fresh, session):  # noqa: F811
-    """A withdrawn item is out of the calibration pool, so a response to it
+    """A retired item is out of the calibration pool, so a response to it
     would be recorded and then never counted."""
-    fresh["item"].is_active = False
+    fresh["item"].status = "retired"
     session.commit()
 
     r = client.post("/api/assessments", headers=auth(head), json=batch_body(fresh))
     assert r.status_code == 422
     assert "withdrawn" in str(r.json()["detail"]["problems"])
+
+
+def test_an_unapproved_draft_is_refused(client, head, fresh, session):  # noqa: F811
+    """A draft is never served, so an answer to one can only be forged."""
+    fresh["item"].status = "draft"
+    session.commit()
+
+    r = client.post("/api/assessments", headers=auth(head), json=batch_body(fresh))
+    assert r.status_code == 422
+    assert "not been approved" in str(r.json()["detail"]["problems"])
+
+
+def test_answers_to_a_question_reported_mid_quiz_are_kept(
+    client, head, fresh, session  # noqa: F811
+):
+    """The quiz was loaded before the report. Throwing the class's answers
+    away when it is submitted would punish them for a teacher's caution."""
+    fresh["item"].status = "reported"
+    session.commit()
+
+    r = client.post("/api/assessments", headers=auth(head), json=batch_body(fresh))
+    assert r.status_code == 200
+    assert r.json()["responses_recorded"] == 1
 
 
 def test_a_learner_from_another_class_is_refused(client, head, fresh, session):  # noqa: F811

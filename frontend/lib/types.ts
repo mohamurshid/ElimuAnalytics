@@ -34,8 +34,12 @@ export type Strand = {
   strand_id: string;
   name: string;
   level: string;
+  /** Approved questions: what a quiz can be given from. */
   active_items: number;
   calibrated_items: number;
+  /** Waiting on a teacher (drafts) or a head teacher (reported). */
+  draft_items: number;
+  reported_items: number;
   /** The grade of the curriculum design it comes from; null before the catalogue. */
   grade: string | null;
   learning_area: string | null;
@@ -158,13 +162,28 @@ export type Assessment = {
   new_flags: number;
 };
 
+/** Where a question is in its life; see backend/app/item_status.py. */
+export type ItemStatus = "draft" | "approved" | "reported" | "rejected" | "retired";
+
+/** A teacher's view of a question, key and mark scheme included. Never the
+ *  learner's: the quiz endpoint returns QuizItem, which has neither. */
 export type Item = {
   item_id: string;
   strand_id: string;
   question_text: string;
+  options: string[] | null;
+  correct_option: number | null;
+  rationale: string | null;
+  /** Aligned with options; null at the key. */
+  misconceptions: (string | null)[] | null;
+  curriculum_excerpt: string | null;
+  status: ItemStatus;
+  source: "teacher" | "ai";
+  version: number;
+  previous_item_id: string | null;
+  report_reason: string | null;
   difficulty_b: number | null;
   discrimination_a: number | null;
-  is_active: boolean;
   response_count: number;
 };
 

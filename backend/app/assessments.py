@@ -44,6 +44,7 @@ from sqlalchemy.orm import Session
 from . import repository as repo
 from .auth import current_teacher
 from .db import get_session
+from .item_status import ANSWERABLE, DRAFT, SERVED
 from .models import AssessmentBatch, Item, Response, Strand, Student, Teacher
 
 router = APIRouter(prefix="/api/assessments", tags=["assessments"])
@@ -153,7 +154,9 @@ def record_assessment(
         item = items.get(r.item_id)
         if item is None:
             problems.append(f"item {r.item_id} is not in this strand")
-        elif not item.is_active:
+        elif item.status == DRAFT:
+            problems.append(f"item {r.item_id} has not been approved, so it cannot be answered")
+        elif item.status not in ANSWERABLE:
             problems.append(f"item {r.item_id} has been withdrawn from the bank")
         if r.selected_option is not None and item is not None:
             if item.correct_option is None or not item.options:
@@ -315,7 +318,9 @@ def quiz_items(
         item
         for item in session.scalars(
             select(Item)
-            .where(Item.strand_id == strand_id, Item.is_active.is_(True))
+            # Approved only: never a draft nobody has checked, nor a question
+            # someone has reported as wrong.
+            .where(Item.strand_id == strand_id, Item.status.in_(SERVED))
             .order_by(Item.item_id)
         )
         # An item with no options cannot be delivered to a learner. It is

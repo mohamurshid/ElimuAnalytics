@@ -129,7 +129,8 @@ def test_teacher_can_create_an_item(client, teacher, session):  # noqa: F811
               "question_text": "Why does a metal roof feel hot at midday?"},
     )
     assert r.status_code == 201
-    assert r.json()["is_active"] is True
+    assert r.json()["status"] == "approved"  # its author is its reviewer
+    assert r.json()["source"] == "teacher"
     assert r.json()["response_count"] == 0
 
 
@@ -144,13 +145,14 @@ def test_unanswered_item_can_be_edited(client, teacher, session):  # noqa: F811
     assert r.json()["question_text"] == "Revised question about heat?"
 
 
-def test_answered_item_cannot_be_rewritten(client, teacher, session):  # noqa: F811
-    """Existing responses would become answers to a question that no longer exists."""
+def test_a_teacher_cannot_rewrite_an_answered_item(client, teacher, session):  # noqa: F811
+    """Rewriting it retires the old wording and every answer given to it
+    stops counting - a head teacher's decision. A teacher reports instead."""
     item = session.scalars(select(Item)).first()
     r = client.patch(f"/api/items/{item.item_id}", headers=auth(teacher),
                      json={"question_text": "A completely different question?"})
-    assert r.status_code == 409
-    assert "already recorded" in r.json()["detail"]
+    assert r.status_code == 403
+    assert "report" in r.json()["detail"]
 
 
 def test_teacher_cannot_delete(client, teacher, session):  # noqa: F811
@@ -172,11 +174,11 @@ def test_school_admin_deleting_an_answered_item_deactivates_it(
     assert r.status_code == 200
     body = r.json()
     assert body["deleted"] is False
-    assert body["deactivated"] is True
+    assert body["retired"] is True
     assert body["response_count"] > 0
 
     session.refresh(item)
-    assert item.is_active is False
+    assert item.status == "retired"
     assert session.get(Item, item.item_id) is not None
 
 

@@ -19,12 +19,18 @@
  *     flag needs two consecutive low records - so it stays prominent enough
  *     to find, just not the thing pressed by mistake.
  *   - Managing learners, which is the roll.
+ *
+ * Below the actions, what the class is assessed on: the sub-strands picked
+ * from the curriculum catalogue. Recording levels and recalibrating skip a
+ * strand with no questions yet - there is nothing to estimate from, and the
+ * server would refuse it.
  */
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
+import { ClassStrands } from "@/components/ClassStrands";
 import { ClassSummary, Heatmap, Legend } from "@/components/Heatmap";
 import { Button, ButtonLink, Card, Empty, Loading, Note, PageHeader } from "@/components/ui";
 import { api, ApiError, errorMessage } from "@/lib/api";
@@ -84,15 +90,28 @@ export default function ClassPage() {
     }
   }, [fetchHeatmap, failure]);
 
+  /** Strands with questions: the only ones there is anything to estimate from. */
+  const withQuestions = data ? data.strands.filter((s) => s.active_items > 0) : [];
+  // What the summary and the heatmap draw. A strand with no questions would
+  // add a column of forty "no level yet" cells that say nothing the strand
+  // list does not already say.
+  const evidence = data ? { ...data, strands: withQuestions } : null;
+
   /** Re-estimate item difficulty and discrimination, then re-read. */
   async function calibrate() {
     if (!data) return;
-    setBusy("calibrate");
     setError(null);
     setNotice(null);
+    if (withQuestions.length === 0) {
+      setNotice({
+        text: "None of this class’s strands has questions yet, so there is nothing to recalibrate.",
+      });
+      return;
+    }
+    setBusy("calibrate");
     try {
       const results = await Promise.all(
-        data.strands.map((s) =>
+        withQuestions.map((s) =>
           api.post<{ items_calibrated: number }>(`/api/strands/${s.strand_id}/calibrate`),
         ),
       );
@@ -120,12 +139,18 @@ export default function ClassPage() {
    */
   async function record() {
     if (!data) return;
-    setBusy("record");
     setError(null);
     setNotice(null);
+    if (withQuestions.length === 0) {
+      setNotice({
+        text: "None of this class’s strands has questions yet, so there are no levels to record.",
+      });
+      return;
+    }
+    setBusy("record");
     try {
       const results = await Promise.all(
-        data.strands.map((s) => api.post<Assessment>(`/api/strands/${s.strand_id}/assess`)),
+        withQuestions.map((s) => api.post<Assessment>(`/api/strands/${s.strand_id}/assess`)),
       );
       const recorded = results.reduce((n, r) => n + r.estimates_recorded, 0);
       const skipped = results.reduce((n, r) => n + r.skipped_insufficient_evidence, 0);
@@ -200,6 +225,17 @@ export default function ClassPage() {
         </Empty>
       )}
 
+      {data && data.learners.length === 0 && (
+        <div className="mt-6">
+          <ClassStrands
+            classId={classId}
+            classGrade={data.grade}
+            strands={data.strands}
+            onChange={reload}
+          />
+        </div>
+      )}
+
       {data && data.learners.length > 0 && (
         <div className="space-y-6">
           <div className="grid gap-3 md:grid-cols-2">
@@ -245,45 +281,56 @@ export default function ClassPage() {
             </Card>
           </div>
 
-          <Card className="p-4">
-            <h2 className="mb-4 text-base font-semibold text-ink">How the class is doing</h2>
-            <ClassSummary data={data} />
-          </Card>
+          <ClassStrands
+            classId={classId}
+            classGrade={data.grade}
+            strands={data.strands}
+            onChange={reload}
+          />
 
-          <section aria-labelledby="learners-heading">
-            <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-              <h2 id="learners-heading" className="text-lg font-semibold text-ink">
-                Learners
-              </h2>
-              <div
-                role="group"
-                aria-label="Sort learners"
-                className="inline-flex rounded-md border border-line-strong bg-surface p-0.5"
-              >
-                {(["need", "name"] as const).map((value) => (
-                  <button
-                    key={value}
-                    type="button"
-                    aria-pressed={order === value}
-                    onClick={() => setOrder(value)}
-                    className={`min-h-10 rounded px-3 text-sm font-medium
-                                ${order === value ? "bg-sunken text-ink" : "text-ink-muted hover:text-ink"}`}
-                  >
-                    {value === "need" ? "Most need first" : "A–Z"}
-                  </button>
-                ))}
+          {evidence && evidence.strands.length > 0 && (
+            <Card className="p-4">
+              <h2 className="mb-4 text-base font-semibold text-ink">How the class is doing</h2>
+              <ClassSummary data={evidence} />
+            </Card>
+          )}
+
+          {evidence && evidence.strands.length > 0 && (
+            <section aria-labelledby="learners-heading">
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+                <h2 id="learners-heading" className="text-lg font-semibold text-ink">
+                  Learners
+                </h2>
+                <div
+                  role="group"
+                  aria-label="Sort learners"
+                  className="inline-flex rounded-md border border-line-strong bg-surface p-0.5"
+                >
+                  {(["need", "name"] as const).map((value) => (
+                    <button
+                      key={value}
+                      type="button"
+                      aria-pressed={order === value}
+                      onClick={() => setOrder(value)}
+                      className={`min-h-10 rounded px-3 text-sm font-medium
+                                  ${order === value ? "bg-sunken text-ink" : "text-ink-muted hover:text-ink"}`}
+                    >
+                      {value === "need" ? "Most need first" : "A–Z"}
+                    </button>
+                  ))}
+                </div>
               </div>
-            </div>
-            <div className="mb-3">
-              <Legend minimum={data.minimum_responses} />
-            </div>
-            <Heatmap data={data} order={order} />
-            <p className="mt-4 text-sm text-ink-subtle">
-              Levels are estimated from the answers recorded so far. A level
-              marked provisional is based on fewer than {data.confident_responses}{" "}
-              answers — useful, but check it before acting on it alone.
-            </p>
-          </section>
+              <div className="mb-3">
+                <Legend minimum={data.minimum_responses} />
+              </div>
+              <Heatmap data={evidence} order={order} />
+              <p className="mt-4 text-sm text-ink-subtle">
+                Levels are estimated from the answers recorded so far. A level
+                marked provisional is based on fewer than {data.confident_responses}{" "}
+                answers — useful, but check it before acting on it alone.
+              </p>
+            </section>
+          )}
         </div>
       )}
     </>

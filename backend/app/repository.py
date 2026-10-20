@@ -23,11 +23,48 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .irt import diagnose as irt_diagnose
-from .models import AbilityScore, Classroom, Item, Response, Strand, Student
+from .models import AbilityScore, Classroom, ClassStrand, Item, Response, Strand, Student
 
 
 def list_strands(session: Session) -> list[Strand]:
+    """Every strand in the database, across every school. Not what a screen
+    should show - see class_strands and school_strands."""
     return list(session.scalars(select(Strand).order_by(Strand.name)))
+
+
+def curriculum_order(strand: Strand) -> tuple:
+    """Grade, learning area, then sub-strand number as numbers.
+
+    Not by name: the seeded strand is called "3.0 Force and Energy / 3.3 Heat
+    Transfer" and catalogue strands "Force and Energy / 3.2 Sound Energy", so
+    alphabetical order put 3.3 before 3.2. And not by the key as a string,
+    which puts "10.1" before "2.1".
+    """
+    number = (strand.curriculum_key or "").rsplit("|", 1)[-1]
+    parts = tuple(int(p) for p in number.split(".") if p.isdigit())
+    return (strand.grade or "", strand.learning_area or "", parts or (999,), strand.name)
+
+
+def class_strands(session: Session, class_id: uuid.UUID) -> list[Strand]:
+    """The strands this class is assessed on, in curriculum order."""
+    strands = session.scalars(
+        select(Strand)
+        .join(ClassStrand, ClassStrand.strand_id == Strand.strand_id)
+        .where(ClassStrand.class_id == class_id)
+    )
+    return sorted(strands, key=curriculum_order)
+
+
+def school_strands(session: Session, school_id: uuid.UUID) -> list[Strand]:
+    """Strands at least one current class in the school is assessed on."""
+    strands = session.scalars(
+        select(Strand)
+        .join(ClassStrand, ClassStrand.strand_id == Strand.strand_id)
+        .join(Classroom, Classroom.class_id == ClassStrand.class_id)
+        .where(Classroom.school_id == school_id, Classroom.is_active.is_(True))
+        .distinct()
+    )
+    return sorted(strands, key=curriculum_order)
 
 
 def get_strand(session: Session, strand_id: uuid.UUID) -> Strand | None:

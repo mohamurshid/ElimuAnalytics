@@ -458,6 +458,7 @@ def _generate_into(
         tier=diagnosis["tier"],
         items_answered=diagnosis["answered"],
         consecutive_flags=flags,
+        curriculum_grade=strand.grade if strand.grade and strand.grade != grade else None,
     )
 
     chunk_texts = [r.syllabus_text for r in retrieved]
@@ -604,14 +605,17 @@ def create_report(
     if diagnosis["theta"] is None:
         raise HTTPException(status_code=409, detail=diagnosis["message"])
 
+    # The strand's own grade, not the class's: remediation on a lower grade's
+    # sub-strand has to be grounded in that grade's curriculum design.
+    curriculum_grade = strand.grade or grade
     retrieved = retrieve(
-        session, strand.name, grade=grade, learning_area=strand.learning_area
+        session, strand.name, grade=curriculum_grade, learning_area=strand.learning_area
     )
     if not retrieved:
         raise HTTPException(
             status_code=409,
             detail=(
-                f"No curriculum is loaded for {grade} {strand.learning_area}, so "
+                f"No curriculum is loaded for {curriculum_grade} {strand.learning_area}, so "
                 f"there is nothing to ground a report in. Run `tasks ingest`, and "
                 f"check that this grade and learning area were extracted."
             ),

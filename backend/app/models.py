@@ -109,6 +109,27 @@ class Classroom(Base):
     students: Mapped[list[Student]] = relationship(back_populates="classroom")
 
 
+class ClassStrand(Base):
+    """Which strands a class is assessed on.
+
+    Removing a strand from a class deletes only this row. Answers, levels and
+    flags belong to learners and strands, not to the link, so they stay - and
+    adding the strand back brings them back into view.
+    """
+
+    __tablename__ = "class_strand"
+
+    class_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("classroom.class_id", ondelete="CASCADE"), primary_key=True
+    )
+    strand_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("strand.strand_id", ondelete="CASCADE"), primary_key=True
+    )
+    added_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
 class Student(Base):
     __tablename__ = "student"
 
@@ -160,6 +181,20 @@ class Strand(Base):
     # belongs. Report generation then refuses with a clear message rather than
     # retrieving against a guess.
     learning_area: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    # The grade whose curriculum design this sub-strand comes from - which is
+    # not always the grade of the class assessed on it: a Grade 5 class can be
+    # assessed on a Grade 4 sub-strand on purpose, to find where a gap began.
+    # Report retrieval filters on THIS grade, so remediation is grounded in the
+    # curriculum the learner is actually being tested against.
+    grade: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    # The catalogue key ("Grade 5|Science and Technology|3.0|3.3", see
+    # catalogue.py). Unique: strands are shared across schools, like the
+    # question bank, so the first class to pick a sub-strand creates its row
+    # and every later class reuses it - and its questions, and their
+    # calibration. Nullable for strands made before the catalogue existed.
+    curriculum_key: Mapped[str | None] = mapped_column(
+        String(200), nullable=True, unique=True
+    )
 
     items: Mapped[list[Item]] = relationship(back_populates="strand")
 

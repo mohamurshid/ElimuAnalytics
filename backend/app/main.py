@@ -32,6 +32,7 @@ from .auth import current_teacher
 from .auth import router as auth_router
 from .calibration import assess_strand, calibrate_strand
 from .catalogue import router as catalogue_router
+from .class_strands import router as class_strands_router
 from .classrooms import router as classrooms_router
 from .db import get_session, healthcheck
 from .diagnostics import router as diagnostics_router
@@ -95,6 +96,7 @@ app.include_router(classrooms_router)
 app.include_router(assessments_router)
 app.include_router(diagnostics_router)
 app.include_router(catalogue_router)
+app.include_router(class_strands_router)
 app.include_router(reports_router)
 
 

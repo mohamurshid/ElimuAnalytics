@@ -584,6 +584,56 @@ def test_completion_order_does_not_decide_which_language_is_stored(
 
 
 # --------------------------------------------------------------------------
+# Which grade's curriculum
+# --------------------------------------------------------------------------
+def _recording(monkeypatch):
+    """Stub retrieval and generation, keeping what each was given."""
+    seen: dict = {"retrieve": {}, "prompts": []}
+
+    def retrieve(*args, **kwargs):
+        seen["retrieve"].update(kwargs)
+        return [chunk()]
+
+    def generator(**kwargs):
+        seen["prompts"].append(kwargs["messages"][0]["content"])
+        return response(GROUNDED_REPORT)
+
+    monkeypatch.setattr("app.reporting.retrieve", retrieve)
+    set_generator(generator)
+    return seen
+
+
+def test_a_lower_grade_strand_is_grounded_in_that_grades_curriculum(
+    client, head, heat, session, monkeypatch  # noqa: F811
+):
+    seen = _recording(monkeypatch)
+    heat.grade = "Grade 4"
+    session.commit()
+
+    body = generated(client, chebet(session), heat, head).json()
+
+    assert body["status"] == READY
+    assert seen["retrieve"]["grade"] == "Grade 4"
+    assert len(seen["prompts"]) == 2
+    for prompt in seen["prompts"]:
+        assert "official KICD Grade 4 curriculum design" in prompt
+        assert "Grade 5" in prompt  # the learner's own grade is still stated
+
+
+def test_a_same_grade_strand_is_grounded_in_the_class_grade(
+    client, head, heat, session, monkeypatch  # noqa: F811
+):
+    seen = _recording(monkeypatch)
+    heat.grade = "Grade 5"
+    session.commit()
+
+    generated(client, chebet(session), heat, head)
+
+    assert seen["retrieve"]["grade"] == "Grade 5"
+    assert all("official KICD Grade 5 curriculum design" in p for p in seen["prompts"])
+
+
+# --------------------------------------------------------------------------
 # The row's three states
 # --------------------------------------------------------------------------
 def test_a_finished_report_is_ready_and_timed(client, head, heat, session):  # noqa: F811

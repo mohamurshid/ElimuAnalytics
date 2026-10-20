@@ -122,6 +122,20 @@ def test_the_grade_is_the_learner_s_not_a_hard_coded_five():
     assert "Grade 5" not in prompt
 
 
+def test_a_lower_grade_design_is_named_while_the_learner_keeps_their_grade():
+    """Remediation: a Grade 5 learner assessed on a Grade 4 sub-strand."""
+    remedial = LearnerFacts(**{**CHEBET.__dict__, "curriculum_grade": "Grade 4"})
+    prompt = build_prompt(remedial, [CHUNK])
+    assert "official KICD Grade 4 curriculum design" in prompt
+    assert f"- Learner: {CHEBET.name}, Grade 5" in prompt
+
+
+def test_without_a_curriculum_grade_the_prompt_is_unchanged():
+    """Earlier measurements were taken on this exact text."""
+    same = LearnerFacts(**{**CHEBET.__dict__, "curriculum_grade": None})
+    assert build_prompt(same, [CHUNK]) == build_prompt(CHEBET, [CHUNK])
+
+
 def test_all_four_kicd_tiers_are_named():
     prompt = build_prompt(CHEBET, [CHUNK])
     for tier in RUBRIC_LEVELS:

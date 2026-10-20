@@ -82,7 +82,8 @@ export default function QuizPage() {
     () =>
       Promise.all([
         api.get<Classroom[]>("/api/classrooms"),
-        api.get<Strand[]>("/api/strands"),
+        // Only the class's strands, and only those with questions to ask.
+        api.get<Strand[]>(`/api/classrooms/${classId}/strands`),
         api.get<Student[]>(`/api/classrooms/${classId}/students`),
       ]),
     [classId],
@@ -95,9 +96,10 @@ export default function QuizPage() {
         const [classes, allStrands, roll] = await fetchContext();
         if (cancelled) return;
         setClassroom(classes.find((c) => c.class_id === classId) ?? null);
-        setStrands(allStrands);
+        const usable = allStrands.filter((s) => s.active_items > 0);
+        setStrands(usable);
         setLearners(roll);
-        setStrandId((current) => current || allStrands[0]?.strand_id || "");
+        setStrandId((current) => current || usable[0]?.strand_id || "");
         setError(null);
         setReady(true);
       } catch (e) {
@@ -253,6 +255,11 @@ export default function QuizPage() {
       <div className="mt-4 space-y-3">
         <Note tone="error">{error}</Note>
         <Note>{notice}</Note>
+        {ready && strands.length === 0 && (
+          <Note>
+            This class has no strands with questions yet. Add a strand on the class page; questions for it come with question generation.
+          </Note>
+        )}
       </div>
 
       {!ready && (

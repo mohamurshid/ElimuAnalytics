@@ -29,7 +29,12 @@
 import Link from "next/link";
 
 import { cellTitle, shortTier, tierColour, TIERS } from "@/lib/tiers";
-import type { DiagnosticCell, Heatmap as HeatmapData, LearnerDiagnostics } from "@/lib/types";
+import type {
+  DiagnosticCell,
+  Heatmap as HeatmapData,
+  LearnerDiagnostics,
+  Strand,
+} from "@/lib/types";
 
 const HATCH =
   "repeating-linear-gradient(45deg," +
@@ -44,6 +49,13 @@ const RANK: Record<string, number> = {
   "Exceeds expectation": 3,
 };
 const NO_LEVEL = 4;
+
+/** A strand from another grade's curriculum is labelled with that grade, so
+ *  "3.3 Heat" (Grade 4) beside "3.3 Heat Transfer" (Grade 5) reads as the
+ *  revision it is. */
+function otherGrade(strand: Strand, data: HeatmapData): string | null {
+  return strand.grade && strand.grade !== data.grade ? strand.grade : null;
+}
 
 function rankOf(cell: DiagnosticCell | undefined): number {
   return cell?.tier != null && cell.tier in RANK ? RANK[cell.tier] : NO_LEVEL;
@@ -114,10 +126,11 @@ export function ClassSummary({ data }: { data: HeatmapData }) {
         ];
         const [strandName, sub] = strand.name.split(" / ");
         const summary = parts.map((p) => `${p.n} ${p.label}`).join(", ");
+        const context = [otherGrade(strand, data), sub && strandName].filter(Boolean).join(" · ");
         return (
           <div key={strand.strand_id}>
             <p className="text-[15px] font-semibold text-ink">{sub ?? strandName}</p>
-            {sub && <p className="text-sm text-ink-subtle">{strandName}</p>}
+            {context && <p className="text-sm text-ink-subtle">{context}</p>}
             <div
               role="img"
               aria-label={`${sub ?? strandName}: ${summary}`}
@@ -179,6 +192,7 @@ export function Heatmap({
             </th>
             {data.strands.map((strand) => {
               const [strandName, sub] = strand.name.split(" / ");
+              const grade = otherGrade(strand, data);
               return (
                 <th
                   key={strand.strand_id}
@@ -186,6 +200,9 @@ export function Heatmap({
                   className="min-w-36 px-1 py-2 text-left text-sm font-medium text-ink-muted"
                 >
                   {sub ?? strandName}
+                  {grade && (
+                    <span className="block text-xs font-normal text-ink-subtle">{grade}</span>
+                  )}
                 </th>
               );
             })}

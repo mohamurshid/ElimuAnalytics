@@ -36,6 +36,35 @@ export type Strand = {
   level: string;
   active_items: number;
   calibrated_items: number;
+  /** The grade of the curriculum design it comes from; null before the catalogue. */
+  grade: string | null;
+  learning_area: string | null;
+  curriculum_key: string | null;
+};
+
+/** The curriculum catalogue: what a class can be assessed on. */
+export type CatalogueSubStrand = {
+  key: string;
+  number: string;
+  name: string;
+  chunks: number;
+};
+
+export type CatalogueStrand = {
+  name: string;
+  sub_strands: CatalogueSubStrand[];
+};
+
+export type CatalogueArea = {
+  learning_area: string;
+  language: string;
+  available: boolean;
+  strands: CatalogueStrand[];
+};
+
+export type Catalogue = {
+  grades: { grade: string; learning_areas: CatalogueArea[] }[];
+  unplaced_rows: number;
 };
 
 /** Three states, not two. A blank cell reads as a bug; this does not. */

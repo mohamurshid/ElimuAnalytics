@@ -23,6 +23,7 @@ from .db import ensure_extensions, get_engine, get_session_factory
 from .models import (
     Base,
     Classroom,
+    ClassStrand,
     Item,
     Response,
     School,
@@ -33,6 +34,7 @@ from .models import (
 from .security import ROLE_SCHOOL_ADMIN, hash_password
 
 STRAND_NAME = "3.0 Force and Energy / 3.3 Heat Transfer"
+STRAND_KEY = "Grade 5|Science and Technology|3.0|3.3"
 # Question, options, index of the correct option.
 #
 # Placeholder content, as the whole demonstration classroom is - but the
@@ -164,6 +166,11 @@ def seed(session: Session) -> None:
         name=STRAND_NAME,
         level="Upper Primary",
         learning_area="Science and Technology",
+        grade="Grade 5",
+        # The same key the catalogue gives this sub-strand, so a class that
+        # picks Heat transfer from the catalogue gets this row and its twelve
+        # questions rather than an empty duplicate.
+        curriculum_key=STRAND_KEY,
     )
 
     items = [
@@ -182,6 +189,7 @@ def seed(session: Session) -> None:
 
     session.add_all([school, teacher, head, classroom, strand, *items, *students])
     session.flush()  # assign primary keys before responses reference them
+    session.add(ClassStrand(class_id=classroom.class_id, strand_id=strand.strand_id))
 
     matrix = simulated_responses()
     # Both fields are stored, which mirrors what the quiz path produces: the
@@ -203,7 +211,7 @@ def seed(session: Session) -> None:
     session.add_all(responses)
     session.commit()
 
-    print(f"seeded: 1 school, 2 teacher accounts, 1 classroom, 1 strand, "
+    print(f"seeded: 1 school, 2 teacher accounts, 1 classroom, 1 strand (linked), "
           f"{len(items)} items, {len(students)} students, {len(responses)} responses")
     print()
     print("  teacher@example.school / elimu-demo   (role: teacher)")

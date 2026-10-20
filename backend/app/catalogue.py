@@ -304,6 +304,43 @@ def build(rows: Iterable[Row]) -> dict:
     return {"grades": grades, "unplaced_rows": unplaced}
 
 
+@dataclass(frozen=True)
+class Entry:
+    """One sub-strand, with what a Strand row needs to be made from it."""
+
+    key: str
+    grade: str
+    learning_area: str
+    strand: str
+    number: str
+    name: str
+
+    @property
+    def strand_name(self) -> str:
+        """The Strand.name format reports split on: "<strand> / <sub-strand>"."""
+        return f"{self.strand} / {self.number} {self.name}"
+
+
+def lookup(rows: Iterable[Row], key: str) -> Entry | None:
+    """The catalogue entry for a key, or None if the catalogue has no such
+    sub-strand - which is how a key typed by hand, or one from a corpus that
+    has since been re-extracted, is refused."""
+    for grade in build(rows)["grades"]:
+        for area in grade["learning_areas"]:
+            for strand in area["strands"]:
+                for sub in strand["sub_strands"]:
+                    if sub["key"] == key:
+                        return Entry(
+                            key=key,
+                            grade=grade["grade"],
+                            learning_area=area["learning_area"],
+                            strand=strand["name"],
+                            number=sub["number"],
+                            name=sub["name"],
+                        )
+    return None
+
+
 # --- endpoint --------------------------------------------------------------
 class SubStrandOut(BaseModel):
     key: str

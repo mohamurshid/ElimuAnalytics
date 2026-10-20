@@ -47,6 +47,10 @@ class StrandOut(BaseModel):
     level: str
     active_items: int
     calibrated_items: int
+    # Null for strands made before the catalogue existed.
+    grade: str | None = None
+    learning_area: str | None = None
+    curriculum_key: str | None = None
 
 
 class CellOut(BaseModel):
@@ -88,7 +92,7 @@ def _status(cell: dict) -> str:
     return ESTIMATED if cell["confident"] else PROVISIONAL
 
 
-def _strand_out(session: Session, strand: Strand) -> StrandOut:
+def strand_out(session: Session, strand: Strand) -> StrandOut:
     active = session.scalar(
         select(func.count())
         .select_from(Item)
@@ -109,6 +113,9 @@ def _strand_out(session: Session, strand: Strand) -> StrandOut:
         level=strand.level,
         active_items=int(active),
         calibrated_items=int(calibrated),
+        grade=strand.grade,
+        learning_area=strand.learning_area,
+        curriculum_key=strand.curriculum_key,
     )
 
 
@@ -152,10 +159,15 @@ def _cells_for_class(
 @router.get("/strands", response_model=list[StrandOut])
 def list_strands(
     session: Session = Depends(get_session),
-    _: Teacher = Depends(current_teacher),
+    teacher: Teacher = Depends(current_teacher),
 ) -> list[StrandOut]:
-    """Strands are curriculum-wide, not per school, so this is not scoped."""
-    return [_strand_out(session, s) for s in repo.list_strands(session)]
+    """Strands some current class at the caller's school is assessed on.
+
+    Strand rows are shared across schools, so the unscoped list would show
+    every school's choices - harmless while there was one strand, noise
+    with many.
+    """
+    return [strand_out(session, s) for s in repo.school_strands(session, teacher.school_id)]
 
 
 @router.get("/students/{student_id}/diagnostics", response_model=LearnerDiagnosticsOut)
@@ -181,7 +193,7 @@ def learner_diagnostics(
             raise HTTPException(status_code=404, detail="No such strand")
         strands = [strand]
     else:
-        strands = repo.list_strands(session)
+        strands = repo.class_strands(session, student.class_id)
 
     _, by_student = _cells_for_class(session, student.class_id, strands)
     return LearnerDiagnosticsOut(
@@ -198,19 +210,20 @@ def classroom_heatmap(
     session: Session = Depends(get_session),
     teacher: Teacher = Depends(current_teacher),
 ) -> HeatmapOut:
-    """Every learner against every strand, in one request."""
+    """Every learner against every strand the class is assessed on, in one
+    request."""
     classroom = repo.classroom_in_school(session, class_id, teacher.school_id)
     if classroom is None:
         raise HTTPException(status_code=404, detail="No such classroom")
 
-    strands = repo.list_strands(session)
+    strands = repo.class_strands(session, class_id)
     learners, by_student = _cells_for_class(session, class_id, strands)
 
     return HeatmapOut(
         class_id=str(classroom.class_id),
         grade=classroom.grade,
         name=classroom.name,
-        strands=[_strand_out(session, s) for s in strands],
+        strands=[strand_out(session, s) for s in strands],
         learners=[
             LearnerDiagnosticsOut(
                 student_id=str(s.student_id),

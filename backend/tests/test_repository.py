@@ -19,6 +19,7 @@ from app.models import (
     AbilityScore,
     Base,
     Classroom,
+    ClassStrand,
     Item,
     Response,
     School,
@@ -43,7 +44,7 @@ PORTABLE_TABLES = [
     for n in (
         "school", "teacher", "refresh_token", "classroom", "student", "strand",
         "item", "assessment_batch", "response", "ability_score",
-        "gap_flag", "report",
+        "gap_flag", "report", "class_strand",
     )
 ]
 
@@ -79,6 +80,8 @@ def session() -> Session:
         ]
         s.add_all([school, teacher, classroom, strand, *items, *students])
         s.flush()
+        # The class is assessed on the strand, as the seed links them.
+        s.add(ClassStrand(class_id=classroom.class_id, strand_id=strand.strand_id))
 
         matrix = simulated_responses()
         choices = simulated_choices(matrix)

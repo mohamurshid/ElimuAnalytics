@@ -152,6 +152,11 @@ class LearnerFacts:
     tier: str
     items_answered: int
     consecutive_flags: int
+    # The grade of the curriculum design the strand comes from, when it is
+    # not the learner's own - a Grade 5 learner assessed on a Grade 4
+    # sub-strand. None means the same grade, and leaves the prompt exactly as
+    # it was before this field existed, so earlier measurements still hold.
+    curriculum_grade: str | None = None
 
 
 def failure_block(pattern: dict | None) -> str:
@@ -223,9 +228,11 @@ def build_prompt(
         "primary school teacher."
     )
 
+    design_grade = learner.curriculum_grade or learner.grade
+
     return f"""{opening}
 
-CURRICULUM CONTEXT (retrieved from the official KICD {learner.grade} curriculum design):
+CURRICULUM CONTEXT (retrieved from the official KICD {design_grade} curriculum design):
 {context}
 
 LEARNER PERFORMANCE:

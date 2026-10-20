@@ -22,6 +22,7 @@ select = ["E", "W", "F", "I", "UP", "B"]
 "backend/app/assessments.py" = ["B008"]
 "backend/app/diagnostics.py" = ["B008"]
 "backend/app/reporting.py" = ["B008"]
+"backend/app/catalogue.py" = ["B008"]
 
 [tool.pytest.ini_options]
 testpaths = ["backend/tests"]

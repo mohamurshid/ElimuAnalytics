@@ -15,12 +15,18 @@
  */
 
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 
 import { Button, Card, PageHeader } from "@/components/ui";
 import { useAuth } from "@/lib/auth";
 import { initials, ROLE_LABEL } from "@/lib/people";
-import { applyTheme, readTheme, type Theme } from "@/lib/theme";
+import {
+  applyTheme,
+  readTheme,
+  serverTheme,
+  subscribeTheme,
+  type Theme,
+} from "@/lib/theme";
 
 const THEMES: { value: Theme; label: string }[] = [
   { value: "system", label: "Same as phone" },
@@ -31,16 +37,11 @@ const THEMES: { value: Theme; label: string }[] = [
 export default function ProfilePage() {
   const { profile, signOut } = useAuth();
   const router = useRouter();
-  const [theme, setTheme] = useState<Theme>("system");
   const [leaving, setLeaving] = useState(false);
-
-  // Read after mount: localStorage does not exist during the server render.
-  useEffect(() => setTheme(readTheme()), []);
-
-  function choose(next: Theme) {
-    setTheme(next);
-    applyTheme(next);
-  }
+  // Read from the device, not copied into state: localStorage does not exist
+  // during the server render, so that render uses serverTheme() and React
+  // swaps in the stored value on the client without an extra effect pass.
+  const theme = useSyncExternalStore(subscribeTheme, readTheme, serverTheme);
 
   async function handleSignOut() {
     setLeaving(true);
@@ -121,7 +122,7 @@ export default function ProfilePage() {
                 type="button"
                 role="radio"
                 aria-checked={theme === option.value}
-                onClick={() => choose(option.value)}
+                onClick={() => applyTheme(option.value)}
                 className={`min-h-11 rounded px-2 text-sm font-medium
                             ${theme === option.value
                               ? "bg-sunken text-ink"

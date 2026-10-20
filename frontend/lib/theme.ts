@@ -20,6 +20,29 @@ export function readTheme(): Theme {
   }
 }
 
+/*
+ * A tiny external store, read with React's useSyncExternalStore. That hook
+ * stays in the component: this module is also imported by the root layout,
+ * a server component, for THEME_BOOTSTRAP, and hooks cannot be imported
+ * there.
+ */
+const listeners = new Set<() => void>();
+
+export function subscribeTheme(onChange: () => void): () => void {
+  listeners.add(onChange);
+  // Another tab changing the preference.
+  window.addEventListener("storage", onChange);
+  return () => {
+    listeners.delete(onChange);
+    window.removeEventListener("storage", onChange);
+  };
+}
+
+/** What the server render assumes: it cannot see this device's storage. */
+export function serverTheme(): Theme {
+  return "system";
+}
+
 export function applyTheme(theme: Theme): void {
   const root = document.documentElement;
   if (theme === "system") delete root.dataset.theme;
@@ -30,6 +53,7 @@ export function applyTheme(theme: Theme): void {
   } catch {
     // Preference not saved; it still applies until the page is reloaded.
   }
+  listeners.forEach((notify) => notify());
 }
 
 /**

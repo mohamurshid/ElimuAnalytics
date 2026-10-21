@@ -28,6 +28,7 @@ never shown, never silently repaired.
 
 from __future__ import annotations
 
+import random
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -215,6 +216,26 @@ def question_problems(q: dict, chunk_texts: Sequence[str]) -> list[str]:
         problems.append("the curriculum excerpt is not in the curriculum text")
 
     return problems
+
+
+def shuffle_options(
+    texts: Sequence[str], misconceptions: Sequence[str], key: int, rng: random.Random
+) -> tuple[list[str], list[str], int]:
+    """The options in a random order, each still carrying its own
+    misconception, and the key's new position.
+
+    Measured 21 October (run 20261021_095316): at low effort the model put
+    the key at A in 54 of 143 questions and at D in 15. A learner who learns
+    "it is usually A" scores without knowing anything. Shuffling on the
+    server makes the key's position random whatever the model does.
+    """
+    order = list(range(len(texts)))
+    rng.shuffle(order)
+    return (
+        [texts[i] for i in order],
+        [misconceptions[i] for i in order],
+        order.index(key),
+    )
 
 
 def cosine(a: Sequence[float], b: Sequence[float]) -> float:

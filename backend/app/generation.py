@@ -22,6 +22,7 @@ wrong options is harder than summarising. Checkpoint 6 measures them.
 from __future__ import annotations
 
 import json
+import random
 import time
 import uuid
 from dataclasses import dataclass
@@ -48,6 +49,7 @@ from .questions import (
     normalise,
     option_parts,
     question_problems,
+    shuffle_options,
 )
 from .reporting import provider_detail, provider_errors, worker_session
 from .reports import MODEL, get_generator, price, report_text
@@ -55,7 +57,10 @@ from .reports import MODEL, get_generator, price, report_text
 router = APIRouter(prefix="/api", tags=["question generation"])
 
 EFFORT = "medium"
-MAX_TOKENS = 8000
+# Raised from 8,000 on 21 October: a medium-effort Kiswahili run spent 6,638
+# tokens thinking and was cut off (run 20261021_095316, 1 of 68). Only what
+# is used is billed, so the higher ceiling costs nothing until it is needed.
+MAX_TOKENS = 16000
 QUESTIONS_PER_RUN = 5
 RUNS_PER_DAY = 5
 # A new question this close to one already in the bank, by sentence-embedding
@@ -263,9 +268,14 @@ def fill_run(job: Job, session: Session | None = None) -> None:
                 raise Unusable("The model's answer was cut off before it finished. "
                                "Nothing was saved; trying again is reasonable.")
             keep, dropped = check_all(proposed, job)
-            for q in keep:
-                key = int(q["correct_option"])
+            for n, q in enumerate(keep):
                 texts, misconceptions = option_parts(q)
+                # Seeded by the run and position, so a run's order can be
+                # reproduced, but different from one question to the next.
+                texts, misconceptions, key = shuffle_options(
+                    texts, misconceptions, int(q["correct_option"]),
+                    random.Random(f"{job.run_id}:{n}"),
+                )
                 session.add(
                     Item(
                         strand_id=job.strand_id,

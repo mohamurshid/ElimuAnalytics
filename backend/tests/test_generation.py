@@ -23,7 +23,7 @@ from app.catalogue import catalogue_rows
 from app.db import get_session
 from app.main import app
 from app.models import Classroom, GenerationRun, Item, School, Strand, Teacher
-from app.questions import SubStrand, build_prompt, question_problems
+from app.questions import SubStrand, build_prompt, question_problems, shuffle_options
 from app.reports import set_generator
 from app.security import create_token
 from fastapi.testclient import TestClient
@@ -140,7 +140,8 @@ def test_generated_questions_are_saved_as_drafts_and_never_served(
     saved = drafts(session)
     assert {i.status for i in saved} == {"draft"}
     assert all(i.generation_run_id is not None for i in saved)
-    assert saved[0].misconceptions[0] is None  # the key carries no misconception
+    for item in saved:  # the key carries no misconception, wherever it landed
+        assert item.misconceptions[item.correct_option] is None
     assert saved[0].curriculum_excerpt == EXCERPT
     assert saved[0].curriculum_source_row is not None
 
@@ -248,9 +249,27 @@ def test_each_option_keeps_its_own_misconception_when_the_key_is_not_first(
     model.reply["value"] = answer([good("Which of these lets heat through slowest?", key=2)])
     assert run(client, session, heat).json()["produced"] == 1
     saved = drafts(session)[0]
-    assert saved.correct_option == 2
-    assert saved.options == ["Copper", "Wood", "Plastic", "Cloth"]
-    assert saved.misconceptions == [WRONG[0], WRONG[1], None, WRONG[2]]
+    # Order is shuffled on saving; what must survive is each pairing.
+    assert saved.options[saved.correct_option] == "Plastic"
+    paired = dict(zip(saved.options, saved.misconceptions, strict=True))
+    assert paired == {"Copper": WRONG[0], "Wood": WRONG[1], "Plastic": None,
+                      "Cloth": WRONG[2]}
+
+
+def test_shuffling_moves_the_key_and_keeps_every_pairing():
+    """Across many seeds the key lands in every position, and an option
+    never loses its own misconception."""
+    import random
+
+    texts = ["Copper", "Wood", "Plastic", "Cloth"]
+    mis = ["", "thinks wood", "thinks plastic", "thinks cloth"]
+    positions = set()
+    for seed in range(40):
+        t, m, key = shuffle_options(texts, mis, 0, random.Random(seed))
+        positions.add(key)
+        assert t[key] == "Copper"
+        assert dict(zip(t, m, strict=True)) == dict(zip(texts, mis, strict=True))
+    assert positions == {0, 1, 2, 3}
 
 
 # --- failures --------------------------------------------------------------

@@ -372,7 +372,7 @@ function ReportedQuestion({ item, onChange }: { item: Item; onChange: () => Prom
             onCancel={() => setEditing(false)}
           />
         ) : (
-          <QuestionView item={item} />
+          <QuestionView item={item} hints />
         )}
       </div>
       <Note tone="error">{error}</Note>

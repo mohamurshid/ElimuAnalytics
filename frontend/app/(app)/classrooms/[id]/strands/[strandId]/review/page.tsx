@@ -125,7 +125,7 @@ export default function ReviewPage() {
             <QuestionEditor item={current} onSaved={saved} onCancel={() => setMode("view")} />
           ) : (
             <>
-              <QuestionView item={current} />
+              <QuestionView item={current} hints />
 
               {mode === "confirm-reject" ? (
                 <div role="alertdialog" aria-label="Reject this question" className="mt-5 rounded-md bg-risk-fill p-3">

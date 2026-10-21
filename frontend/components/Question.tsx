@@ -21,17 +21,47 @@ import type { Item } from "@/lib/types";
 
 const LETTERS = ["A", "B", "C", "D", "E", "F"];
 
+/**
+ * Is the key clearly the longest option? A known giveaway: learners learn
+ * that the careful, qualified answer is usually the right one. Measured 21
+ * October: the key was the longest option in about a third of generated
+ * questions, against about a quarter by chance (run 20261021_095316).
+ *
+ * "Clearly" is a judgement, not a measurement: at least a quarter longer and
+ * five characters longer than the next longest, so a one-word difference is
+ * not flagged.
+ */
+export function keyStandsOutByLength(item: Item): boolean {
+  const options = item.options ?? [];
+  const key = item.correct_option;
+  if (key === null || options.length < 2 || !options[key]) return false;
+  const others = Math.max(...options.filter((_, n) => n !== key).map((o) => o.length));
+  const mine = options[key].length;
+  return mine >= others * 1.25 && mine - others >= 5;
+}
+
 export function QuestionView({
   item,
   showQuestion = true,
+  hints = false,
 }: {
   item: Item;
   /** False where the question is already shown, as in an opened list row. */
   showQuestion?: boolean;
+  /** Point out item-writing flaws - where the question can still be edited. */
+  hints?: boolean;
 }) {
   const options = item.options ?? [];
   return (
     <div>
+      {hints && keyStandsOutByLength(item) && (
+        <div className="mb-4">
+          <Note tone="warn">
+            The correct answer is much longer than the others, which can give it away.
+            Consider evening out the lengths with Edit.
+          </Note>
+        </div>
+      )}
       {showQuestion && (
         <p className="mb-4 text-lg font-medium leading-snug text-ink">{item.question_text}</p>
       )}

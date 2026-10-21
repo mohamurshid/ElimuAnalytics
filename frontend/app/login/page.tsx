@@ -7,10 +7,14 @@
  * product is for, in their terms. No Google button: that is planned, not
  * built, and a button that does nothing is worse than its absence.
  *
+ * A teacher a head teacher has just added has no password yet; the link
+ * under the form takes them to set one up with their code.
+ *
  * On a phone the form fills the screen without a card around it - a bordered
  * box on a 360px screen only wastes the margin. From sm up it becomes a card.
  */
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
@@ -104,6 +108,13 @@ export default function LoginPage() {
             {busy ? "Signing in…" : "Sign in"}
           </Button>
         </form>
+
+        <p className="mt-6 text-center text-[15px] text-ink-muted">
+          Have a setup code from your head teacher?{" "}
+          <Link href="/setup" className="font-medium text-ink underline underline-offset-2">
+            Set up your account
+          </Link>
+        </p>
 
         <p className="mt-8 text-center text-sm text-ink-subtle">
           Kenya CBE · Grades 1–6

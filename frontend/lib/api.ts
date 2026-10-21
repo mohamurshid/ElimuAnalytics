@@ -180,6 +180,46 @@ export async function logout(): Promise<void> {
   }
 }
 
+/**
+ * Set your own password with a head teacher's one-time code. Like login, it
+ * signs this device in: the server sets the refresh cookie and returns an
+ * access token.
+ */
+export async function setupAccount(
+  email: string,
+  code: string,
+  password: string,
+): Promise<LoginResponse> {
+  const body = await request<LoginResponse>(
+    "/api/auth/setup",
+    { method: "POST", body: JSON.stringify({ email, code, password }) },
+    { retry: false },
+  );
+  accessToken = body.access_token;
+  return body;
+}
+
+/**
+ * Change your password. Every other device is signed out; this one is given
+ * a fresh session, whose access token replaces the old one here.
+ */
+export async function changePassword(current: string, next: string): Promise<void> {
+  const body = await request<LoginResponse>("/api/auth/password", {
+    method: "POST",
+    body: JSON.stringify({ current_password: current, new_password: next }),
+  });
+  accessToken = body.access_token;
+}
+
+/** End every session on every device, this one included. */
+export async function logoutEverywhere(): Promise<void> {
+  try {
+    await request("/api/auth/logout-everywhere", { method: "POST" }, { retry: false });
+  } finally {
+    accessToken = null;
+  }
+}
+
 export const getProfile = () => api.get<Profile>("/api/auth/me");
 
 /** The filename the server chose, so a download is not called "report.pdf". */

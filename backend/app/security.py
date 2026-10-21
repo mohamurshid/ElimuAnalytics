@@ -85,12 +85,16 @@ def verify_password(plain: str, hashed: str) -> bool:
         return False
 
 
-def create_token(teacher_id: uuid.UUID, role: str, email: str) -> str:
+def create_token(
+    teacher_id: uuid.UUID, role: str, email: str, session_version: int = 0
+) -> str:
     now = datetime.now(timezone.utc)
     payload = {
         "sub": str(teacher_id),
         "role": role,
         "email": email,
+        # Teacher.session_version when issued; see auth.current_teacher.
+        "sv": session_version,
         "iat": now,
         "exp": now + timedelta(minutes=TOKEN_TTL_MINUTES),
     }
@@ -128,3 +132,37 @@ def hash_refresh_token(raw: str) -> str:
 
 def refresh_expiry() -> datetime:
     return datetime.now(timezone.utc) + timedelta(days=REFRESH_TTL_DAYS)
+
+
+# --- accounts --------------------------------------------------------------
+# What password_hash holds for an account nobody has set a password on yet.
+# Not a bcrypt hash, so verify_password rejects every password against it.
+UNUSABLE_PASSWORD = "!unusable"
+MIN_PASSWORD_LENGTH = 8
+SETUP_CODE_TTL_DAYS = 7
+# No 0/O, 1/I/L: the code is read aloud or copied from paper.
+_CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
+
+
+def normalise_email(email: str) -> str:
+    """Stored and compared in lower case. Mail providers treat addresses as
+    case-insensitive in practice, and Google sign-in will hand back whatever
+    case the teacher's account uses."""
+    return email.strip().lower()
+
+
+def new_setup_code() -> str:
+    """Eight characters, shown as XXXX-XXXX: about 40 bits. Enough with a
+    throttled endpoint and a seven-day life; bcrypt-hashed at rest because
+    40 bits is not enough against an offline attack on a fast hash."""
+    raw = "".join(secrets.choice(_CODE_ALPHABET) for _ in range(8))
+    return f"{raw[:4]}-{raw[4:]}"
+
+
+def normalise_code(code: str) -> str:
+    """Forgiving about how it is typed: case, spaces and the dash."""
+    return "".join(c for c in code.upper() if c.isalnum())
+
+
+def setup_expiry() -> datetime:
+    return datetime.now(timezone.utc) + timedelta(days=SETUP_CODE_TTL_DAYS)

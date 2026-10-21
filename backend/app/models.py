@@ -75,6 +75,32 @@ class Teacher(Base):
     school_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("school.school_id", ondelete="CASCADE"), nullable=False
     )
+    # A deactivated account cannot sign in or use a session it already has.
+    # Its classes and records stay; a head teacher can reactivate it.
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True,
+                                            server_default="true")
+    # Every access token carries the version current when it was issued; a
+    # token with an older one is refused, even unexpired. Raised by "sign out
+    # everywhere", a password change, a new setup code and deactivation -
+    # without it, any of those would leave other devices working for up to
+    # the access token's lifetime. A counter, not a timestamp: tokens record
+    # whole seconds, so a time cutoff could not tell a token issued just
+    # before it from one issued just after.
+    session_version: Mapped[int] = mapped_column(Integer, nullable=False, default=0,
+                                                 server_default="0")
+    # A one-time code a head teacher gives a new teacher (or one who has
+    # forgotten their password) to set their own password. Hashed with
+    # bcrypt, like a password: it is short enough to brute-force offline from
+    # a fast hash. Null once used.
+    #
+    # Accounts are created without a usable password (password_hash holds a
+    # placeholder that verify_password rejects). That is also what a teacher
+    # who only ever signs in with Google will look like once OAuth arrives:
+    # the head teacher's list of staff is the gate for both.
+    setup_code_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    setup_code_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     school: Mapped[School] = relationship(back_populates="teachers")
     classrooms: Mapped[list[Classroom]] = relationship(back_populates="teacher")

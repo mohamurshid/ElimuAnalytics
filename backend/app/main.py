@@ -43,6 +43,7 @@ from .models import Teacher
 from .quizzes import router as quizzes_router
 from .reporting import router as reports_router
 from .security import ALLOWED_ORIGINS, secret_is_default
+from .staff import router as staff_router
 
 # The Phase 1 page moved under frontend/legacy/ when the Next.js app took
 # frontend/ as its project root. It is kept because it exercises the API with
@@ -101,6 +102,7 @@ app.include_router(catalogue_router)
 app.include_router(class_strands_router)
 app.include_router(generation_router)
 app.include_router(quizzes_router)
+app.include_router(staff_router)
 app.include_router(reports_router)
 
 

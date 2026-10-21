@@ -327,3 +327,19 @@ export type Report = {
   grounding: Record<string, ReportGrounding> | null;
   generated_at: string | null;
 };
+
+/** A teacher at the school, as a head teacher's staff list shows them. */
+export type StaffMember = {
+  teacher_id: string;
+  name: string;
+  email: string;
+  role: Role;
+  is_active: boolean;
+  /** "active": has a password; "invited": waiting to use a setup code. */
+  status: "active" | "invited" | "deactivated";
+  setup_code_expires_at: string | null;
+  is_you: boolean;
+};
+
+/** Returned once, when a code is made; only its hash is stored. */
+export type StaffWithCode = StaffMember & { setup_code: string };

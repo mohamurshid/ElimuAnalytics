@@ -26,7 +26,14 @@ import {
   useState,
 } from "react";
 
-import { getProfile, login as apiLogin, logout as apiLogout, refresh } from "./api";
+import {
+  getProfile,
+  login as apiLogin,
+  logout as apiLogout,
+  logoutEverywhere,
+  refresh,
+  setupAccount,
+} from "./api";
 import type { Profile } from "./types";
 
 type AuthState = {
@@ -35,7 +42,11 @@ type AuthState = {
   /** False until the refresh cookie has been asked. Guards must wait on this. */
   resolved: boolean;
   signIn: (email: string, password: string) => Promise<void>;
+  /** First sign-in with a head teacher's setup code. */
+  setUp: (email: string, code: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
+  /** Every device, this one included. */
+  signOutEverywhere: () => Promise<void>;
 };
 
 const AuthContext = createContext<AuthState | null>(null);
@@ -78,15 +89,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setResolved(true);
   }, []);
 
+  const setUp = useCallback(async (email: string, code: string, password: string) => {
+    await setupAccount(email, code, password);
+    setProfile(await getProfile());
+    setResolved(true);
+  }, []);
+
   const signOut = useCallback(async () => {
     await apiLogout();
     setProfile(null);
     setResolved(true);
   }, []);
 
+  const signOutEverywhere = useCallback(async () => {
+    await logoutEverywhere();
+    setProfile(null);
+    setResolved(true);
+  }, []);
+
   const value = useMemo(
-    () => ({ profile, resolved, signIn, signOut }),
-    [profile, resolved, signIn, signOut],
+    () => ({ profile, resolved, signIn, setUp, signOut, signOutEverywhere }),
+    [profile, resolved, signIn, setUp, signOut, signOutEverywhere],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

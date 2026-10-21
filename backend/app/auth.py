@@ -30,6 +30,18 @@ automatically, so it would otherwise be triggerable from any site the teacher
 visits. Two defences: `SameSite` on the cookie, and an `Origin` check on the
 request. The second matters because a cross-site deployment has to weaken the
 first.
+
+**Ending sessions everywhere** (21 October). Revoking refresh tokens stops
+new access tokens, but one already issued stays valid for its lifetime. So a
+teacher also carries `session_version`, every access token records the
+version it was issued under, and an older one is refused. A password change,
+a new setup code, "sign out everywhere" and deactivation all raise it.
+
+**Setting up an account.** A head teacher adds a teacher (staff.py) and
+gives them a one-time code; the teacher sets their own password at
+/api/auth/setup. Google sign-in, planned after the quiz work, is meant to
+sit beside this: same Teacher rows, same sessions, the head teacher's list
+of staff deciding who may sign in at all.
 """
 
 from __future__ import annotations
@@ -51,13 +63,17 @@ from .security import (
     ALLOWED_ORIGINS,
     COOKIE_SAMESITE,
     COOKIE_SECURE,
+    MIN_PASSWORD_LENGTH,
     REFRESH_COOKIE,
     REFRESH_COOKIE_PATH,
     REFRESH_TTL_DAYS,
     ROLE_SCHOOL_ADMIN,
     create_token,
+    hash_password,
     hash_refresh_token,
     new_refresh_token,
+    normalise_code,
+    normalise_email,
     refresh_expiry,
     role_at_least,
     verify_password,
@@ -130,6 +146,38 @@ def _revoke_family(session: Session, family_id: uuid.UUID) -> int:
     return len(tokens)
 
 
+def end_sessions(session: Session, teacher: Teacher) -> int:
+    """Sign a teacher out of every device: no refresh token renews, and no
+    access token already issued is accepted. Returns tokens revoked. The
+    caller commits."""
+    tokens = list(
+        session.scalars(
+            select(RefreshToken).where(
+                RefreshToken.teacher_id == teacher.teacher_id,
+                RefreshToken.revoked.is_(False),
+            )
+        )
+    )
+    for token in tokens:
+        token.revoked = True
+    teacher.session_version += 1
+    return len(tokens)
+
+
+def _signed_in(session: Session, response: Response, teacher: Teacher) -> TokenResponse:
+    """A fresh session on this device."""
+    _issue_refresh(session, response, teacher, family_id=None)
+    return TokenResponse(
+        access_token=create_token(teacher.teacher_id, teacher.role, teacher.email,
+                                  teacher.session_version),
+        role=teacher.role,
+        name=teacher.name,
+    )
+
+
+DEACTIVATED = "This account has been deactivated. Ask your head teacher."
+
+
 def _check_origin(request: Request) -> None:
     """Refuse a cross-site refresh.
 
@@ -164,7 +212,8 @@ def login(
     response: Response,
     session: Session = Depends(get_session),
 ) -> TokenResponse:
-    key = throttle.key_for(body.email, request)
+    email = normalise_email(body.email)
+    key = throttle.key_for(email, request)
 
     # Checked before the password, deliberately. Verifying first and letting a
     # correct password through would waive the limit on exactly the attempt
@@ -177,7 +226,7 @@ def login(
             headers={"Retry-After": str(wait)},
         )
 
-    teacher = session.scalar(select(Teacher).where(Teacher.email == body.email))
+    teacher = session.scalar(select(Teacher).where(Teacher.email == email))
     # One message for both "no such account" and "wrong password": distinguishing
     # them tells an attacker which addresses are registered.
     if teacher is None or not verify_password(body.password, teacher.password_hash):
@@ -189,12 +238,11 @@ def login(
         )
 
     throttle.clear(key)
-    _issue_refresh(session, response, teacher, family_id=None)
-    return TokenResponse(
-        access_token=create_token(teacher.teacher_id, teacher.role, teacher.email),
-        role=teacher.role,
-        name=teacher.name,
-    )
+    # Only after the password, so this does not reveal which addresses are
+    # registered to someone who does not know the password.
+    if not teacher.is_active:
+        raise HTTPException(status_code=403, detail=DEACTIVATED)
+    return _signed_in(session, response, teacher)
 
 
 @router.post("/refresh", response_model=TokenResponse)
@@ -239,6 +287,10 @@ def refresh(
     teacher = session.get(Teacher, stored.teacher_id)
     if teacher is None:
         raise HTTPException(status_code=401, detail="Account no longer exists")
+    if not teacher.is_active:
+        _revoke_family(session, stored.family_id)
+        response.delete_cookie(REFRESH_COOKIE, path=REFRESH_COOKIE_PATH)
+        raise HTTPException(status_code=401, detail=DEACTIVATED)
 
     # Rotate: this one is spent the moment it is used.
     stored.revoked = True
@@ -246,7 +298,8 @@ def refresh(
     _issue_refresh(session, response, teacher, family_id=stored.family_id)
 
     return TokenResponse(
-        access_token=create_token(teacher.teacher_id, teacher.role, teacher.email),
+        access_token=create_token(teacher.teacher_id, teacher.role, teacher.email,
+                                  teacher.session_version),
         role=teacher.role,
         name=teacher.name,
     )
@@ -295,6 +348,12 @@ def current_teacher(
     teacher = session.get(Teacher, uuid.UUID(payload["sub"]))
     if teacher is None:
         raise HTTPException(status_code=401, detail="Account no longer exists")
+    if not teacher.is_active:
+        raise HTTPException(status_code=401, detail=DEACTIVATED)
+    if payload.get("sv", 0) != teacher.session_version:
+        raise HTTPException(
+            status_code=401, detail="This session has been ended. Sign in again."
+        )
     return teacher
 
 
@@ -330,3 +389,108 @@ def me(teacher: Teacher = Depends(current_teacher)) -> ProfileResponse:
         role=teacher.role,
         school=teacher.school.name if teacher.school else "",
     )
+
+
+# --- setting up, changing, ending ------------------------------------------
+class SetupRequest(BaseModel):
+    email: EmailStr
+    code: str
+    password: str
+
+
+class PasswordChange(BaseModel):
+    current_password: str
+    new_password: str
+
+
+def _check_new_password(password: str) -> None:
+    if len(password) < MIN_PASSWORD_LENGTH:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Choose a password of at least {MIN_PASSWORD_LENGTH} characters.",
+        )
+
+
+@router.post("/setup", response_model=TokenResponse)
+def setup_account(
+    body: SetupRequest,
+    request: Request,
+    response: Response,
+    session: Session = Depends(get_session),
+) -> TokenResponse:
+    """Set your own password with the one-time code a head teacher gave you,
+    and be signed in.
+
+    Throttled like sign-in, on its own allowance, and with one answer for
+    every way a code can be wrong - unknown email, wrong code, used, expired -
+    so the endpoint cannot be used to find out which addresses exist.
+    """
+    email = normalise_email(body.email)
+    key = (f"setup:{email}", throttle.client_address(request))
+    wait = throttle.retry_after(key)
+    if wait is not None:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many attempts. Try again later.",
+            headers={"Retry-After": str(wait)},
+        )
+    _check_new_password(body.password)
+
+    teacher = session.scalar(select(Teacher).where(Teacher.email == email))
+    expires = teacher.setup_code_expires_at if teacher else None
+    if expires is not None and expires.tzinfo is None:
+        expires = expires.replace(tzinfo=timezone.utc)
+    if (
+        teacher is None
+        or teacher.setup_code_hash is None
+        or expires is None
+        or expires <= datetime.now(timezone.utc)
+        or not verify_password(normalise_code(body.code), teacher.setup_code_hash)
+    ):
+        throttle.record_failure(key)
+        raise HTTPException(
+            status_code=400,
+            detail="That email and code don't match an account waiting to be set up, or "
+            "the code has expired. Ask your head teacher for a new code.",
+        )
+    throttle.clear(key)
+    if not teacher.is_active:
+        raise HTTPException(status_code=403, detail=DEACTIVATED)
+
+    teacher.password_hash = hash_password(body.password)
+    teacher.setup_code_hash = None
+    teacher.setup_code_expires_at = None
+    session.commit()
+    return _signed_in(session, response, teacher)
+
+
+@router.post("/password", response_model=TokenResponse)
+def change_password(
+    body: PasswordChange,
+    response: Response,
+    session: Session = Depends(get_session),
+    teacher: Teacher = Depends(current_teacher),
+) -> TokenResponse:
+    """Change your password. Every other device is signed out; this one gets
+    a fresh session, so the teacher carries on where they are."""
+    if not verify_password(body.current_password, teacher.password_hash):
+        raise HTTPException(status_code=400, detail="Your current password is not right.")
+    _check_new_password(body.new_password)
+    teacher.password_hash = hash_password(body.new_password)
+    end_sessions(session, teacher)
+    session.commit()
+    return _signed_in(session, response, teacher)
+
+
+@router.post("/logout-everywhere")
+def logout_everywhere(
+    response: Response,
+    session: Session = Depends(get_session),
+    teacher: Teacher = Depends(current_teacher),
+) -> dict:
+    """End every session on every device, this one included - for a lost
+    phone or a shared one."""
+    revoked = end_sessions(session, teacher)
+    session.commit()
+    response.delete_cookie(REFRESH_COOKIE, path=REFRESH_COOKIE_PATH)
+    return {"signed_out": True, "tokens_revoked": revoked}

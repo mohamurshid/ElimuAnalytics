@@ -13,6 +13,7 @@ REM   tasks run     start the backend development server
 REM   tasks web     start the Next.js frontend (http://localhost:3000)
 REM   tasks webci   frontend lint, typecheck and build
 REM   tasks ci      everything CI runs, locally, before you push
+REM   tasks gen     measure question generation (plan only; add --go to call the API)
 
 setlocal
 if "%1"=="" goto help
@@ -71,6 +72,11 @@ cd backend
 python -m app.retrieval --query %2 --grade %3 --area %4 --top-k 8 --no-floor
 goto end
 
+:gen
+call .venv\Scripts\activate
+python spike\generation_at_scale.py %2 %3 %4
+goto end
+
 :run
 call .venv\Scripts\activate
 cd backend
@@ -105,7 +111,7 @@ echo CI checks FAILED. Fix before pushing.
 exit /b 1
 
 :help
-echo Usage: tasks [setup^|test^|lint^|fix^|seed^|extract^|ingest^|check^|query^|run^|web^|webci^|ci]
+echo Usage: tasks [setup^|test^|lint^|fix^|seed^|extract^|ingest^|check^|query^|gen^|run^|web^|webci^|ci]
 goto end
 
 :end

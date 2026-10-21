@@ -180,12 +180,16 @@ def _out(session: Session, run: GenerationRun) -> RunOut:
 
 
 # --- the worker ------------------------------------------------------------
-def call_model(prompt: str) -> tuple[list[dict], object, bool]:
-    """The model's questions, its usage, and whether it was cut off."""
+def call_model(prompt: str, effort: str = EFFORT) -> tuple[list[dict], object, bool]:
+    """The model's questions, its usage, and whether it was cut off.
+
+    `effort` is a parameter only so the measurement spike can compare
+    settings through this same call; production always uses EFFORT.
+    """
     response = get_generator()(
         model=MODEL,
         max_tokens=MAX_TOKENS,
-        output_config={"effort": EFFORT, "format": {"type": "json_schema", "schema": SCHEMA}},
+        output_config={"effort": effort, "format": {"type": "json_schema", "schema": SCHEMA}},
         messages=[{"role": "user", "content": prompt}],
     )
     truncated = getattr(response, "stop_reason", None) == "max_tokens"
@@ -218,9 +222,9 @@ def check_all(
             else:
                 closest = max((cosine(vec, v) for v in seen_vecs), default=0.0)
                 if closest >= DUPLICATE_SIMILARITY:
+                    # The bank, or an earlier question in this same run.
                     problems.append(
-                        f"it is a near-copy of a question already in the bank "
-                        f"(similarity {closest:.2f})"
+                        f"it is a near-copy of another question (similarity {closest:.2f})"
                     )
         if problems:
             # The whole proposal, not just its wording: what the model got

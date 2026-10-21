@@ -101,7 +101,21 @@ export function ClassStrands({
                             {strand.active_items === 1 ? "question" : "questions"}
                           </Badge>
                         )}
+                        {strand.draft_items > 0 && (
+                          <Badge tone="warn">{strand.draft_items} to review</Badge>
+                        )}
+                        {strand.reported_items > 0 && (
+                          <Badge tone="risk">{strand.reported_items} reported</Badge>
+                        )}
                       </div>
+                      <ButtonLink
+                        href={`/classrooms/${classId}/strands/${strand.strand_id}`}
+                        variant="secondary"
+                        size="sm"
+                        className="mt-3"
+                      >
+                        Questions
+                      </ButtonLink>
                     </div>
                     {!asking && (
                       <Button

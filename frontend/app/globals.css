@@ -187,3 +187,15 @@ body {
     border-left-width: 6px;
   }
 }
+
+/* Paper. A printed quiz sheet is black on white whatever the screen's theme:
+   dark mode on paper is a page of toner. */
+@media print {
+  :root {
+    color-scheme: light;
+  }
+  body {
+    background: #ffffff;
+    color: #000000;
+  }
+}

@@ -222,6 +222,50 @@ export type Quiz = {
   items: QuizItem[];
 };
 
+/** A saved quiz: the same questions on the print sheet, the marking grid
+ *  and the device. Like Quiz, it carries no key. */
+export type QuizSet = Quiz & {
+  quiz_id: string;
+  mode: "device" | "paper";
+  created_at: string | null;
+  /** Each item's number in the quiz as made - unchanged when one is withdrawn,
+   *  so column 4 of the grid is still question 4 on the printed sheet. */
+  numbers: number[];
+  /** Chosen when it was made, since reported or retired, so left out. */
+  withdrawn: number;
+};
+
+export type QuizSummary = {
+  quiz_id: string;
+  strand_id: string;
+  strand: string;
+  mode: "device" | "paper";
+  questions: number;
+  created_at: string | null;
+};
+
+/** One request to write draft questions, and what came of it. */
+export type GenerationRun = {
+  run_id: string;
+  strand_id: string;
+  status: "pending" | "ready" | "failed";
+  requested: number;
+  produced: number;
+  dropped: { question: string; problems: string[] }[];
+  error: string | null;
+  item_ids: string[];
+  remaining_today: number;
+  cost_usd: number | null;
+  duration_ms: number | null;
+};
+
+export type StrandGeneration = {
+  remaining_today: number;
+  per_run: number;
+  running: GenerationRun | null;
+  last: GenerationRun | null;
+};
+
 /**
  * What the grounding check concluded about one language of a report.
  *

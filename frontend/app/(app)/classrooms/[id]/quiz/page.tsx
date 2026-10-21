@@ -29,19 +29,27 @@
  *
  * **Nothing is saved until Submit.** The grid is local state. A half-marked
  * class is not a half-recorded assessment.
+ *
+ * **The columns are a saved paper quiz** (21 October), not every question in
+ * the strand: the teacher picks a length, the server picks the questions,
+ * and the same set is on the printed sheet the class wrote on. The newest
+ * paper quiz for the strand opens by default - usually the one just printed.
  */
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
-import { Button, Empty, Loading, Note } from "@/components/ui";
+import { type QuizLength, QuizLengthPicker } from "@/components/QuizLength";
+import { Button, ButtonLink, Empty, Loading, Note } from "@/components/ui";
 import { api, ApiError, errorMessage } from "@/lib/api";
 import type {
   AnsweredPairs,
   AssessmentReceipt,
   Classroom,
-  Item,
+  QuizItem,
+  QuizSet,
+  QuizSummary,
   Strand,
   Student,
 } from "@/lib/types";
@@ -66,7 +74,12 @@ export default function QuizPage() {
   const [strandId, setStrandId] = useState<string>("");
   const [classroom, setClassroom] = useState<Classroom | null>(null);
   const [learners, setLearners] = useState<Student[]>([]);
-  const [items, setItems] = useState<Item[]>([]);
+  const [items, setItems] = useState<QuizItem[]>([]);
+  const [quizzes, setQuizzes] = useState<QuizSummary[]>([]);
+  const [quizId, setQuizId] = useState("");
+  const [withdrawn, setWithdrawn] = useState(0);
+  const [numbers, setNumbers] = useState<number[]>([]);
+  const [length, setLength] = useState<QuizLength>(10);
   const [locked, setLocked] = useState<Set<string>>(new Set());
 
   const [grid, setGrid] = useState<Grid>({});
@@ -119,11 +132,13 @@ export default function QuizPage() {
     };
   }, [fetchContext, classId]);
 
-  /* --- load the items and what is already answered --------------------- */
+  /* --- the strand's paper quizzes and what is already answered -------- */
   const fetchStrand = useCallback(
     (strand: string) =>
       Promise.all([
-        api.get<Item[]>(`/api/items?strand_id=${strand}`),
+        api.get<QuizSummary[]>(
+          `/api/classrooms/${classId}/quizzes?strand_id=${strand}&mode=paper`,
+        ),
         api.get<AnsweredPairs>(`/api/assessments/answered/${classId}/${strand}`),
       ]),
     [classId],
@@ -134,9 +149,11 @@ export default function QuizPage() {
     let cancelled = false;
     (async () => {
       try {
-        const [strandItems, answered] = await fetchStrand(strandId);
+        const [recent, answered] = await fetchStrand(strandId);
         if (cancelled) return;
-        setItems(strandItems);
+        setQuizzes(recent);
+        setQuizId(recent[0]?.quiz_id ?? "");
+        if (recent.length === 0) setItems([]);
         setLocked(new Set(answered.answered));
         setGrid({});
         setBatchId(newBatchId());
@@ -149,6 +166,45 @@ export default function QuizPage() {
       cancelled = true;
     };
   }, [strandId, fetchStrand]);
+
+  /* --- the chosen quiz's questions are the grid's columns --------------- */
+  useEffect(() => {
+    if (!quizId) return;
+    let cancelled = false;
+    api
+      .get<QuizSet>(`/api/quizzes/${quizId}`)
+      .then((quiz) => {
+        if (cancelled) return;
+        setItems(quiz.items);
+        setNumbers(quiz.numbers);
+        setWithdrawn(quiz.withdrawn);
+        setGrid({});
+      })
+      .catch((e) => !cancelled && setError(errorMessage(e, "Could not load the quiz")));
+    return () => {
+      cancelled = true;
+    };
+  }, [quizId]);
+
+  async function makeQuiz() {
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const quiz = await api.post<QuizSet>(`/api/classrooms/${classId}/quizzes`, {
+        strand_id: strandId,
+        length,
+        mode: "paper",
+      });
+      const [recent] = await fetchStrand(strandId);
+      setQuizzes(recent);
+      setQuizId(quiz.quiz_id);
+    } catch (e) {
+      setError(errorMessage(e, "Could not make the quiz"));
+    } finally {
+      setBusy(false);
+    }
+  }
 
   /* --- marking ---------------------------------------------------------- */
   function cycle(studentId: string, itemId: string) {
@@ -199,7 +255,9 @@ export default function QuizPage() {
       );
       // Landed. A new identifier, so the next submission is new work.
       setBatchId(newBatchId());
-      const [, answered] = await fetchStrand(strandId);
+      const answered = await api.get<AnsweredPairs>(
+        `/api/assessments/answered/${classId}/${strandId}`,
+      );
       setLocked(new Set(answered.answered));
       setGrid({});
     } catch (e) {
@@ -255,14 +313,65 @@ export default function QuizPage() {
             ))}
           </select>
         </label>
+        {quizzes.length > 0 && (
+          <label className="text-sm">
+            <span className="font-medium">Quiz</span>
+            <select
+              value={quizId}
+              onChange={(e) => setQuizId(e.target.value)}
+              className="mt-1 block rounded border border-neutral-300 px-3 py-1.5 text-sm"
+            >
+              {quizzes.map((q) => (
+                <option key={q.quiz_id} value={q.quiz_id}>
+                  {q.questions} questions
+                  {q.created_at && ` · made ${new Date(q.created_at).toLocaleString()}`}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
         <Button disabled={busy || marked === 0} onClick={submit}>
           {busy ? "Submitting…" : `Submit ${marked} response(s)`}
         </Button>
       </div>
 
+      {ready && strandId && (
+        <div className="mt-4 flex flex-wrap items-end gap-3 rounded-md border border-line p-3">
+          <QuizLengthPicker
+            value={length}
+            onChange={setLength}
+            available={strands.find((s) => s.strand_id === strandId)?.active_items}
+          />
+          <Button variant="secondary" disabled={busy} onClick={makeQuiz}>
+            {quizzes.length > 0 ? "Make a new quiz" : "Make a quiz"}
+          </Button>
+          {quizId && (
+            <ButtonLink
+              href={`/classrooms/${classId}/quizzes/${quizId}/print`}
+              variant="ghost"
+            >
+              Print question sheet
+            </ButtonLink>
+          )}
+        </div>
+      )}
+
       <div className="mt-4 space-y-3">
         <Note tone="error">{error}</Note>
         <Note>{notice}</Note>
+        {withdrawn > 0 && quizId && (
+          <Note tone="warn">
+            {withdrawn} {withdrawn === 1 ? "question was" : "questions were"} reported or
+            retired since this quiz was made, so {withdrawn === 1 ? "it is" : "they are"} left
+            out of the grid. The other columns keep their numbers from the sheet.
+          </Note>
+        )}
+        {ready && strandId && quizzes.length === 0 && (
+          <Note>
+            Choose how many questions, then make a quiz. Print the question sheet for the
+            class, then mark their answers here.
+          </Note>
+        )}
         {ready && !strands.some((s) => s.active_items > 0) && (
           <Note>
             This class has no strands with questions yet. Add a strand on the class page; questions for it come with question generation.
@@ -320,7 +429,7 @@ export default function QuizPage() {
                     title={item.question_text}
                     className="px-1 py-2 text-center text-xs font-medium"
                   >
-                    {n + 1}
+                    {numbers[n] ?? n + 1}
                   </th>
                 ))}
                 <th scope="col" className="px-2 py-2 text-left font-medium">
@@ -413,9 +522,11 @@ export default function QuizPage() {
         </div>
       )}
 
-      {ready && items.length === 0 && learners.length > 0 && !error && (
+      {ready && quizId && items.length === 0 && learners.length > 0 && !error && (
         <div className="mt-6">
-          <Empty>This strand has no active items.</Empty>
+          <Empty>
+            Every question in this quiz has since been reported or retired. Make a new quiz.
+          </Empty>
         </div>
       )}
     </>

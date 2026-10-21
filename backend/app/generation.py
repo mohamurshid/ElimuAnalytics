@@ -382,3 +382,39 @@ def get_run(
         raise HTTPException(status_code=404, detail="No such run")
     _resolve_stale(session, run)
     return _out(session, run)
+
+
+class StrandGenerationOut(BaseModel):
+    remaining_today: int
+    per_run: int
+    # The run still being written, if any, so a reloaded page can keep
+    # polling it; otherwise the most recent one, so its outcome is shown.
+    running: RunOut | None
+    last: RunOut | None
+
+
+@router.get("/strands/{strand_id}/generation", response_model=StrandGenerationOut)
+def strand_generation(
+    strand_id: uuid.UUID,
+    session: Session = Depends(get_session),
+    teacher: Teacher = Depends(current_teacher),
+) -> StrandGenerationOut:
+    strand = session.get(Strand, strand_id)
+    if strand is None or strand not in repo.school_strands(session, teacher.school_id):
+        raise HTTPException(status_code=404, detail="No class at your school uses that strand")
+    latest = session.scalars(
+        select(GenerationRun)
+        .where(GenerationRun.strand_id == strand_id,
+               GenerationRun.school_id == teacher.school_id)
+        .order_by(GenerationRun.created_at.desc())
+        .limit(1)
+    ).first()
+    if latest is not None:
+        _resolve_stale(session, latest)
+    running = latest if latest is not None and latest.status == PENDING else None
+    return StrandGenerationOut(
+        remaining_today=max(0, RUNS_PER_DAY - runs_today(session, teacher.school_id)),
+        per_run=QUESTIONS_PER_RUN,
+        running=_out(session, running) if running else None,
+        last=_out(session, latest) if latest is not None and running is None else None,
+    )

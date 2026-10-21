@@ -72,7 +72,7 @@ export function TopBar() {
   const onProfile = usePathname().startsWith("/profile");
 
   return (
-    <header className="sticky top-0 z-20 border-b border-line bg-surface/95 backdrop-blur">
+    <header className="sticky top-0 z-20 border-b border-line bg-surface/95 backdrop-blur print:hidden">
       <div className="mx-auto flex h-14 max-w-5xl items-center justify-between gap-4 px-4">
         <Link href={HOME} className="min-h-11 inline-flex items-center" aria-label="Elimu Analytics home">
           <Logo />
@@ -133,7 +133,7 @@ export function BottomNav() {
     <nav
       aria-label="Main"
       className="fixed inset-x-0 bottom-0 z-20 border-t border-line bg-surface/95
-                 pb-[env(safe-area-inset-bottom)] backdrop-blur md:hidden"
+                 pb-[env(safe-area-inset-bottom)] backdrop-blur md:hidden print:hidden"
     >
       <ul className="mx-auto grid max-w-md grid-cols-3">
         {LINKS.map(({ href, label, Icon }) => {

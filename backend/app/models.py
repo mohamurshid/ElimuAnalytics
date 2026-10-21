@@ -544,6 +544,38 @@ class Report(Base):
     )
 
 
+class QuizSet(Base):
+    """A chosen set of questions, saved so every view of it agrees.
+
+    The print sheet, the marking grid and an on-device session for the same
+    quiz must show the same questions. Chosen afresh on each page load they
+    would not: the choice favours questions few learners have answered, so it
+    moves as soon as any answers are recorded - and a teacher would mark a
+    grid that no longer matches the sheet the class wrote on.
+    """
+
+    __tablename__ = "quiz_set"
+
+    quiz_id: Mapped[uuid.UUID] = _pk()
+    class_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("classroom.class_id", ondelete="CASCADE"), nullable=False
+    )
+    strand_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("strand.strand_id", ondelete="CASCADE"), nullable=False
+    )
+    # Item ids in the order they are asked, easy to hard.
+    item_ids: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    # "device" or "paper". A paper quiz may include text-only questions a
+    # teacher reads out; a device quiz cannot, as nothing could mark them.
+    mode: Mapped[str] = mapped_column(String(10), nullable=False)
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("teacher.teacher_id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
 class GenerationRun(Base):
     """One request to the model for draft questions, and what came of it.
 

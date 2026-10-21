@@ -33,6 +33,7 @@
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
+import { type QuizLength, QuizLengthPicker } from "@/components/QuizLength";
 import { Button, Field, Loading, Note } from "@/components/ui";
 import { api, ApiError, errorMessage, login } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
@@ -42,6 +43,7 @@ import type {
   Classroom,
   Quiz,
   QuizItem,
+  QuizSet,
   Strand,
   Student,
 } from "@/lib/types";
@@ -64,6 +66,7 @@ export default function AdministerPage() {
   const [classroom, setClassroom] = useState<Classroom | null>(null);
   const [strands, setStrands] = useState<Strand[]>([]);
   const [strandId, setStrandId] = useState("");
+  const [length, setLength] = useState<QuizLength>(10);
   const [roll, setRoll] = useState<Student[]>([]);
   const [quiz, setQuiz] = useState<Quiz | null>(null);
 
@@ -153,8 +156,14 @@ export default function AdministerPage() {
     setBusy(true);
     setError(null);
     try {
+      // A saved quiz: the server chooses the questions once, so every
+      // learner handed the device in this session gets the same set.
       const [loaded, taken] = await Promise.all([
-        api.get<Quiz>(`/api/assessments/quiz/${classId}/${strandId}`),
+        api.post<QuizSet>(`/api/classrooms/${classId}/quizzes`, {
+          strand_id: strandId,
+          length,
+          mode: "device",
+        }),
         api.get<AnsweredPairs>(
           `/api/assessments/answered/${classId}/${strandId}`,
         ),
@@ -339,6 +348,11 @@ export default function AdministerPage() {
                 ))}
               </select>
             </label>
+            <QuizLengthPicker
+              value={length}
+              onChange={setLength}
+              available={strands.find((s) => s.strand_id === strandId)?.active_items}
+            />
             <Button disabled={busy || !strandId} onClick={start}>
               Start quiz session
             </Button>
@@ -389,7 +403,7 @@ export default function AdministerPage() {
                         {justFinished
                           ? "answered just now"
                           : nothingLeft
-                            ? "already answered this strand"
+                            ? "already answered these questions"
                             : `${left} question(s) left`}
                       </span>
                     </button>
@@ -400,7 +414,7 @@ export default function AdministerPage() {
 
             {roll.every((s) => remainingFor(s).length === 0) && (
               <p className="mt-4 text-sm text-neutral-600">
-                Every learner has already answered every item in this strand.
+                Every learner has already answered every question in this quiz.
                 Nothing further can be recorded here — one response per learner
                 and item is all the measurement allows.
               </p>

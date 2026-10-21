@@ -125,8 +125,10 @@ export default function AdministerPage() {
         const [classes, allStrands, learners] = await fetchContext();
         if (cancelled) return;
         setClassroom(classes.find((c) => c.class_id === classId) ?? null);
+        // Every strand the class is assessed on; the first with questions is
+        // chosen, since an empty one has nothing to ask.
         const usable = allStrands.filter((s) => s.active_items > 0);
-        setStrands(usable);
+        setStrands(allStrands);
         setRoll(learners);
         setStrandId((current) => current || usable[0]?.strand_id || "");
         setError(null);
@@ -297,10 +299,19 @@ export default function AdministerPage() {
           </div>
         )}
 
-        {ready && strands.length === 0 && (
+        {ready && !strands.some((s) => s.active_items > 0) && (
           <div className="mt-6">
             <Note>
               This class has no strands with questions yet. Add a strand on the class page; questions for it come with question generation.
+            </Note>
+          </div>
+        )}
+
+        {ready && strands.some((s) => s.active_items === 0) && (
+          <div className="mt-6">
+            <Note>
+              A greyed-out strand can’t be quizzed until it has approved
+              questions. Questions written for it wait for a teacher’s review first.
             </Note>
           </div>
         )}
@@ -316,8 +327,14 @@ export default function AdministerPage() {
                            py-1.5 text-sm"
               >
                 {strands.map((s) => (
-                  <option key={s.strand_id} value={s.strand_id}>
+                  // Listed even when empty, so a strand just added does not seem to
+                  // vanish: it is shown, greyed, with the reason it cannot be quizzed.
+                  <option key={s.strand_id} value={s.strand_id} disabled={s.active_items === 0}>
                     {s.name}
+                    {s.active_items === 0 &&
+                      (s.draft_items > 0
+                        ? ` — ${s.draft_items} waiting for review`
+                        : " — no questions yet")}
                   </option>
                 ))}
               </select>

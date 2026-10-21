@@ -96,8 +96,10 @@ export default function QuizPage() {
         const [classes, allStrands, roll] = await fetchContext();
         if (cancelled) return;
         setClassroom(classes.find((c) => c.class_id === classId) ?? null);
+        // Every strand the class is assessed on; the first with questions is
+        // chosen, since an empty one has nothing to ask.
         const usable = allStrands.filter((s) => s.active_items > 0);
-        setStrands(usable);
+        setStrands(allStrands);
         setLearners(roll);
         setStrandId((current) => current || usable[0]?.strand_id || "");
         setError(null);
@@ -241,8 +243,14 @@ export default function QuizPage() {
                        text-sm"
           >
             {strands.map((s) => (
-              <option key={s.strand_id} value={s.strand_id}>
+              // Listed even when empty, so a strand just added does not seem to
+              // vanish: it is shown, greyed, with the reason it cannot be quizzed.
+              <option key={s.strand_id} value={s.strand_id} disabled={s.active_items === 0}>
                 {s.name}
+                {s.active_items === 0 &&
+                  (s.draft_items > 0
+                    ? ` — ${s.draft_items} waiting for review`
+                    : " — no questions yet")}
               </option>
             ))}
           </select>
@@ -255,9 +263,15 @@ export default function QuizPage() {
       <div className="mt-4 space-y-3">
         <Note tone="error">{error}</Note>
         <Note>{notice}</Note>
-        {ready && strands.length === 0 && (
+        {ready && !strands.some((s) => s.active_items > 0) && (
           <Note>
             This class has no strands with questions yet. Add a strand on the class page; questions for it come with question generation.
+          </Note>
+        )}
+        {ready && strands.some((s) => s.active_items === 0) && (
+          <Note>
+            A greyed-out strand can’t be quizzed until it has approved
+            questions. Questions written for it wait for a teacher’s review first.
           </Note>
         )}
       </div>

@@ -4,8 +4,10 @@
  * Sign-in.
  *
  * The first screen a UAT teacher sees, so it says in one line what the
- * product is for, in their terms. No Google button: that is planned, not
- * built, and a button that does nothing is worse than its absence.
+ * product is for, in their terms. "Continue with Google" appears only when
+ * the server has Google configured - a button that does nothing is worse
+ * than its absence - and a teacher Google turned away is told why, from the
+ * reason the server put in the address.
  *
  * A teacher a head teacher has just added has no password yet; the link
  * under the form takes them to set one up with their code.
@@ -15,9 +17,10 @@
  */
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useState } from "react";
 
+import { GOOGLE_REASONS, GoogleButton } from "@/components/GoogleButton";
 import { Logo } from "@/components/Logo";
 import { Button, Field, Note } from "@/components/ui";
 import { ApiError } from "@/lib/api";
@@ -25,8 +28,18 @@ import { useAuth } from "@/lib/auth";
 import { HOME } from "@/lib/routes";
 
 export default function LoginPage() {
+  // useSearchParams needs a Suspense boundary above it in the App Router.
+  return (
+    <Suspense>
+      <SignIn />
+    </Suspense>
+  );
+}
+
+function SignIn() {
   const { profile, resolved, signIn } = useAuth();
   const router = useRouter();
+  const googleReason = useSearchParams().get("google");
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -98,15 +111,17 @@ export default function LoginPage() {
             />
           </div>
 
-          {error && (
+          {(error || (googleReason && GOOGLE_REASONS[googleReason])) && (
             <div className="mt-5">
-              <Note tone="error">{error}</Note>
+              <Note tone="error">{error ?? GOOGLE_REASONS[googleReason ?? ""]}</Note>
             </div>
           )}
 
           <Button type="submit" disabled={busy} className="mt-7 w-full">
             {busy ? "Signing in…" : "Sign in"}
           </Button>
+
+          <GoogleButton />
         </form>
 
         <p className="mt-6 text-center text-[15px] text-ink-muted">

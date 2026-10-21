@@ -16,6 +16,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
+import { GoogleButton } from "@/components/GoogleButton";
 import { Logo } from "@/components/Logo";
 import { Button, Field, Note } from "@/components/ui";
 import { ApiError } from "@/lib/api";
@@ -138,6 +139,10 @@ export default function SetupPage() {
           <Button type="submit" disabled={busy} className="mt-7 w-full">
             {busy ? "Setting up…" : "Set up and sign in"}
           </Button>
+
+          {/* A teacher whose head teacher added their Google email needs no
+              code at all. */}
+          <GoogleButton />
         </form>
 
         <p className="mt-6 text-center text-[15px] text-ink-muted">

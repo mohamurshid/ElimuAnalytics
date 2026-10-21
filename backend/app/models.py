@@ -106,6 +106,30 @@ class Teacher(Base):
     classrooms: Mapped[list[Classroom]] = relationship(back_populates="teacher")
 
 
+class GoogleIdentity(Base):
+    """A Google account linked to a teacher, once it has been used to sign in.
+
+    The first Google sign-in is matched by verified email against the staff
+    list a head teacher keeps; from then on the Google account's stable id
+    (`sub`) is matched, so a later change of email on either side does not
+    lose or misdirect the link.
+
+    A table of its own rather than a column on Teacher, so adding it needs no
+    reset of an existing database.
+    """
+
+    __tablename__ = "google_identity"
+
+    sub: Mapped[str] = mapped_column(String(255), primary_key=True)
+    teacher_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("teacher.teacher_id", ondelete="CASCADE"), nullable=False, unique=True
+    )
+    email_at_link: Mapped[str] = mapped_column(String(320), nullable=False)
+    linked_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
 class Classroom(Base):
     __tablename__ = "classroom"
 

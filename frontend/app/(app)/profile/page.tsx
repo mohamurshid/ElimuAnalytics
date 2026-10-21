@@ -103,7 +103,8 @@ export default function ProfilePage() {
           </Button>
           <p className="mt-2 text-sm text-ink-subtle">
             Sharing this phone or tablet? Sign out when you finish, so the next
-            person can’t see your classes.
+            person can’t see your classes. If you signed in with Google, sign out of
+            Google on this device too - signing out here does not do that.
           </p>
         </section>
 

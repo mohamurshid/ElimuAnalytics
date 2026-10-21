@@ -8,6 +8,7 @@ psycopg[binary]
 pgvector
 alembic
 pyjwt
+httpx
 bcrypt
 email-validator
 

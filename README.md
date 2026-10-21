@@ -1,66 +1,110 @@
 # Elimu Analytics
 
 An Item Response Theory-based learning gap detection system for Kenya's
-Competency-Based Education at the Lower and Upper Primary level.
+Competency-Based Education, Upper Primary (Grades 4-6).
 
 Abdalla Muhammad Murshid (169962) · Supervisor: Daniel Machanje
 Strathmore University, School of Computing and Engineering Sciences
 
-Teachers administer offline quizzes on Android tablets. A 2-PL IRT model
-estimates each learner's latent ability per CBE strand. Learners falling below
-threshold for two consecutive assessments are flagged. The Claude API, grounded
-in KICD curriculum via RAG, generates personalised diagnostic reports in English
-and Kiswahili.
+A teacher picks the KICD sub-strands a class is working on. AI drafts
+multiple-choice questions from that sub-strand's official curriculum text; a
+teacher reviews and approves them. Learners answer on the teacher's phone, or
+on paper that the teacher marks. A 2-PL IRT model estimates each learner's
+ability per strand, and a learner below expectation in two consecutive
+assessments joins the support list. For any learner, the system writes a
+bilingual (English and Kiswahili) diagnostic report grounded in verbatim KICD
+curriculum text, exported as a PDF for parents.
 
 ---
 
-## Status
+## Status - 23 October 2026
 
-| Phase | State |
+| Area | State |
 |---|---|
-| **0 — Technical spike** | Complete. Decision: GO |
-| **1 — Walking skeleton** | Complete |
-| **2 — Backend core** | Complete. Persistence, calibration, auth, item bank, login throttling, classroom and learner records with school-level scoping |
-| **2.5 — API for the interface** | Complete. Assessment recording with idempotency, strands, per-learner diagnostics, class heatmap, scoped intervention queue, rotating refresh tokens |
-| **3 — Frontend** | Complete. Shell and auth, classroom and learner management, competency heatmap, learner diagnostics, intervention queue, quiz marking, learner-facing quiz mode |
-| 4 — Offline sync | Not started |
-| 5 — RAG + reports | Not started (retrieval validated in Phase 0) |
+| IRT engine (2-PL, girth), calibration per strand, two-consecutive-low flag | Complete |
+| Classes, learners, school scoping, roles (teacher / head teacher) | Complete |
+| KICD curriculum corpus in pgvector; grade + learning-area filtered retrieval | Complete |
+| Bilingual grounded reports, verbatim-citation check, PDF export | Complete |
+| Curriculum catalogue (Grades 4-6, six learning areas) and per-class strand picker | Complete |
+| AI question generation, server-side checks, teacher review, versions, reporting a question | Complete; measured (see `docs/TEST_RECORD.md`) |
+| Quizzes of a set length - on the device, or on paper with a printable sheet | Complete |
+| Teacher accounts: head teacher adds staff, one-time setup codes, change password, sign out everywhere | Complete |
+| Sign in with Google (OpenID Connect), gated by the staff list | Complete; live test needs Google credentials |
+| Offline answer queue, cloud deployment | Not started - see Limitations |
 
-**127 tests**, lint clean, CI on every push.
+**462 backend tests**, frontend lint + type check + production build, CI on
+every push. Evidence of testing and evaluation: **`docs/TEST_RECORD.md`**.
 
 ---
 
 ## Run it
 
-Windows, from the repo root. Requires Docker Desktop.
+Windows `cmd`, from the repository root. Requires Python 3.12, Node 20+ and
+Docker Desktop.
+
+### Once
 
 ```cmd
-tasks setup                             venv + dependencies, once
+tasks setup                             venv + Python dependencies
+cd frontend && npm install && cd ..     frontend dependencies
 docker compose up -d                    PostgreSQL 16 + pgvector
-tasks seed --reset                      schema + demonstration data
-tasks run                               the backend, port 8000
 ```
 
-For the Next.js interface, in a second terminal:
+Secrets are environment variables, set once with `setx` in a new terminal,
+**never written to a file or committed**. Close and reopen the terminal after.
+
+| Variable | Needed for | Required? |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | Reports and AI question writing | For those features |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Sign in with Google | Optional; the button is hidden without them |
+| `JWT_SECRET` | Signing sessions | Has a development default; set it before any deployment |
+
+Google sign-in needs a Google Cloud OAuth client (Web application) with the
+redirect URI `http://localhost:3000/api/auth/google/callback`, and the
+consent screen in Testing mode with your accounts added as test users.
+
+### Each time the schema changes, and before a demonstration
 
 ```cmd
-cd frontend && npm install && cd ..    once
-tasks web                               the frontend, port 3000
+tasks seed --reset                      drop and rebuild schema + demonstration data
+tasks ingest                            load the KICD corpus (1,617 chunks; a few minutes)
 ```
 
-- <http://127.0.0.1:8000> — the page
-- <http://127.0.0.1:8000/docs> — interactive API: login, item bank, calibration
+`--reset` deletes everything in the local database. Without it, `tasks seed`
+only creates tables that are missing.
 
-Demonstration accounts, password `elimu-demo`:
+### To use it
+
+```cmd
+tasks run                               backend, http://127.0.0.1:8000  (API docs at /docs)
+tasks web                               frontend, http://localhost:3000 (second terminal)
+```
+
+Demonstration accounts, password `elimu-demo` (published - change them
+before any real use):
 
 | Email | Role |
 |---|---|
-| `teacher@example.school` | teacher |
-| `head@example.school` | school_admin |
+| `teacher@example.school` | Teacher |
+| `head@example.school` | Head teacher |
 
-Other tasks: `tasks test`, `tasks lint`, `tasks fix`, `tasks ci`.
-`tasks ci` runs exactly what GitHub Actions runs, before you push. The test
-suite uses SQLite, so it needs no Docker.
+A head teacher adds real teachers at **Profile -> Manage teachers**. Each new
+teacher gets a one-time setup code, shown once, and sets their own password
+at **Set up your account** on the sign-in page - or uses **Continue with
+Google** if the head teacher added their Google email.
+
+### Other tasks
+
+| Task | Does |
+|---|---|
+| `tasks ci` | Lint + the backend test suite - exactly what GitHub Actions runs |
+| `tasks webci` | Frontend lint, type check and production build (stop `tasks web` first) |
+| `tasks gen` | Question-generation measurement: plan only; `--go` calls the API (~$0.20) |
+| `tasks test`, `tasks lint`, `tasks fix` | Parts of the above |
+| `tasks check`, `tasks query` | Retrieval checks against the loaded corpus |
+
+The test suite uses SQLite and stand-ins for every paid or external service,
+so it needs no Docker, no API key and no network.
 
 **Use the `tasks` targets rather than calling Python directly.** Each one
 activates the virtual environment first. Without it the commands run against
@@ -77,25 +121,43 @@ per project makes those impossible.
 
 ---
 
-## What you should see
+## The core workflow, to demonstrate
 
-| Learner | Answered | θ | Tier | Flaggable |
-|---|---|---|---|---|
-| Chebet K. | 12 | ≈ −1.74 | Below expectation | yes |
-| Amina W. | 12 | ≈ 0.65 | Meets expectation | no |
-| Otieno J. | 3 | **not shown** | **not shown** | no |
+1. Sign in as `head@example.school`. **Classes -> Grade 5 Blue.**
+2. **Add a strand** - Grade 5 -> Science and Technology -> 3.2 Sound Energy.
+3. On the strand's **Questions** page, **Write 5 questions**. About 40
+   seconds; the server checks every question and saves the ones that pass as
+   drafts.
+4. **Review questions** - one at a time: the key, why it is right, what each
+   wrong option suggests, the curriculum line it came from. Approve, edit or
+   reject.
+5. **Give a quiz** - *On this device* with 5 questions, or *Mark paper quiz*
+   with a printable question sheet.
+6. **Record levels** twice -> learners below expectation twice appear on
+   **Support**.
+7. Open a learner -> **Generate report** -> English and Kiswahili, each
+   quoting the KICD curriculum verbatim -> **Download PDF**.
 
-Otieno is the important row. He answered three items, below the evidence
-threshold established in Phase 0, so the system refuses to estimate his ability
-rather than reporting a confident-looking number derived from noise.
+The seeded Heat Transfer strand already has twelve answered questions, so
+steps 6-7 work on it straight away. Chebet K. is the learner below
+expectation; Otieno J. answered only three questions, so the system refuses
+to estimate his level rather than guess.
 
-These are the same figures the Phase 1 in-memory version produced. They did not
-move when PostgreSQL arrived, which is the point: Chebet's true ability was set
-to −1.80 in the simulation and `girth` recovers −1.74 from twelve items.
+---
 
-Click **Run assessment** twice, then **Intervention queue**. The first run
-raises nothing — the design requires two consecutive below-threshold
-assessments. Otieno never appears, however many cycles run.
+## Technologies
+
+| Layer | Choice |
+|---|---|
+| Backend | Python 3.12, FastAPI, SQLAlchemy 2, Pydantic |
+| Database | PostgreSQL 16 + pgvector (Docker) |
+| IRT | `girth` (2-PL, marginal maximum likelihood), NumPy, SciPy |
+| Retrieval | sentence-transformers `all-MiniLM-L6-v2`, cosine distance in pgvector, metadata pre-filter |
+| Language model | Anthropic Claude Haiku 5.5 - reports and question drafting, structured output for questions |
+| PDF | ReportLab (bundled Vera fonts) |
+| Auth | bcrypt, short-lived JWT access tokens, rotating httpOnly refresh cookies, OpenID Connect (Google) |
+| Frontend | Next.js 16 (App Router), React 19, TypeScript, Tailwind CSS 4 |
+| Quality | pytest, ruff, ESLint, GitHub Actions |
 
 ---
 
@@ -103,36 +165,35 @@ assessments. Otieno never appears, however many cycles run.
 
 ```
 elimu-analytics/
-├── .github/workflows/ci.yml    lint + tests on every push, Python 3.10 and 3.12
+├── .github/workflows/ci.yml    lint + tests on every push
 ├── docker-compose.yml          pgvector/pgvector:pg16
-├── alembic.ini                 migrations, URL from DATABASE_URL
-├── pyproject.toml              ruff + pytest config
-├── tasks.bat                   task runner
-├── backend/
-│   ├── app/
-│   │   ├── main.py             FastAPI routes
-│   │   ├── db.py               lazy engine, sessions, extensions
-│   │   ├── models.py           eleven tables, from Chapter 4 §4.4.1
-│   │   ├── repository.py       all queries; builds the response matrix
-│   │   ├── irt.py              girth wrapper; every Phase 0 rule lives here
-│   │   ├── calibration.py      strand calibration, assessment, flagging
-│   │   ├── security.py         bcrypt, JWT, role ranking
-│   │   ├── auth.py             login, current_teacher, require_role
-│   │   ├── items.py            item bank CRUD and its safeguards
-│   │   └── seed.py             schema creation + demonstration classroom
-│   ├── alembic/                migration environment
-│   └── tests/                  42 tests, SQLite-backed
-├── frontend/                   Next.js app (TypeScript, Tailwind)
-│   ├── app/ components/ lib/
-│   └── legacy/index.html       the Phase 1 page, still served at :8000
-├── spike/                      Phase 0 scripts, results and transcripts
-├── data/
-│   ├── README.md               data provenance and regeneration
-│   └── kicd/                   harvested curriculum corpus + coverage report
+├── tasks.bat                   task runner (see above)
+├── backend/app/
+│   ├── main.py                 app, routers, start-up warm-up
+│   ├── models.py               the schema
+│   ├── irt.py, calibration.py  2-PL estimation, calibration, flags
+│   ├── repository.py           queries; builds the response matrix
+│   ├── classrooms.py           classes and learners
+│   ├── catalogue.py            KICD curriculum catalogue (Grades 4-6)
+│   ├── class_strands.py        what a class is assessed on
+│   ├── items.py, item_status.py   question bank, review, versions
+│   ├── questions.py            question-writing prompt and checks (pure)
+│   ├── generation.py           AI question writing (async), daily cap
+│   ├── quizzes.py              quizzes of a set length, saved sets
+│   ├── assessments.py          answer submission (idempotent), device quiz
+│   ├── diagnostics.py          heatmap, learner levels, support list
+│   ├── retrieval.py, curriculum.py, ingest_curriculum.py   corpus + RAG
+│   ├── reports.py, reporting.py, grounding.py, export.py   reports + PDF
+│   ├── auth.py, security.py, staff.py, google_auth.py, throttle.py   accounts
+│   └── seed.py                 demonstration data
+├── backend/tests/              462 tests
+├── frontend/                   Next.js app: app/, components/, lib/
+├── spike/                      measurement instruments and their results
+├── data/kicd/                  harvested curriculum corpus + coverage report
 └── docs/
-    ├── ARCHITECTURE.md         how it all works — start here
-    ├── PHASE2.md               backend build notes
-    └── SPRINT1.md              sprint evidence
+    ├── TEST_RECORD.md          tests, functional record, measurements
+    ├── ARCHITECTURE.md         how it fits together
+    └── RUNBOOK.md              start-up, expected output, failure modes
 ```
 
 ---
@@ -161,80 +222,29 @@ Full write-up: `01_HANDOVER/PHASE0_SPIKE_SUMMARY.md` in the project package.
 
 ## Curriculum corpus
 
-`data/kicd/` holds the KICD rationalised curriculum designs (Revised 2024)
-harvested by `spike/build_curriculum_corpus.py`: **68 documents across all six
-primary grades and every learning area**, yielding **1,617 curriculum sub-strand
-chunks** plus **923 assessment rubric rows**, deduplicated and structure-aware.
+`data/kicd/` holds the KICD rationalised curriculum designs (Revised 2024),
+harvested by `spike/build_curriculum_corpus.py`: **1,617 curriculum
+sub-strand chunks** across Grades 1-6, plus **924 assessment rubric rows**.
+The source PDFs are not committed (110 MB, regenerable - see
+`data/README.md`).
 
-Retrieval was measured at that scale by `spike/retrieval_at_scale.py`:
-
-| Condition | Top-1 |
-|---|---|
-| Realistic queries, whole corpus | 64.3% |
-| Same queries, filtered by grade + learning area | **100%** |
-
-The reason is structural. 26% of KICD sub-strand titles repeat across grades —
-78% in Mathematics — because the curriculum is deliberately spiral. The
-information that separates Grade 3 *Length* from Grade 5 *Length* is not in the
-text, it is metadata. So filtering by grade and learning area before embedding
-is required, not an optimisation. `curriculum_chunk` carries those columns for
-exactly this reason.
-
-The source PDFs are not committed (110 MB, regenerable — see `data/README.md`).
+Retrieval is filtered by grade and learning area before similarity is
+considered, and that filter is not an optimisation: KICD's curriculum is
+spiral, so sub-strand titles repeat across grades. Measured on 14 realistic
+teacher phrasings, top-1 accuracy is 64.3% over the whole corpus and 100%
+with the filter (n=14 - a small sample).
 
 ---
 
-## Item bank safeguards
+## Limitations
 
-Two behaviours worth knowing before you use the API.
-
-**An answered item cannot be rewritten.** Editing the wording of a question
-learners have already answered turns their responses into answers to a question
-that no longer exists. The API returns 409 and suggests deactivating and
-replacing it.
-
-**An answered item is never deleted.** The foreign key cascades, so deleting it
-would take those responses with it and silently change every ability estimate
-derived from them. Such an item is deactivated instead — withdrawn from future
-calibration, history intact. Only an item nobody has answered is deleted
-outright, and the response tells you which happened.
-
----
-
-## Not yet real
-
-| Real | Placeholder |
-|---|---|
-| IRT engine and every rule around it | Learner responses (simulated from known abilities) |
-| Database schema, migrations | Tier cut points (−1.0 / 0.0 / 1.0), to be set from real class data |
-| Authentication, hashing, role enforcement | Demonstration accounts and passwords |
-| Item bank and its safeguards | Twelve Heat Transfer questions |
-| Flagging logic | — |
-| Curriculum corpus, harvested and validated | Not yet loaded into `curriculum_chunk` |
-
-Simulated responses are a deliberate choice, not a shortcut: because the true
-abilities are known, the estimates can be checked against them. Real SBA data
-has no ground truth to check against.
-
-`JWT_SECRET` has a development default so the project runs out of the box, and
-the app warns at startup when it is in use. Set it before any deployment.
-
----
-
-## Next
-
-**Phase 3** — React/Next.js frontend: dashboard, competency heatmap,
-intervention queue, quiz interface, built against this backend rather than mocks.
-
-**Phase 4** — IndexedDB caching and sync.
-
-**Phase 5** — RAG pipeline: embed the corpus into `curriculum_chunk`, retrieve
-with the grade-and-learning-area filter, generate bilingual reports with the
-strict citation prompt, export PDFs.
-
-Refresh tokens remain open from Phase 2, deliberately: whether a 60-minute
-session is inconvenient on a classroom tablet is a question UAT answers, not
-one to build against speculatively.
-
-See `docs/ARCHITECTURE.md` for how the current system works and
-`docs/RUNBOOK.md` for how to run it.
+- **No offline queue.** Quiz answers are held on the device until the teacher
+  submits; the server is already idempotent, so a queue is frontend work.
+- **Not deployed.** Teachers using their own phones need a public HTTPS
+  address; Google sign-in then needs that address as a redirect URI.
+- **Grades 4-6 only** for the catalogue and question writing. Grade 6 English
+  and Grade 2 Kiswahili are missing from the corpus (extraction gaps).
+- **Simulated demonstration responses.** Generated from known abilities, so
+  estimates can be checked against the truth; real classroom data has none.
+- Known problems and their consequences are listed in `docs/TEST_RECORD.md`
+  section 4.

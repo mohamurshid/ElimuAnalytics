@@ -1,0 +1,118 @@
+{
+ "stamp": "20261021_095316",
+ "metrics": {
+  "low": {
+   "requests": 34,
+   "failed": 0,
+   "failures": [],
+   "proposed": 170,
+   "kept": 143,
+   "dropped": 27,
+   "drop_reasons": {
+    "the correct option cannot carry a misconception": 21,
+    "two options are the same": 1,
+    "the curriculum excerpt is not in the curriculum text": 1,
+    "the question contains its own answer": 3,
+    "it is a near-copy of another question": 2
+   },
+   "cost_total_usd": 0.05893,
+   "cost_mean_usd": 0.00173,
+   "seconds_mean": 15.2,
+   "seconds_p90": 20.3,
+   "key_longest": 45,
+   "key_positions": {
+    "C": 31,
+    "B": 43,
+    "D": 15,
+    "A": 54
+   },
+   "question_words_mean": 14.2,
+   "question_words_max": 34,
+   "kiswahili_kept": 26,
+   "kiswahili_english_flags": [],
+   "pass_by_area": {
+    "Agriculture and Nutrition": [
+     24,
+     30
+    ],
+    "English": [
+     15,
+     20
+    ],
+    "Kiswahili": [
+     26,
+     30
+    ],
+    "Mathematics": [
+     23,
+     30
+    ],
+    "Science and Technology": [
+     25,
+     30
+    ],
+    "Social Studies": [
+     30,
+     30
+    ]
+   }
+  },
+  "medium": {
+   "requests": 34,
+   "failed": 1,
+   "failures": [
+    "cut off"
+   ],
+   "proposed": 165,
+   "kept": 151,
+   "dropped": 14,
+   "drop_reasons": {
+    "the curriculum excerpt is not in the curriculum text": 1,
+    "the correct option cannot carry a misconception": 10,
+    "it is a near-copy of another question": 2,
+    "the question contains its own answer": 1
+   },
+   "cost_total_usd": 0.08734,
+   "cost_mean_usd": 0.00257,
+   "seconds_mean": 21.0,
+   "seconds_p90": 26.9,
+   "key_longest": 51,
+   "key_positions": {
+    "B": 46,
+    "C": 47,
+    "D": 28,
+    "A": 30
+   },
+   "question_words_mean": 14.5,
+   "question_words_max": 41,
+   "kiswahili_kept": 17,
+   "kiswahili_english_flags": [],
+   "pass_by_area": {
+    "Agriculture and Nutrition": [
+     30,
+     30
+    ],
+    "English": [
+     20,
+     20
+    ],
+    "Kiswahili": [
+     17,
+     25
+    ],
+    "Mathematics": [
+     29,
+     30
+    ],
+    "Science and Technology": [
+     25,
+     30
+    ],
+    "Social Studies": [
+     30,
+     30
+    ]
+   }
+  }
+ }
+}

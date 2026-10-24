@@ -21,8 +21,9 @@ import uuid
 
 import pytest
 from app.db import get_session
+from app.item_status import APPROVED
 from app.main import app
-from app.models import Classroom, School, Student, Teacher
+from app.models import Classroom, Item, School, Strand, Student, Teacher
 from app.security import ROLE_SCHOOL_ADMIN, create_token, hash_password
 from fastapi.testclient import TestClient
 from sqlalchemy import select
@@ -66,6 +67,25 @@ def test_strands_are_listed_with_item_counts(client, head):
     assert rows[0]["name"] == "3.3 Heat Transfer"
     assert rows[0]["active_items"] == 12
     assert rows[0]["calibrated_items"] == 0  # nothing calibrated yet
+
+
+def test_each_strand_names_a_class_to_open_it_under(client, head, session):  # noqa: F811
+    """The Overview links each strand to its page, which lives under a class."""
+    rows = client.get("/api/strands", headers=auth(head)).json()
+    assert rows[0]["class_id"] == str(the_class(session).class_id)
+
+
+def test_strands_count_reported_questions(client, head, session):  # noqa: F811
+    """What the head teacher's count on the Overview is built from."""
+    from app.item_status import REPORTED
+
+    item = session.scalar(select(Item))
+    item.status = REPORTED
+    session.commit()
+
+    row = client.get("/api/strands", headers=auth(head)).json()[0]
+    assert row["reported_items"] == 1
+    assert row["active_items"] == 11
 
 
 def test_strands_require_authentication(client):
@@ -168,6 +188,138 @@ def test_the_heatmap_calibrates_once_per_strand_not_once_per_learner(
     r = client.get(f"/api/classrooms/{classroom.class_id}/heatmap", headers=auth(head))
     assert r.status_code == 200
     assert calls["n"] == 1
+
+
+def _count_calibrations(monkeypatch) -> dict:
+    from app import irt
+
+    calls = {"n": 0}
+    real = irt.calibrate
+
+    def counted(*args, **kwargs):
+        calls["n"] += 1
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(irt, "calibrate", counted)
+    return calls
+
+
+def _thetas(client, head, classroom) -> dict:
+    body = client.get(
+        f"/api/classrooms/{classroom.class_id}/heatmap", headers=auth(head)
+    ).json()
+    return {lr["name"]: lr["cells"][0]["theta"] for lr in body["learners"]}
+
+
+def test_a_calibrated_strand_is_not_recalibrated_on_every_load(
+    client, head, session, monkeypatch  # noqa: F811
+):
+    """24 October: one calibration per strand on every page load made the
+    heatmap take 5 to 7 seconds. Once Recalibrate has saved the parameters,
+    the heatmap estimates abilities from them and calibrates nothing."""
+    from app.calibration import calibrate_strand
+
+    calibrate_strand(session, session.scalar(select(Strand)).strand_id)
+    calls = _count_calibrations(monkeypatch)
+
+    thetas = _thetas(client, head, the_class(session))
+    assert calls["n"] == 0
+    assert any(t is not None for t in thetas.values())
+
+
+def test_stored_parameters_give_the_levels_calibrating_would(
+    client, head, session  # noqa: F811
+):
+    """The shortcut must not change the answer: with the parameters the
+    heatmap would have calibrated, every learner's ability is the same."""
+    from app.calibration import calibrate_strand
+
+    classroom = the_class(session)
+    calibrated_live = _thetas(client, head, classroom)
+    calibrate_strand(session, session.scalar(select(Strand)).strand_id, classroom.class_id)
+    from_stored = _thetas(client, head, classroom)
+
+    assert from_stored.keys() == calibrated_live.keys()
+    for name, theta in calibrated_live.items():
+        if theta is None:
+            assert from_stored[name] is None
+        else:
+            assert from_stored[name] == pytest.approx(theta, abs=1e-3)
+
+
+def _add_unanswered_question(session, strand) -> Item:  # noqa: F811
+    item = Item(
+        strand_id=strand.strand_id,
+        question_text="Which of these is a good conductor of heat?",
+        options=["Wood", "Copper", "Plastic", "Cloth"],
+        correct_option=1,
+        status=APPROVED,
+    )
+    session.add(item)
+    session.commit()
+    return item
+
+
+def test_an_unanswered_question_does_not_break_the_heatmap(
+    client, head, session  # noqa: F811
+):
+    """Found 24 October: girth fails on a question nobody has answered, so
+    approving a question after the class had answered the others took the
+    heatmap, the learner page and Recalibrate down with a 500."""
+    _add_unanswered_question(session, session.scalar(select(Strand)))
+
+    thetas = _thetas(client, head, the_class(session))
+    assert any(t is not None for t in thetas.values())
+
+
+def test_an_unanswered_question_needs_no_recalibration(
+    client, head, session, monkeypatch  # noqa: F811
+):
+    """It has no parameters, but it has no answers either, so it says nothing
+    about anyone yet: the stored parameters still do."""
+    from app.calibration import calibrate_strand
+
+    strand = session.scalar(select(Strand))
+    calibrate_strand(session, strand.strand_id)
+    _add_unanswered_question(session, strand)
+    calls = _count_calibrations(monkeypatch)
+
+    _thetas(client, head, the_class(session))
+    assert calls["n"] == 0
+
+
+def test_an_answered_question_without_parameters_makes_the_heatmap_calibrate(
+    client, head, session, monkeypatch  # noqa: F811
+):
+    """All or nothing for answered questions: abilities cannot be estimated
+    from a mix of stored and missing parameters, so the strand is calibrated
+    afresh rather than shown with answers left out."""
+    from app.calibration import calibrate_strand
+
+    strand = session.scalar(select(Strand))
+    calibrate_strand(session, strand.strand_id)
+    item = session.scalar(select(Item).where(Item.strand_id == strand.strand_id))
+    item.difficulty_b = item.discrimination_a = None
+    session.commit()
+    calls = _count_calibrations(monkeypatch)
+
+    _thetas(client, head, the_class(session))
+    assert calls["n"] == 1
+
+
+def test_recalibrating_leaves_an_unanswered_question_uncalibrated(
+    session,  # noqa: F811
+):
+    from app.calibration import calibrate_strand
+
+    strand = session.scalar(select(Strand))
+    item = _add_unanswered_question(session, strand)
+
+    result = calibrate_strand(session, strand.strand_id)
+    session.refresh(item)
+    assert result["items_calibrated"] == 12
+    assert result["items_not_yet_answered"] == 1
+    assert item.difficulty_b is None and item.discrimination_a is None
 
 
 def test_a_withdrawn_learner_is_absent_from_the_heatmap(client, head, session):  # noqa: F811

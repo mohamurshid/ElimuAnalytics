@@ -77,14 +77,52 @@ def validate_matrix(responses: np.ndarray, n_items: int, n_students: int) -> np.
     return responses.astype(int)
 
 
+def answered_items(matrix: np.ndarray) -> np.ndarray:
+    """True for each item (row) at least one learner has answered."""
+    return (matrix != INVALID_RESPONSE).any(axis=1)
+
+
 def calibrate(responses: np.ndarray, n_items: int, n_students: int) -> dict:
-    """Estimate item difficulty and discrimination for one strand."""
+    """Estimate item difficulty and discrimination for one strand.
+
+    An item nobody has answered yet carries no information, and girth fails
+    outright on one (found 24 October: a question approved after the class
+    had answered the others took down the heatmap). So it is left out, and
+    its parameters come back as NaN until it has answers.
+    """
     matrix = validate_matrix(responses, n_items, n_students)
-    result = twopl_mml(matrix)
-    return {
-        "difficulty": np.asarray(result["Difficulty"], dtype=float),
-        "discrimination": np.asarray(result["Discrimination"], dtype=float),
-    }
+    rows = answered_items(matrix)
+    difficulty = np.full(n_items, np.nan)
+    discrimination = np.full(n_items, np.nan)
+    if rows.any():
+        result = twopl_mml(matrix[rows])
+        difficulty[rows] = np.asarray(result["Difficulty"], dtype=float)
+        discrimination[rows] = np.asarray(result["Discrimination"], dtype=float)
+    return {"difficulty": difficulty, "discrimination": discrimination}
+
+
+def estimate_abilities(matrix: np.ndarray, params: dict) -> np.ndarray:
+    """EAP ability for every learner, from the items that have answers and
+    parameters. Items without either say nothing about anyone."""
+    difficulty = np.asarray(params["difficulty"], dtype=float)
+    discrimination = np.asarray(params["discrimination"], dtype=float)
+    rows = answered_items(matrix) & ~np.isnan(difficulty) & ~np.isnan(discrimination)
+    if not rows.any():
+        return np.zeros(matrix.shape[1])
+    return np.asarray(
+        ability_eap(matrix[rows], difficulty[rows], discrimination[rows]), dtype=float
+    )
+
+
+def _usable(params: dict | None, matrix: np.ndarray) -> bool:
+    """Stored parameters will do only if every answered item has them."""
+    if params is None:
+        return False
+    rows = answered_items(matrix)
+    return not (
+        np.isnan(np.asarray(params["difficulty"], dtype=float)[rows]).any()
+        or np.isnan(np.asarray(params["discrimination"], dtype=float)[rows]).any()
+    )
 
 
 def responses_answered(responses: np.ndarray, student_index: int) -> int:
@@ -100,7 +138,12 @@ def tier_for(theta: float) -> str:
     return TIER_CUTS[-1][1]
 
 
-def diagnose_all(responses: np.ndarray, n_items: int, n_students: int) -> list[dict]:
+def diagnose_all(
+    responses: np.ndarray,
+    n_items: int,
+    n_students: int,
+    params: dict | None = None,
+) -> list[dict]:
     """Diagnose every learner from ONE calibration.
 
     `diagnose` calibrates the strand each time it is called, which is correct
@@ -108,12 +151,17 @@ def diagnose_all(responses: np.ndarray, n_items: int, n_students: int) -> list[d
     forty calibrations of the same matrix. Calibration is a property of the
     strand, not of the learner, so it happens once here and the EAP step is
     vectorised across the class.
+
+    `params` are stored item parameters (`difficulty`, `discrimination`, in
+    the matrix's row order, NaN where an item has none). If every answered
+    item has them, nothing is calibrated: the EAP step
+    alone takes about 3 ms for a class, against 1 to 3 s for one calibration
+    (measured 24 October, 12 to 50 items x 40 learners).
     """
     matrix = validate_matrix(responses, n_items, n_students)
-    params = calibrate(matrix, n_items, n_students)
-    abilities = np.asarray(
-        ability_eap(matrix, params["difficulty"], params["discrimination"]), dtype=float
-    )
+    if not _usable(params, matrix):
+        params = calibrate(matrix, n_items, n_students)
+    abilities = estimate_abilities(matrix, params)
 
     out = []
     for idx in range(n_students):
@@ -169,8 +217,7 @@ def diagnose(
         }
 
     params = calibrate(matrix, n_items, n_students)
-    abilities = ability_eap(matrix, params["difficulty"], params["discrimination"])
-    theta = float(np.asarray(abilities, dtype=float)[student_index])
+    theta = float(estimate_abilities(matrix, params)[student_index])
     confident = answered >= CONFIDENT_RESPONSES
 
     return {

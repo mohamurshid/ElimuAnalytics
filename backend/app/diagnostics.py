@@ -56,6 +56,10 @@ class StrandOut(BaseModel):
     grade: str | None = None
     learning_area: str | None = None
     curriculum_key: str | None = None
+    # A class at the caller's school assessed on it, so a school-wide list
+    # can link to the strand's page, which lives under a class. Only filled
+    # by GET /api/strands.
+    class_id: str | None = None
 
 
 class CellOut(BaseModel):
@@ -131,11 +135,21 @@ def strand_out(session: Session, strand: Strand) -> StrandOut:
 def _cells_for_class(
     session: Session, class_id: uuid.UUID, strands: list[Strand]
 ) -> tuple[list[Student], dict[uuid.UUID, list[CellOut]]]:
-    """One calibration per strand for the whole class, never one per learner.
+    """At most one calibration per strand for the whole class, never one per
+    learner - and none at all once the strand has been calibrated.
 
     This is the Phase 2 performance finding applied to a read path: calibration
     is a property of the strand, so a forty-learner heatmap costs one
     calibration per strand rather than forty.
+
+    Then the 24 October finding: even one calibration per strand made the
+    heatmap take 5 to 7 seconds, because it ran on every page load (1 to 3 s
+    a strand). So the parameters Recalibrate saved are used when every
+    question in the strand has them, and only abilities are estimated. A
+    strand with a question not yet calibrated is still calibrated here, so
+    it shows levels rather than nothing. Levels move with new answers either
+    way; question parameters move only when the strand is recalibrated, as
+    calibration.py intends.
     """
     learners = repo.classroom_students(session, class_id)
     by_student: dict[uuid.UUID, list[CellOut]] = {s.student_id: [] for s in learners}
@@ -146,7 +160,12 @@ def _cells_for_class(
         )
         if not item_ids or not student_ids:
             continue
-        results = diagnose_all(matrix, len(item_ids), len(student_ids))
+        results = diagnose_all(
+            matrix,
+            len(item_ids),
+            len(student_ids),
+            params=repo.stored_parameters(session, item_ids),
+        )
         for idx, student_id in enumerate(student_ids):
             if student_id not in by_student:
                 continue
@@ -176,7 +195,13 @@ def list_strands(
     every school's choices - harmless while there was one strand, noise
     with many.
     """
-    return [strand_out(session, s) for s in repo.school_strands(session, teacher.school_id)]
+    classes = repo.school_strand_classes(session, teacher.school_id)
+    out = []
+    for strand in repo.school_strands(session, teacher.school_id):
+        row = strand_out(session, strand)
+        row.class_id = classes.get(strand.strand_id)
+        out.append(row)
+    return out
 
 
 @router.get("/students/{student_id}/diagnostics", response_model=LearnerDiagnosticsOut)

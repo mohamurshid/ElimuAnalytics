@@ -68,6 +68,21 @@ def school_strands(session: Session, school_id: uuid.UUID) -> list[Strand]:
     return sorted(strands, key=curriculum_order)
 
 
+def school_strand_classes(session: Session, school_id: uuid.UUID) -> dict:
+    """strand_id -> the id of one current class at the school assessed on it
+    (the lowest grade, then name, so the choice is stable)."""
+    rows = session.execute(
+        select(ClassStrand.strand_id, Classroom.class_id)
+        .join(Classroom, Classroom.class_id == ClassStrand.class_id)
+        .where(Classroom.school_id == school_id, Classroom.is_active.is_(True))
+        .order_by(Classroom.grade, Classroom.name, Classroom.class_id)
+    ).all()
+    first: dict = {}
+    for strand_id, class_id in rows:
+        first.setdefault(strand_id, str(class_id))
+    return first
+
+
 def get_strand(session: Session, strand_id: uuid.UUID) -> Strand | None:
     return session.get(Strand, strand_id)
 
@@ -132,6 +147,31 @@ def build_response_matrix(
         matrix[r, c] = 1 if correct else 0  # boolean -> integer, deliberately
 
     return matrix, item_ids, student_ids
+
+
+def stored_parameters(session: Session, item_ids: list[uuid.UUID]) -> dict | None:
+    """The saved difficulty and discrimination of these items, in this order,
+    NaN where an item has not been calibrated. None if there are no items.
+
+    The IRT engine decides whether they will do: an unanswered item without
+    parameters is fine, an answered one means the strand is calibrated
+    afresh (irt.diagnose_all).
+    """
+    if not item_ids:
+        return None
+    rows = {
+        item_id: (b, a)
+        for item_id, b, a in session.execute(
+            select(Item.item_id, Item.difficulty_b, Item.discrimination_a).where(
+                Item.item_id.in_(item_ids)
+            )
+        )
+    }
+    pairs = [rows.get(i) or (None, None) for i in item_ids]
+    return {
+        "difficulty": np.array([np.nan if b is None else b for b, _ in pairs], dtype=float),
+        "discrimination": np.array([np.nan if a is None else a for _, a in pairs], dtype=float),
+    }
 
 
 def diagnose_student(

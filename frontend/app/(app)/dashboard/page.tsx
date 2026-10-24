@@ -14,6 +14,12 @@
  * card renders straight away with its name and count, and its bar arrives
  * when it arrives.
  *
+ * **Waiting for review** (24 October): drafts for any teacher, and for a
+ * head teacher the reported questions too. A report takes a question out of
+ * quizzes and levels until a head teacher decides, and before this the only
+ * sign of one was a badge on that strand's own page - a page a head teacher
+ * has no reason to open.
+ *
  * This page replaced a Stage 1 placeholder whose only job was to prove the
  * sign-in chain worked; its explanation of the refresh cookie was written for
  * whoever was testing it, not for a teacher.
@@ -83,6 +89,89 @@ function ClassCard({ classroom }: { classroom: Classroom }) {
   );
 }
 
+/**
+ * Questions waiting on someone, with a way to each. Hidden when nothing is.
+ * Drafts wait on any teacher; reported questions only on a head teacher,
+ * who alone can keep, edit or retire one.
+ */
+function Waiting({ strands, isHead }: { strands: Strand[]; isHead: boolean }) {
+  const reported = isHead ? strands.filter((s) => s.reported_items > 0 && s.class_id) : [];
+  const drafts = strands.filter((s) => s.draft_items > 0 && s.class_id);
+  const reportedCount = reported.reduce((n, s) => n + s.reported_items, 0);
+  const draftCount = drafts.reduce((n, s) => n + s.draft_items, 0);
+  if (reportedCount === 0 && draftCount === 0) return null;
+
+  const name = (s: Strand) => {
+    const [strand, sub] = s.name.split(" / ");
+    return sub ?? strand;
+  };
+
+  return (
+    <section aria-labelledby="waiting-heading">
+      <h2 id="waiting-heading" className="mb-3 text-lg font-semibold text-ink">
+        Waiting for review
+      </h2>
+      <Card className="overflow-hidden">
+        {reportedCount > 0 && (
+          <div className="border-b border-line px-4 py-3 last:border-b-0">
+            <p className="text-[15px] font-semibold text-ink">
+              {plural(reportedCount, "reported question", "reported questions")}
+            </p>
+            <p className="mt-0.5 text-sm text-ink-muted">
+              Out of quizzes and levels until you keep, edit or retire{" "}
+              {reportedCount === 1 ? "it" : "them"}.
+            </p>
+            <ul className="mt-2 space-y-1">
+              {reported.map((s) => (
+                <li key={s.strand_id}>
+                  <Link
+                    href={`/classrooms/${s.class_id}/strands/${s.strand_id}`}
+                    className="flex min-h-11 items-center justify-between gap-3 rounded-md
+                               px-2 hover:bg-sunken"
+                  >
+                    <span className="min-w-0 truncate text-[15px] text-ink">{name(s)}</span>
+                    <span className="flex shrink-0 items-center gap-2">
+                      <Badge tone="risk">{s.reported_items}</Badge>
+                      <span aria-hidden="true" className="text-ink-subtle">›</span>
+                    </span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {draftCount > 0 && (
+          <div className="px-4 py-3">
+            <p className="text-[15px] font-semibold text-ink">
+              {plural(draftCount, "AI-written question", "AI-written questions")} to review
+            </p>
+            <p className="mt-0.5 text-sm text-ink-muted">
+              None is given to learners until a teacher approves it.
+            </p>
+            <ul className="mt-2 space-y-1">
+              {drafts.map((s) => (
+                <li key={s.strand_id}>
+                  <Link
+                    href={`/classrooms/${s.class_id}/strands/${s.strand_id}/review`}
+                    className="flex min-h-11 items-center justify-between gap-3 rounded-md
+                               px-2 hover:bg-sunken"
+                  >
+                    <span className="min-w-0 truncate text-[15px] text-ink">{name(s)}</span>
+                    <span className="flex shrink-0 items-center gap-2">
+                      <Badge tone="warn">{s.draft_items}</Badge>
+                      <span aria-hidden="true" className="text-ink-subtle">›</span>
+                    </span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </Card>
+    </section>
+  );
+}
+
 export default function OverviewPage() {
   const { profile } = useAuth();
   const [flags, setFlags] = useState<Loadable<Flag[]>>(null);
@@ -110,6 +199,8 @@ export default function OverviewPage() {
     };
   }, []);
 
+  const isHead = profile ? profile.role !== "teacher" : false;
+  const strandList = strands && "data" in strands ? strands.data : [];
   const supportCount = flags && "data" in flags ? flags.data.length : null;
   const classList = classes && "data" in classes ? classes.data.filter((c) => c.is_active) : null;
   const firstName = profile?.name?.split(" ")[0];
@@ -146,6 +237,8 @@ export default function OverviewPage() {
             <span aria-hidden="true" className="text-xl text-ink-subtle">›</span>
           </span>
         </Link>
+
+        <Waiting strands={strandList} isHead={isHead} />
 
         <section aria-labelledby="classes-heading">
           <h2 id="classes-heading" className="mb-3 text-lg font-semibold text-ink">
@@ -189,8 +282,8 @@ export default function OverviewPage() {
               {strands.data.map((s) => {
                 const [strandName, sub] = s.name.split(" / ");
                 const calibrated = s.calibrated_items > 0;
-                return (
-                  <li key={s.strand_id} className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3">
+                const body = (
+                  <>
                     <span className="min-w-0">
                       <span className="block font-semibold text-ink">{sub ?? strandName}</span>
                       <span className="block text-sm text-ink-muted">
@@ -198,12 +291,34 @@ export default function OverviewPage() {
                         {plural(s.active_items, "question", "questions")}
                       </span>
                     </span>
-                    {/* Calibration is system state, so the semantic colours
-                        apply here - they never touch a learner. */}
-                    {calibrated ? (
-                      <Badge tone="ok">{s.calibrated_items} calibrated</Badge>
+                    {/* Calibration and review are system state, so the semantic
+                        colours apply here - they never touch a learner. */}
+                    <span className="flex flex-wrap gap-1.5">
+                      {isHead && s.reported_items > 0 && (
+                        <Badge tone="risk">{s.reported_items} reported</Badge>
+                      )}
+                      {s.draft_items > 0 && <Badge tone="warn">{s.draft_items} to review</Badge>}
+                      {calibrated ? (
+                        <Badge tone="ok">{s.calibrated_items} calibrated</Badge>
+                      ) : (
+                        <Badge tone="warn">Not calibrated</Badge>
+                      )}
+                    </span>
+                  </>
+                );
+                const row =
+                  "flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3";
+                return (
+                  <li key={s.strand_id}>
+                    {s.class_id ? (
+                      <Link
+                        href={`/classrooms/${s.class_id}/strands/${s.strand_id}`}
+                        className={`${row} min-h-14 hover:bg-sunken`}
+                      >
+                        {body}
+                      </Link>
                     ) : (
-                      <Badge tone="warn">Not calibrated</Badge>
+                      <div className={row}>{body}</div>
                     )}
                   </li>
                 );

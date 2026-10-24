@@ -44,6 +44,8 @@ export type Strand = {
   grade: string | null;
   learning_area: string | null;
   curriculum_key: string | null;
+  /** A class at this school assessed on it - only from GET /api/strands. */
+  class_id?: string | null;
 };
 
 /** The curriculum catalogue: what a class can be assessed on. */

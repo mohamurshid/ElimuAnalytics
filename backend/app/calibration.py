@@ -62,20 +62,30 @@ def calibrate_strand(
     discrimination = np.asarray(params["discrimination"], dtype=float)
 
     low_discrimination = []
+    unanswered = 0
     for n, item_id in enumerate(item_ids):
         item = session.get(Item, item_id)
+        if np.isnan(difficulty[n]) or np.isnan(discrimination[n]):
+            # Nobody has answered it yet: nothing to estimate from.
+            item.difficulty_b = item.discrimination_a = None
+            unanswered += 1
+            continue
         item.difficulty_b = float(difficulty[n])
         item.discrimination_a = float(discrimination[n])
         if item.discrimination_a < MIN_DISCRIMINATION:
             low_discrimination.append(item_id)
     session.commit()
 
+    calibrated = len(item_ids) - unanswered
     return {
         "strand_id": str(strand_id),
-        "items_calibrated": len(item_ids),
+        "items_calibrated": calibrated,
+        "items_not_yet_answered": unanswered,
         "students_in_calibration": len(student_ids),
-        "mean_difficulty": round(float(difficulty.mean()), 3),
-        "mean_discrimination": round(float(discrimination.mean()), 3),
+        "mean_difficulty": round(float(np.nanmean(difficulty)), 3) if calibrated else None,
+        "mean_discrimination": (
+            round(float(np.nanmean(discrimination)), 3) if calibrated else None
+        ),
         "low_discrimination_items": [str(i) for i in low_discrimination],
         "low_discrimination_count": len(low_discrimination),
     }

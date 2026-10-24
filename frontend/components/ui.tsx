@@ -272,3 +272,28 @@ export function Badge({
     </span>
   );
 }
+
+/** A labelled drop-down at touch size, styled like Field. */
+export function Select({
+  label,
+  hint,
+  children,
+  ...props
+}: React.SelectHTMLAttributes<HTMLSelectElement> & {
+  label: string;
+  hint?: string;
+}) {
+  return (
+    <label className="block min-w-0">
+      <span className="text-sm font-medium text-ink">{label}</span>
+      <select
+        {...props}
+        className="mt-1.5 block min-h-11 w-full rounded-md border border-line-strong
+                   bg-surface px-3 text-base text-ink focus:border-ink focus:outline-none"
+      >
+        {children}
+      </select>
+      {hint && <span className="mt-1.5 block text-sm text-ink-subtle">{hint}</span>}
+    </label>
+  );
+}

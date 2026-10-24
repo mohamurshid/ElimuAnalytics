@@ -11,8 +11,16 @@
  * session that can reach the competency heatmap - every classmate's ability
  * estimate, by name. So quiz mode is a containment boundary, not a page: no
  * navigation chrome, the browser's back button trapped, and leaving requires
- * the teacher's password. "A child could see other children's scores" is a
- * disclosure, not a cosmetic problem.
+ * a PIN the teacher chose when starting. "A child could see other children's
+ * scores" is a disclosure, not a cosmetic problem.
+ *
+ * **A session PIN, not the account password** (24 October). Unlocking used to
+ * sign in again with the teacher's password - but a teacher who signs in
+ * with Google has no password, and would have been stuck in quiz mode. The
+ * PIN is chosen when the session starts and lives only in this page. It is
+ * no weaker than before: the lock was always this page's to enforce, and
+ * closing the browser ends it either way. A teacher with a password can
+ * still use it if they forget the PIN.
  *
  * **Identity is the teacher selecting a name before handing the device over.**
  * There are no learner accounts and no child PINs: issuing credentials to
@@ -34,7 +42,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
 import { type QuizLength, QuizLengthPicker } from "@/components/QuizLength";
-import { Button, Field, Loading, Note } from "@/components/ui";
+import { Button, Card, Field, Loading, Note, PageHeader, Select } from "@/components/ui";
 import { api, ApiError, errorMessage, login } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import type {
@@ -84,7 +92,13 @@ export default function AdministerPage() {
   const [done, setDone] = useState<Set<string>>(new Set());
   const [batchId, setBatchId] = useState(newBatchId);
 
+  // The session PIN: chosen at the start, needed to leave. Never sent anywhere.
+  const [pin, setPin] = useState("");
+  const [sessionPin, setSessionPin] = useState("");
+  const [attempt, setAttempt] = useState("");
+  const [usePassword, setUsePassword] = useState(false);
   const [password, setPassword] = useState("");
+
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -114,7 +128,6 @@ export default function AdministerPage() {
     () =>
       Promise.all([
         api.get<Classroom[]>("/api/classrooms"),
-        // Only the class's strands, and only those with questions to ask.
         api.get<Strand[]>(`/api/classrooms/${classId}/strands`),
         api.get<Student[]>(`/api/classrooms/${classId}/students`),
       ]),
@@ -152,9 +165,15 @@ export default function AdministerPage() {
   }, [fetchContext, classId]);
 
   /* --- session control -------------------------------------------------- */
-  async function start() {
+  async function start(event: React.FormEvent) {
+    event.preventDefault();
+    if (!/^\d{4}$/.test(pin)) {
+      setError("Choose a 4-digit PIN. You’ll need it to leave quiz mode.");
+      return;
+    }
     setBusy(true);
     setError(null);
+    setNotice(null);
     try {
       // A saved quiz: the server chooses the questions once, so every
       // learner handed the device in this session gets the same set.
@@ -164,14 +183,12 @@ export default function AdministerPage() {
           length,
           mode: "device",
         }),
-        api.get<AnsweredPairs>(
-          `/api/assessments/answered/${classId}/${strandId}`,
-        ),
+        api.get<AnsweredPairs>(`/api/assessments/answered/${classId}/${strandId}`),
       ]);
       if (loaded.items.length === 0) {
         setError(
-          "No items in this strand have answer options, so none can be " +
-            "answered on a device. A teacher can still mark them on the roll.",
+          "None of this strand’s questions has answer options, so none can be " +
+            "answered on a device. Use a paper quiz instead.",
         );
         return;
       }
@@ -180,6 +197,8 @@ export default function AdministerPage() {
       setAnswers([]);
       setDone(new Set());
       setBatchId(newBatchId());
+      setSessionPin(pin);
+      setPin("");
       setPhase("roster");
     } catch (e) {
       setError(errorMessage(e, "Could not load the quiz"));
@@ -219,9 +238,7 @@ export default function AdministerPage() {
     ]);
     // Held locally AND marked as taken, so a second hand-over in the same
     // session cannot ask the same question twice.
-    setAnswered((current) =>
-      new Set(current).add(`${learner.student_id}:${item.item_id}`),
-    );
+    setAnswered((current) => new Set(current).add(`${learner.student_id}:${item.item_id}`));
 
     if (position + 1 < queue.length) {
       setPosition(position + 1);
@@ -247,8 +264,8 @@ export default function AdministerPage() {
         responses: answers,
       });
       setNotice(
-        `${receipt.detail} ${done.size} learner(s) answered. Run an ` +
-          "assessment on the heatmap to fold these into ability estimates.",
+        `${receipt.detail} ${done.size} ${done.size === 1 ? "learner" : "learners"} ` +
+          "answered. Use Record levels on the class page to update their levels.",
       );
       setAnswers([]);
       setDone(new Set());
@@ -263,12 +280,29 @@ export default function AdministerPage() {
     }
   }
 
-  /** Leaving requires proving the teacher is the one holding the device. */
+  function backToQuiz() {
+    setAttempt("");
+    setPassword("");
+    setUsePassword(false);
+    setError(null);
+    setPhase("roster");
+  }
+
+  /** Leaving needs the session PIN - or, if forgotten, the account password. */
   async function unlock(event: React.FormEvent) {
     event.preventDefault();
+    setError(null);
+    if (!usePassword) {
+      if (attempt === sessionPin) {
+        router.replace(`/classrooms/${classId}`);
+      } else {
+        setAttempt("");
+        setError("That PIN is not right. Still in quiz mode.");
+      }
+      return;
+    }
     if (!profile) return;
     setBusy(true);
-    setError(null);
     try {
       await login(profile.email, password);
       setPassword("");
@@ -284,56 +318,46 @@ export default function AdministerPage() {
   const title = classroom
     ? `${classroom.grade}${classroom.name ? ` ${classroom.name}` : ""}`
     : "Classroom";
+  const chosen = strands.find((s) => s.strand_id === strandId);
 
   /* --- setup: the only phase with a way out ---------------------------- */
   if (!inSession) {
     return (
       <>
-        <h1 className="text-2xl font-semibold">{title} — administer a quiz</h1>
-        <p className="mt-1 max-w-2xl text-sm text-neutral-600">
-          Learners answer on this device, one at a time. You select who is
-          answering before handing it over, and the tablet stays locked in quiz
-          mode until you enter your password — so nobody can reach another
-          learner&apos;s results from it.
-        </p>
+        <PageHeader
+          back={{ href: `/classrooms/${classId}`, label: title }}
+          title="Quiz on this device"
+          description="Learners answer on this phone or tablet, one at a time. You choose who is answering before handing it over, and it stays in quiz mode until you enter your PIN — so no learner can reach anyone’s results from it."
+        />
 
-        <div className="mt-4 space-y-3">
+        <div className="space-y-3">
           <Note tone="error">{error}</Note>
-          <Note>{notice}</Note>
+          <Note tone="ok">{notice}</Note>
         </div>
 
-        {!ready && (
-          <div className="mt-6">
-            <Loading what="the class" />
-          </div>
-        )}
+        {!ready && <Loading what="the class" />}
 
         {ready && !strands.some((s) => s.active_items > 0) && (
-          <div className="mt-6">
+          <div className="mt-4">
             <Note>
-              This class has no strands with questions yet. Add a strand on the class page; questions for it come with question generation.
-            </Note>
-          </div>
-        )}
-
-        {ready && strands.some((s) => s.active_items === 0) && (
-          <div className="mt-6">
-            <Note>
-              A greyed-out strand can’t be quizzed until it has approved
-              questions. Questions written for it wait for a teacher’s review first.
+              This class has no strands with approved questions yet. Open a strand on the
+              class page to write questions or have the AI write some.
             </Note>
           </div>
         )}
 
         {ready && strands.length > 0 && (
-          <div className="mt-6 flex flex-wrap items-end gap-4">
-            <label className="text-sm">
-              <span className="font-medium">Strand</span>
-              <select
+          <Card className="mt-4 p-4">
+            <form onSubmit={start} className="space-y-5">
+              <Select
+                label="Strand"
                 value={strandId}
                 onChange={(e) => setStrandId(e.target.value)}
-                className="mt-1 block rounded border border-neutral-300 px-3
-                           py-1.5 text-sm"
+                hint={
+                  strands.some((s) => s.active_items === 0)
+                    ? "A greyed-out strand has no approved questions yet."
+                    : undefined
+                }
               >
                 {strands.map((s) => (
                   // Listed even when empty, so a strand just added does not seem to
@@ -346,17 +370,30 @@ export default function AdministerPage() {
                         : " — no questions yet")}
                   </option>
                 ))}
-              </select>
-            </label>
-            <QuizLengthPicker
-              value={length}
-              onChange={setLength}
-              available={strands.find((s) => s.strand_id === strandId)?.active_items}
-            />
-            <Button disabled={busy || !strandId} onClick={start}>
-              Start quiz session
-            </Button>
-          </div>
+              </Select>
+
+              <QuizLengthPicker
+                value={length}
+                onChange={setLength}
+                available={chosen?.active_items}
+              />
+
+              <Field
+                label="Choose a 4-digit PIN"
+                hint="You’ll need it to leave quiz mode. Don’t let learners see it."
+                type="password"
+                inputMode="numeric"
+                autoComplete="off"
+                maxLength={4}
+                value={pin}
+                onChange={(e) => setPin(e.target.value.replace(/\D/g, "").slice(0, 4))}
+              />
+
+              <Button type="submit" disabled={busy || !strandId} className="w-full sm:w-auto">
+                {busy ? "Starting…" : "Start quiz"}
+              </Button>
+            </form>
+          </Card>
         )}
       </>
     );
@@ -364,15 +401,17 @@ export default function AdministerPage() {
 
   /* --- in session: no chrome, no links, no way back -------------------- */
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-[var(--background)]">
-      <div className="mx-auto max-w-2xl px-6 py-10">
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-canvas">
+      <div className="mx-auto max-w-2xl px-4 py-8 sm:px-6 sm:py-10">
         {phase === "roster" && quiz && (
           <>
-            <p className="text-sm text-neutral-500">
+            <p className="text-sm text-ink-muted">
               {title} · {quiz.strand} · {quiz.items.length} questions
             </p>
-            <h1 className="mt-1 text-2xl font-semibold">Who is answering?</h1>
-            <p className="mt-1 text-sm text-neutral-600">
+            <h1 className="mt-1 text-2xl font-semibold tracking-tight text-ink">
+              Who is answering?
+            </h1>
+            <p className="mt-1 text-[15px] text-ink-muted">
               Tap a name, then hand the device to that learner.
             </p>
 
@@ -380,7 +419,7 @@ export default function AdministerPage() {
               <Note tone="error">{error}</Note>
             </div>
 
-            <ul className="mt-6 grid grid-cols-2 gap-2 sm:grid-cols-3">
+            <ul className="mt-5 grid grid-cols-2 gap-2 sm:grid-cols-3">
               {roll.map((student) => {
                 const left = remainingFor(student).length;
                 const justFinished = done.has(student.student_id);
@@ -391,20 +430,20 @@ export default function AdministerPage() {
                       type="button"
                       disabled={nothingLeft}
                       onClick={() => handOver(student)}
-                      className={`w-full rounded border px-3 py-3 text-left text-sm
-                        ${
-                          nothingLeft
-                            ? "cursor-not-allowed border-neutral-200 bg-neutral-100 text-neutral-400"
-                            : "border-neutral-300 bg-white hover:bg-neutral-100"
-                        }`}
+                      className={`flex min-h-16 w-full flex-col justify-center rounded-md border
+                                  px-3 py-2.5 text-left transition-colors ${
+                                    nothingLeft
+                                      ? "cursor-not-allowed border-line bg-sunken text-ink-subtle"
+                                      : "border-line-strong bg-surface text-ink hover:bg-sunken"
+                                  }`}
                     >
-                      {student.name}
-                      <span className="block text-xs">
+                      <span className="text-[15px] font-medium">{student.name}</span>
+                      <span className="mt-0.5 text-sm text-ink-muted">
                         {justFinished
-                          ? "answered just now"
+                          ? "Finished just now"
                           : nothingLeft
-                            ? "already answered these questions"
-                            : `${left} question(s) left`}
+                            ? "Already answered"
+                            : `${left} ${left === 1 ? "question" : "questions"} left`}
                       </span>
                     </button>
                   </li>
@@ -413,24 +452,29 @@ export default function AdministerPage() {
             </ul>
 
             {roll.every((s) => remainingFor(s).length === 0) && (
-              <p className="mt-4 text-sm text-neutral-600">
-                Every learner has already answered every question in this quiz.
-                Nothing further can be recorded here — one response per learner
-                and item is all the measurement allows.
-              </p>
+              <div className="mt-4">
+                <Note>
+                  Every learner has already answered every question in this quiz. Each
+                  learner answers a question once, so nothing more can be recorded here.
+                </Note>
+              </div>
             )}
 
-            <div className="mt-8 flex flex-wrap items-center gap-3 border-t
-                            border-neutral-200 pt-6">
-              <Button disabled={busy} onClick={endSession}>
-                {busy ? "Submitting…" : `End session (${answers.length} answers)`}
-              </Button>
-              <Button variant="secondary" onClick={() => setPhase("locked")}>
-                Leave quiz mode
-              </Button>
-              <p className="w-full text-xs text-neutral-500">
-                Answers are held on this device until you end the session.
-                Ending it records them and returns you here.
+            <div className="mt-8 space-y-3 border-t border-line pt-6">
+              <div className="flex flex-wrap gap-2">
+                <Button disabled={busy} onClick={endSession}>
+                  {busy
+                    ? "Saving…"
+                    : answers.length === 0
+                      ? "End session"
+                      : `Save ${answers.length} ${answers.length === 1 ? "answer" : "answers"} and end`}
+                </Button>
+                <Button variant="secondary" onClick={() => setPhase("locked")}>
+                  Leave quiz mode
+                </Button>
+              </div>
+              <p className="text-sm text-ink-muted">
+                Answers stay on this device until you end the session, which saves them.
               </p>
             </div>
           </>
@@ -438,26 +482,21 @@ export default function AdministerPage() {
 
         {phase === "answering" && learner && queue[position] && (
           <>
-            <div className="flex items-baseline justify-between">
-              <p className="text-sm font-medium">{learner.name}</p>
-              <p className="text-sm text-neutral-500">
+            <div className="flex items-baseline justify-between gap-3">
+              <p className="text-[15px] font-medium text-ink">{learner.name}</p>
+              <p className="text-sm text-ink-muted">
                 Question {position + 1} of {queue.length}
               </p>
             </div>
 
-            <div
-              aria-hidden
-              className="mt-2 h-1 w-full rounded bg-neutral-200"
-            >
+            <div aria-hidden className="mt-2 h-1.5 w-full rounded-full bg-sunken">
               <div
-                className="h-1 rounded bg-neutral-900"
-                style={{
-                  width: `${((position + 1) / queue.length) * 100}%`,
-                }}
+                className="h-1.5 rounded-full bg-action transition-[width]"
+                style={{ width: `${((position + 1) / queue.length) * 100}%` }}
               />
             </div>
 
-            <h1 className="mt-8 text-xl font-medium">
+            <h1 className="mt-8 text-xl font-medium leading-snug text-ink sm:text-2xl">
               {queue[position].question_text}
             </h1>
 
@@ -467,13 +506,17 @@ export default function AdministerPage() {
                   <button
                     type="button"
                     onClick={() => answer(index)}
-                    className="w-full rounded border border-neutral-300 bg-white
-                               px-4 py-4 text-left hover:bg-neutral-100"
+                    className="flex min-h-14 w-full items-center gap-3 rounded-md border
+                               border-line-strong bg-surface px-4 py-3 text-left text-[17px]
+                               text-ink transition-colors hover:bg-sunken active:bg-sunken"
                   >
-                    <span className="mr-3 font-medium text-neutral-500">
+                    <span
+                      className="flex size-8 shrink-0 items-center justify-center rounded-full
+                                 border border-line-strong text-sm font-semibold text-ink-muted"
+                    >
                       {String.fromCharCode(65 + index)}
                     </span>
-                    {option}
+                    <span className="min-w-0">{option}</span>
                   </button>
                 </li>
               ))}
@@ -482,17 +525,19 @@ export default function AdministerPage() {
             {/* No "back" and no "skip": a child correcting an earlier answer
                 after seeing a later question is a different measurement, and
                 there is no teacher watching the screen to adjudicate. */}
-            <p className="mt-8 text-xs text-neutral-500">
-              Choose the answer you think is right. You will not be told
-              whether it was correct.
+            <p className="mt-8 text-sm text-ink-muted">
+              Choose the answer you think is right. You won’t be told whether it was correct.
             </p>
           </>
         )}
 
         {phase === "handback" && learner && (
           <div className="py-20 text-center">
-            <h1 className="text-2xl font-semibold">Finished, {learner.name}.</h1>
-            <p className="mt-2 text-neutral-600">
+            <h1 className="text-2xl font-semibold tracking-tight text-ink">
+              {/* A name may already end in a full stop: "Amina W." */}
+              Finished, {learner.name.replace(/\.$/, "")}.
+            </h1>
+            <p className="mt-2 text-[15px] text-ink-muted">
               Please give the device back to your teacher.
             </p>
             <div className="mt-10">
@@ -504,50 +549,73 @@ export default function AdministerPage() {
         )}
 
         {phase === "locked" && (
-          <form onSubmit={unlock} className="mx-auto max-w-sm py-20">
-            <h1 className="text-xl font-semibold">Leave quiz mode</h1>
-            <p className="mt-1 text-sm text-neutral-600">
-              Enter the password for {profile?.email} to return to the rest of
-              the application.
+          <form onSubmit={unlock} className="mx-auto max-w-sm py-16">
+            <h1 className="text-xl font-semibold text-ink">Leave quiz mode</h1>
+            <p className="mt-1 text-[15px] text-ink-muted">
+              {usePassword
+                ? `Enter the password for ${profile?.email ?? "your account"}.`
+                : "Enter the PIN you chose when you started this quiz."}
             </p>
 
             <div className="mt-4">
-              <Field
-                label="Password"
-                type="password"
-                required
-                autoComplete="current-password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-              />
+              {usePassword ? (
+                <Field
+                  label="Password"
+                  type="password"
+                  required
+                  autoComplete="current-password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                />
+              ) : (
+                <Field
+                  label="PIN"
+                  type="password"
+                  inputMode="numeric"
+                  autoComplete="off"
+                  maxLength={4}
+                  required
+                  value={attempt}
+                  onChange={(e) => setAttempt(e.target.value.replace(/\D/g, "").slice(0, 4))}
+                />
+              )}
             </div>
 
             <div className="mt-4">
               <Note tone="error">{error}</Note>
             </div>
 
-            <div className="mt-6 flex gap-3">
+            <div className="mt-6 flex flex-wrap gap-2">
               <Button type="submit" disabled={busy}>
                 {busy ? "Checking…" : "Unlock"}
               </Button>
-              <Button
-                type="button"
-                variant="secondary"
-                onClick={() => {
-                  setPassword("");
-                  setError(null);
-                  setPhase("roster");
-                }}
-              >
+              <Button type="button" variant="secondary" onClick={backToQuiz}>
                 Back to the quiz
               </Button>
             </div>
 
+            {!usePassword && (
+              <Button
+                type="button"
+                variant="ghost"
+                className="-ml-3 mt-4"
+                onClick={() => {
+                  setUsePassword(true);
+                  setError(null);
+                }}
+              >
+                Forgot the PIN? Use your password
+              </Button>
+            )}
+
             {answers.length > 0 && (
-              <p className="mt-6 text-xs text-neutral-500">
-                {answers.length} answer(s) are still held and unrecorded. End
-                the session first if you want them kept.
-              </p>
+              <div className="mt-6">
+                <Note tone="warn">
+                  {answers.length === 1 ? "1 answer is" : `${answers.length} answers are`} not
+                  saved yet. Go back to the quiz and end the session to keep{" "}
+                  {answers.length === 1 ? "it" : "them"}.
+                </Note>
+              </div>
             )}
           </form>
         )}

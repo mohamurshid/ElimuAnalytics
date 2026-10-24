@@ -31,7 +31,9 @@ const LETTERS = ["A", "B", "C", "D", "E", "F"];
  * five characters longer than the next longest, so a one-word difference is
  * not flagged.
  */
-export function keyStandsOutByLength(item: Item): boolean {
+export function keyStandsOutByLength(
+  item: Pick<Item, "options" | "correct_option">,
+): boolean {
   const options = item.options ?? [];
   const key = item.correct_option;
   if (key === null || options.length < 2 || !options[key]) return false;
@@ -266,6 +268,209 @@ export function QuestionEditor({
           Cancel
         </Button>
       </div>
+    </form>
+  );
+}
+
+/**
+ * Write a new question from scratch (24 October).
+ *
+ * The teacher's own question is approved as soon as it is saved - its author
+ * is its reviewer, as agreed on 20 October - so it can go into the next quiz.
+ *
+ * Options and the key are required; the note on each wrong option and the
+ * reason the key is right are not (agreed 24 October). They are what makes a
+ * wrong answer diagnostic, but asking for three sentences on a phone is what
+ * would stop a teacher writing questions at all. The AI's questions and any
+ * edit of an existing one still carry them.
+ */
+const START_OPTIONS = 4;
+
+export function QuestionWriter({
+  strandId,
+  onSaved,
+}: {
+  strandId: string;
+  onSaved: (saved: Item) => void;
+}) {
+  const [text, setText] = useState("");
+  const [options, setOptions] = useState<string[]>(Array(START_OPTIONS).fill(""));
+  const [notes, setNotes] = useState<string[]>(Array(START_OPTIONS).fill(""));
+  const [key, setKey] = useState<number | null>(null);
+  const [rationale, setRationale] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  function addOption() {
+    if (options.length >= LETTERS.length) return;
+    setOptions((o) => [...o, ""]);
+    setNotes((m) => [...m, ""]);
+  }
+
+  function removeOption(n: number) {
+    if (options.length <= 2) return;
+    setOptions((o) => o.filter((_, i) => i !== n));
+    setNotes((m) => m.filter((_, i) => i !== n));
+    setKey((k) => (k === null || k === n ? null : k > n ? k - 1 : k));
+  }
+
+  /** What stops it being saved, in the teacher's words - or null. */
+  function problem(): string | null {
+    const cleaned = options.map((o) => o.trim());
+    if (text.trim().length < 5) return "Write the question first.";
+    if (cleaned.some((o) => !o)) return "Fill in every option, or remove the empty one.";
+    if (new Set(cleaned.map((o) => o.toLowerCase())).size !== cleaned.length)
+      return "Two options are the same.";
+    if (key === null) return "Choose which option is correct.";
+    return null;
+  }
+
+  async function save(e: React.FormEvent) {
+    e.preventDefault();
+    const why = problem();
+    if (why) {
+      setError(why);
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const misconceptions = notes.map((m, n) => (n === key || !m.trim() ? null : m.trim()));
+      onSaved(
+        await api.post<Item>("/api/items", {
+          strand_id: strandId,
+          question_text: text.trim(),
+          options: options.map((o) => o.trim()),
+          correct_option: key,
+          misconceptions: misconceptions.some(Boolean) ? misconceptions : null,
+          rationale: rationale.trim() || null,
+        }),
+      );
+    } catch (err) {
+      setError(errorMessage(err, "Could not save the question"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const longKey =
+    key !== null &&
+    options.every((o) => o.trim()) &&
+    keyStandsOutByLength({ options, correct_option: key });
+
+  return (
+    <form onSubmit={save} className="space-y-5" noValidate>
+      <label className="block">
+        <span className="text-sm font-medium text-ink">Question</span>
+        <textarea
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          rows={3}
+          placeholder="For example: Which of these materials is the best conductor of heat?"
+          className="mt-1.5 block w-full rounded-md border border-line-strong bg-surface px-3 py-2
+                     text-base text-ink placeholder:text-ink-subtle"
+        />
+      </label>
+
+      <fieldset className="space-y-3">
+        <legend className="text-sm font-medium text-ink">
+          Options — tap the circle beside the correct one
+        </legend>
+        {options.map((option, n) => (
+          <div
+            key={n}
+            className={`rounded-md border p-3 ${
+              key === n ? "border-ok/40 bg-ok-fill" : "border-line bg-surface"
+            }`}
+          >
+            <div className="flex items-center gap-3">
+              <input
+                type="radio"
+                name="key"
+                checked={key === n}
+                onChange={() => setKey(n)}
+                aria-label={`Option ${LETTERS[n]} is correct`}
+                className="size-5 shrink-0"
+              />
+              <span className="w-4 shrink-0 font-semibold text-ink-muted">{LETTERS[n]}</span>
+              <input
+                value={option}
+                onChange={(e) =>
+                  setOptions((o) => o.map((x, i) => (i === n ? e.target.value : x)))
+                }
+                aria-label={`Option ${LETTERS[n]}`}
+                className="block min-h-11 min-w-0 flex-1 rounded-md border border-line-strong
+                           bg-surface px-3 text-base text-ink"
+              />
+              {options.length > 2 && (
+                <button
+                  type="button"
+                  onClick={() => removeOption(n)}
+                  aria-label={`Remove option ${LETTERS[n]}`}
+                  className="flex size-11 shrink-0 items-center justify-center rounded-md
+                             text-xl text-ink-subtle hover:bg-sunken hover:text-ink"
+                >
+                  ×
+                </button>
+              )}
+            </div>
+            {key === n ? (
+              <p className="mt-2 pl-8 text-sm font-medium text-ok">✓ Correct answer</p>
+            ) : (
+              key !== null && (
+                <label className="mt-2 block pl-8">
+                  <span className="text-sm text-ink-muted">
+                    If chosen, the learner may believe… (optional)
+                  </span>
+                  <textarea
+                    value={notes[n] ?? ""}
+                    rows={2}
+                    onChange={(e) =>
+                      setNotes((m) => m.map((x, i) => (i === n ? e.target.value : x)))
+                    }
+                    className="mt-1 block w-full rounded-md border border-line-strong bg-surface
+                               px-3 py-2 text-base text-ink"
+                  />
+                </label>
+              )
+            )}
+          </div>
+        ))}
+        {options.length < LETTERS.length && (
+          <Button type="button" variant="ghost" size="md" className="-ml-3" onClick={addOption}>
+            + Add an option
+          </Button>
+        )}
+      </fieldset>
+
+      {longKey && (
+        <Note tone="warn">
+          The correct answer is much longer than the others, which can give it away.
+        </Note>
+      )}
+
+      <label className="block">
+        <span className="text-sm font-medium text-ink">
+          Why the correct answer is right (optional)
+        </span>
+        <textarea
+          value={rationale}
+          onChange={(e) => setRationale(e.target.value)}
+          rows={2}
+          className="mt-1.5 block w-full rounded-md border border-line-strong bg-surface px-3 py-2
+                     text-base text-ink"
+        />
+      </label>
+
+      <p className="text-sm text-ink-muted">
+        Your question is approved as soon as you save it, so it can be used in the next
+        quiz. Learners never see which answer is correct or your notes.
+      </p>
+      <Note tone="error">{error}</Note>
+
+      <Button type="submit" disabled={busy} className="w-full sm:w-auto">
+        {busy ? "Saving…" : "Save question"}
+      </Button>
     </form>
   );
 }

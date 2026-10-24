@@ -12,7 +12,8 @@
  *     teacher approves it.
  *   - Writing more shows what is left of the school's daily allowance, and
  *     keeps watching a run that is still being written if the page is
- *     reloaded - a run takes about forty seconds.
+ *     reloaded - a run takes about forty seconds. Or the teacher writes one
+ *     of their own (24 October), which needs no curriculum link.
  *   - The approved questions, each with Report. A report takes a question
  *     out of new quizzes and out of learners' levels at once, until a head
  *     teacher looks at it.
@@ -161,6 +162,7 @@ export default function StrandPage() {
           )}
 
           <WriteCard
+            classId={classId}
             strand={strand}
             generation={generation}
             run={run}
@@ -191,7 +193,7 @@ export default function StrandPage() {
             </h2>
             {approved.length === 0 ? (
               <Card className="p-4 text-sm text-ink-muted">
-                None yet. Write some, then review them.
+                None yet. Write your own, or have the AI write some and review them.
               </Card>
             ) : (
               <Card>
@@ -210,12 +212,14 @@ export default function StrandPage() {
 }
 
 function WriteCard({
+  classId,
   strand,
   generation,
   run,
   writing,
   onWrite,
 }: {
+  classId: string;
   strand: Strand;
   generation: StrandGeneration | null;
   run: GenerationRun | null;
@@ -231,7 +235,7 @@ function WriteCard({
       <h2 className="text-base font-semibold text-ink">Write more questions</h2>
       {!linked ? (
         <p className="mt-1 text-sm text-ink-muted">
-          This strand isn’t linked to the curriculum catalogue, so there is no curriculum
+          This strand isn’t linked to the curriculum catalogue, so the AI has no curriculum
           text to write from.
         </p>
       ) : (
@@ -247,10 +251,23 @@ function WriteCard({
             disabled={writing || left === 0}
             onClick={onWrite}
           >
-            {writing ? "Writing… about 40 seconds" : `Write ${per} questions`}
+            {writing ? "Writing… about 40 seconds" : `Write ${per} questions with AI`}
           </Button>
         </>
       )}
+
+      <div className="mt-4 border-t border-line pt-4">
+        <p className="text-sm text-ink-muted">
+          Or write one yourself. It’s ready to use as soon as you save it.
+        </p>
+        <ButtonLink
+          href={`/classrooms/${classId}/strands/${strand.strand_id}/write`}
+          variant="secondary"
+          className="mt-3"
+        >
+          Write your own question
+        </ButtonLink>
+      </div>
 
       {run && run.status === "ready" && !writing && (
         <div className="mt-4">

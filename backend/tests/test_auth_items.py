@@ -134,6 +134,45 @@ def test_teacher_can_create_an_item(client, teacher, session):  # noqa: F811
     assert r.json()["response_count"] == 0
 
 
+def test_a_teachers_own_question_may_leave_misconceptions_out(
+    client, teacher, session  # noqa: F811
+):
+    """Agreed 24 October for the write-a-question screen: options and key are
+    required, the note on each wrong option is not. Writing three on a phone
+    is what would stop a teacher writing questions at all."""
+    r = client.post(
+        "/api/items",
+        headers=auth(teacher),
+        json={
+            "strand_id": str(session.strand_id),
+            "question_text": "Which material is the best conductor of heat?",
+            "options": ["Wood", "Copper", "Plastic", "Wool"],
+            "correct_option": 1,
+            "misconceptions": ["Thinks hard things conduct heat", None, None, None],
+        },
+    )
+    assert r.status_code == 201
+    assert r.json()["status"] == "approved"
+    assert r.json()["misconceptions"] == ["Thinks hard things conduct heat", None, None, None]
+
+
+def test_a_teachers_own_question_cannot_mark_the_key_as_a_misconception(
+    client, teacher, session  # noqa: F811
+):
+    r = client.post(
+        "/api/items",
+        headers=auth(teacher),
+        json={
+            "strand_id": str(session.strand_id),
+            "question_text": "Which material is the best conductor of heat?",
+            "options": ["Wood", "Copper", "Plastic", "Wool"],
+            "correct_option": 1,
+            "misconceptions": [None, "Thinks metals conduct", None, None],
+        },
+    )
+    assert r.status_code == 422
+
+
 def test_unanswered_item_can_be_edited(client, teacher, session):  # noqa: F811
     created = client.post(
         "/api/items", headers=auth(teacher),

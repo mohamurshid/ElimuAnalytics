@@ -32,7 +32,7 @@ curriculum text, exported as a PDF for parents.
 | Sign in with Google (OpenID Connect), gated by the staff list | Complete; live test needs Google credentials |
 | Offline answer queue, cloud deployment | Not started - see Limitations |
 
-**472 backend tests**, frontend lint + type check + production build, CI on
+**475 backend tests**, frontend lint + type check + production build, CI on
 every push. Evidence of testing and evaluation: **`docs/TEST_RECORD.md`**.
 
 ---
@@ -186,7 +186,7 @@ elimu-analytics/
 │   ├── reports.py, reporting.py, grounding.py, export.py   reports + PDF
 │   ├── auth.py, security.py, staff.py, google_auth.py, throttle.py   accounts
 │   └── seed.py                 demonstration data
-├── backend/tests/              472 tests
+├── backend/tests/              475 tests
 ├── frontend/                   Next.js app: app/, components/, lib/
 ├── spike/                      measurement instruments and their results
 ├── data/kicd/                  harvested curriculum corpus + coverage report

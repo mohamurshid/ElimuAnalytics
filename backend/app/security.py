@@ -138,6 +138,13 @@ def refresh_expiry() -> datetime:
 # What password_hash holds for an account nobody has set a password on yet.
 # Not a bcrypt hash, so verify_password rejects every password against it.
 UNUSABLE_PASSWORD = "!unusable"
+
+
+def has_password(hashed: str | None) -> bool:
+    """Whether the account has a password it can sign in with. A teacher
+    added by a head teacher has none until they set one up, and one who only
+    ever signs in with Google may never have one."""
+    return bool(hashed) and hashed != UNUSABLE_PASSWORD
 MIN_PASSWORD_LENGTH = 8
 SETUP_CODE_TTL_DAYS = 7
 # No 0/O, 1/I/L: the code is read aloud or copied from paper.

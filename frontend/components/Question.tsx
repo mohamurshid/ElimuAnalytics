@@ -423,6 +423,7 @@ export function QuestionWriter({
                     If chosen, the learner may believe… (optional)
                   </span>
                   <textarea
+                    aria-label={`Option ${LETTERS[n]}: if chosen, the learner may believe (optional)`}
                     value={notes[n] ?? ""}
                     rows={2}
                     onChange={(e) =>

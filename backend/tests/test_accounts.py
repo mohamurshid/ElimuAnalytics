@@ -20,7 +20,7 @@ import pytest
 from app.db import get_session
 from app.main import app
 from app.models import School, Teacher
-from app.security import ROLE_SCHOOL_ADMIN, create_token, hash_password
+from app.security import ROLE_SCHOOL_ADMIN, UNUSABLE_PASSWORD, create_token, hash_password
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
@@ -207,6 +207,52 @@ def test_changing_a_password_ends_other_sessions_but_not_this_one(
     assert me(client, fresh).status_code == 200
     assert me(client, other_device).status_code == 401
     assert login(client, "head@school.ke", "brand-new-pass").status_code == 200
+
+
+def _google_only(session, head, code_hash=None) -> Teacher:  # noqa: F811
+    """A teacher who has only ever signed in with Google: no password."""
+    t = Teacher(name="Achieng O.", email="achieng@school.ke", password_hash=UNUSABLE_PASSWORD,
+                role="teacher", school_id=head.school_id, setup_code_hash=code_hash,
+                setup_code_expires_at=datetime.now(timezone.utc) + timedelta(days=7))
+    session.add(t)
+    session.commit()
+    return t
+
+
+def test_a_google_only_teacher_sets_a_password_without_a_current_one(
+    client, session, head  # noqa: F811
+):
+    """Found 24 October: Change password asked a Google-only teacher for a
+    current password they never had, so they could never get one."""
+    t = _google_only(session, head)
+    assert me(client, auth(t)).json()["has_password"] is False
+    other_device = held_token(session, t)
+
+    r = client.post("/api/auth/password", headers=auth(t),
+                    json={"new_password": "achieng-pass-1"})
+    assert r.status_code == 200
+    fresh = {"Authorization": f"Bearer {r.json()['access_token']}"}
+    assert me(client, fresh).json()["has_password"] is True
+    assert me(client, other_device).status_code == 401
+    assert login(client, "achieng@school.ke", "achieng-pass-1").status_code == 200
+
+
+def test_a_teacher_with_a_password_still_needs_the_current_one(client, head):  # noqa: F811
+    assert me(client, auth(head)).json()["has_password"] is True
+    r = client.post("/api/auth/password", headers=auth(head),
+                    json={"new_password": "brand-new-pass"})
+    assert r.status_code == 400
+    assert login(client, "head@school.ke", HEAD_PASSWORD).status_code == 200
+
+
+def test_setting_a_password_cancels_a_waiting_setup_code(client, session, head):  # noqa: F811
+    """The teacher chose their own password, so a code a head teacher issued
+    earlier must not be able to replace it afterwards."""
+    t = _google_only(session, head, code_hash=hash_password("ABCD2345"))
+    client.post("/api/auth/password", headers=auth(t), json={"new_password": "achieng-pass-1"})
+
+    assert setup(client, "achieng@school.ke", "ABCD-2345").status_code == 400
+    assert login(client, "achieng@school.ke", "achieng-pass-1").status_code == 200
 
 
 def test_sign_out_everywhere_ends_every_session(client, session, head):  # noqa: F811

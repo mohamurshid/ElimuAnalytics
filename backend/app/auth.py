@@ -69,6 +69,7 @@ from .security import (
     REFRESH_TTL_DAYS,
     ROLE_SCHOOL_ADMIN,
     create_token,
+    has_password,
     hash_password,
     hash_refresh_token,
     new_refresh_token,
@@ -104,6 +105,10 @@ class ProfileResponse(BaseModel):
     # school, so a teacher seeing its name is being told what they can see,
     # not given anything new.
     school: str
+    # False for a teacher who has only ever signed in with Google. The
+    # profile page then offers to SET a password, without asking for a
+    # current one that does not exist.
+    has_password: bool
 
 
 def _issue_refresh(
@@ -388,6 +393,7 @@ def me(teacher: Teacher = Depends(current_teacher)) -> ProfileResponse:
         email=teacher.email,
         role=teacher.role,
         school=teacher.school.name if teacher.school else "",
+        has_password=has_password(teacher.password_hash),
     )
 
 
@@ -399,7 +405,8 @@ class SetupRequest(BaseModel):
 
 
 class PasswordChange(BaseModel):
-    current_password: str
+    # Required when the account has a password; ignored when it has none.
+    current_password: str | None = None
     new_password: str
 
 
@@ -471,12 +478,24 @@ def change_password(
     session: Session = Depends(get_session),
     teacher: Teacher = Depends(current_teacher),
 ) -> TokenResponse:
-    """Change your password. Every other device is signed out; this one gets
-    a fresh session, so the teacher carries on where they are."""
-    if not verify_password(body.current_password, teacher.password_hash):
+    """Change your password - or set one, for a teacher who signs in only with
+    Google (found 24 October: Change password asked such a teacher for a
+    current password they never had).
+
+    Setting a first password needs no current one: the teacher is signed in,
+    which for a Google-only account means Google has just proved who they
+    are, and there is no other secret to ask for. Either way every other
+    device is signed out, any setup code still waiting is cancelled (the
+    teacher has chosen their own password), and this device gets a fresh
+    session so the teacher carries on where they are."""
+    if has_password(teacher.password_hash) and not verify_password(
+        body.current_password or "", teacher.password_hash
+    ):
         raise HTTPException(status_code=400, detail="Your current password is not right.")
     _check_new_password(body.new_password)
     teacher.password_hash = hash_password(body.new_password)
+    teacher.setup_code_hash = None
+    teacher.setup_code_expires_at = None
     end_sessions(session, teacher)
     session.commit()
     return _signed_in(session, response, teacher)

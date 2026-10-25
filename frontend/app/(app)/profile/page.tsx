@@ -18,7 +18,7 @@ import { useRouter } from "next/navigation";
 import { useState, useSyncExternalStore } from "react";
 
 import { Button, ButtonLink, Card, Field, Note, PageHeader } from "@/components/ui";
-import { changePassword, errorMessage } from "@/lib/api";
+import { errorMessage } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { initials, ROLE_LABEL } from "@/lib/people";
 import {
@@ -120,7 +120,7 @@ export default function ProfilePage() {
           </Card>
         )}
 
-        <PasswordSection />
+        <PasswordSection hasPassword={profile.has_password} />
 
         <EverywhereSection
           onDone={() => router.replace("/login")}
@@ -159,14 +159,20 @@ export default function ProfilePage() {
   );
 }
 
-function PasswordSection() {
+/**
+ * Change the password - or, for a teacher who has only signed in with Google,
+ * set a first one (24 October). Such a teacher has no current password to
+ * give, so the field is left out and the button says what it does.
+ */
+function PasswordSection({ hasPassword }: { hasPassword: boolean }) {
+  const { changePassword } = useAuth();
   const [open, setOpen] = useState(false);
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
   const [again, setAgain] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [done, setDone] = useState(false);
+  const [done, setDone] = useState<"changed" | "set" | null>(null);
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
@@ -177,8 +183,8 @@ function PasswordSection() {
     }
     setBusy(true);
     try {
-      await changePassword(current, next);
-      setDone(true);
+      await changePassword(hasPassword ? current : null, next);
+      setDone(hasPassword ? "changed" : "set");
       setOpen(false);
       setCurrent("");
       setNext("");
@@ -193,9 +199,18 @@ function PasswordSection() {
   return (
     <section aria-labelledby="password-heading">
       <h2 id="password-heading" className="text-lg font-semibold text-ink">Password</h2>
+      {!hasPassword && !done && (
+        <p className="mt-1 text-sm text-ink-muted">
+          You sign in with Google. A password lets you sign in without it, and unlock quiz
+          mode if you forget the PIN.
+        </p>
+      )}
       {done && (
         <div className="mt-2">
-          <Note tone="ok">Password changed. Your other devices have been signed out.</Note>
+          <Note tone="ok">
+            {done === "set" ? "Password set." : "Password changed."} Your other devices have
+            been signed out.
+          </Note>
         </div>
       )}
       {!open ? (
@@ -204,15 +219,17 @@ function PasswordSection() {
           className="mt-3"
           onClick={() => {
             setOpen(true);
-            setDone(false);
+            setDone(null);
           }}
         >
-          Change password
+          {hasPassword ? "Change password" : "Set a password"}
         </Button>
       ) : (
         <form onSubmit={save} className="mt-3 space-y-4">
-          <Field label="Current password" type="password" autoComplete="current-password"
-                 required value={current} onChange={(e) => setCurrent(e.target.value)} />
+          {hasPassword && (
+            <Field label="Current password" type="password" autoComplete="current-password"
+                   required value={current} onChange={(e) => setCurrent(e.target.value)} />
+          )}
           <Field label="New password" type="password" autoComplete="new-password" required
                  minLength={8} hint="At least 8 characters." value={next}
                  onChange={(e) => setNext(e.target.value)} />
@@ -220,7 +237,9 @@ function PasswordSection() {
                  required value={again} onChange={(e) => setAgain(e.target.value)} />
           <Note tone="error">{error}</Note>
           <div className="flex flex-wrap gap-2">
-            <Button type="submit" disabled={busy}>{busy ? "Saving…" : "Change password"}</Button>
+            <Button type="submit" disabled={busy}>
+              {busy ? "Saving…" : hasPassword ? "Change password" : "Set password"}
+            </Button>
             <Button type="button" variant="secondary" disabled={busy} onClick={() => setOpen(false)}>
               Cancel
             </Button>

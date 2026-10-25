@@ -17,7 +17,7 @@ Every correction points at the commit that made it, so it can be inspected.
 
 ## 1. Automated tests
 
-**472 backend tests** (pytest), plus frontend lint, type check and a
+**475 backend tests** (pytest), plus frontend lint, type check and a
 production build. Run locally with `tasks ci` (backend) and `tasks webci`
 (frontend); GitHub Actions runs CI on every push. All pass at the time of
 writing.
@@ -39,7 +39,7 @@ stand-ins, so the suite is free, offline and repeatable.
 | `test_catalogue.py` | 22 | Curriculum catalogue built from the real corpus: 448 rows, 427 sub-strands, name cleaning pinned on real text |
 | `test_diagnostics.py` | 22 | Heatmap calibrates at most once per strand and not at all once the strand is calibrated, with the same abilities either way; an unanswered question breaks nothing; three states for a cell; the Overview's reported count |
 | `test_auth_items.py` | 21 | Passwords hashed, roles, question bank permissions; a teacher's own question with optional misconceptions |
-| `test_accounts.py` | 17 | Setup codes (single use, expiry, throttling, one answer for every wrong case); sessions end at once; a school keeps a head teacher |
+| `test_accounts.py` | 20 | Setup codes (single use, expiry, throttling, one answer for every wrong case); sessions end at once; a school keeps a head teacher; a Google-only teacher sets a first password |
 | `test_google_auth.py` | 17 | Google sign-in: staff list is the gate, linking, state, nonce, each ID-token claim, PKCE, cancellation |
 | `test_quizzes.py` | 16 | Quiz selection (spread across difficulty, least-answered first, deterministic), saved quiz sets, numbering after withdrawal |
 | `test_refresh.py` | 16 | Rotating refresh tokens, reuse detection, cross-site refusal |
@@ -88,6 +88,8 @@ stand-ins, so the suite is free, offline and repeatable.
 | F29 | Write your own question (live, phone width) | Saved and usable at once | As expected: empty form, duplicate options and a much-longer key each caught; saved approved with its optional note; "Write another" gives a clean form | - | 020e936 |
 | F30 | Mark a paper quiz, one learner at a time (live, phone width) | Marks only open questions; nothing saved until Submit | As expected: earlier answers shown as recorded, Right / Wrong / Blank and Next learner work, Submit bar appears and goes with Clear. Wording fixed: double full stop after a name ending in ".", "1 answer ... keep them", a learner's list status now shows what is left to mark | Wording fixes | 020e936 |
 | F31 | Overview, waiting questions (live) | A head teacher sees a reported question without opening its strand | As expected: "1 reported question" with a link to its strand; hidden when nothing waits | - | f936c0d |
+| F32 | Password for a teacher who signs in only with Google (found reading the code, 24 October) | They can get a password | Change password asked for a current password they never had, so they could never set one - nor use the password fallback in quiz mode | The profile page offers "Set a password" with no current-password field; setting one signs out other devices and cancels any waiting setup code. Quiz mode offers the password fallback only to accounts that have one. 3 tests | (next commit) |
+| F33 | Screen-reader names on the write-a-question screen | Every field named | The browser tool's accessibility tree showed the optional note boxes without a name. They sit inside a label, which screen readers do read, so this was likely the tool rather than the page | Explicit names added so it does not depend on that | (next commit) |
 
 ---
 
@@ -145,5 +147,3 @@ from 50 labelled pairs (`tasks gen --score 20261021_095316`).
 | Kiswahili vague-phrase list unvalidated | Needs a Kiswahili speaker |
 | Model exceeds the advisory word limit (265 vs 200 before the limit was raised to 250) | Limit advisory; recorded |
 | Quiz answers held in memory until submitted | A dropped connection at submission loses them; local draft + retry planned |
-| A teacher who signs in only with Google cannot set a password: Change password asks for the current one | Let them set one without it |
-| The optional note under each wrong option on the write-a-question screen has no name for a screen reader | Label it |

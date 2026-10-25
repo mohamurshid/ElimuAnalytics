@@ -28,6 +28,8 @@ export type Profile = {
   role: Role;
   /** The school this account belongs to - the boundary of everything it sees. */
   school: string;
+  /** False for a teacher who has only signed in with Google: they can set one. */
+  has_password: boolean;
 };
 
 export type Strand = {

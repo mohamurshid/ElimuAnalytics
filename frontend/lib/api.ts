@@ -200,13 +200,16 @@ export async function setupAccount(
 }
 
 /**
- * Change your password. Every other device is signed out; this one is given
- * a fresh session, whose access token replaces the old one here.
+ * Change your password - or set a first one, with `current` null, for an
+ * account that signs in only with Google. Every other device is signed out;
+ * this one is given a fresh session, whose access token replaces the old one.
  */
-export async function changePassword(current: string, next: string): Promise<void> {
+export async function changePassword(current: string | null, next: string): Promise<void> {
   const body = await request<LoginResponse>("/api/auth/password", {
     method: "POST",
-    body: JSON.stringify({ current_password: current, new_password: next }),
+    body: JSON.stringify(
+      current === null ? { new_password: next } : { current_password: current, new_password: next },
+    ),
   });
   accessToken = body.access_token;
 }

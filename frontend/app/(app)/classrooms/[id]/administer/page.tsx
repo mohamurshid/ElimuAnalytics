@@ -20,7 +20,8 @@
  * PIN is chosen when the session starts and lives only in this page. It is
  * no weaker than before: the lock was always this page's to enforce, and
  * closing the browser ends it either way. A teacher with a password can
- * still use it if they forget the PIN.
+ * still use it if they forget the PIN; one without is offered no such
+ * button (25 October), and can set a password on their profile.
  *
  * **Identity is the teacher selecting a name before handing the device over.**
  * There are no learner accounts and no child PINs: issuing credentials to
@@ -594,7 +595,7 @@ export default function AdministerPage() {
               </Button>
             </div>
 
-            {!usePassword && (
+            {!usePassword && profile?.has_password && (
               <Button
                 type="button"
                 variant="ghost"

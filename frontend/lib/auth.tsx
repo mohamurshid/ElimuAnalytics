@@ -27,6 +27,7 @@ import {
 } from "react";
 
 import {
+  changePassword as apiChangePassword,
   getProfile,
   login as apiLogin,
   logout as apiLogout,
@@ -47,6 +48,9 @@ type AuthState = {
   signOut: () => Promise<void>;
   /** Every device, this one included. */
   signOutEverywhere: () => Promise<void>;
+  /** Change the password, or set a first one with `current` null; the profile
+   *  is read back so `has_password` is current everywhere. */
+  changePassword: (current: string | null, next: string) => Promise<void>;
 };
 
 const AuthContext = createContext<AuthState | null>(null);
@@ -107,9 +111,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setResolved(true);
   }, []);
 
+  const changePassword = useCallback(async (current: string | null, next: string) => {
+    await apiChangePassword(current, next);
+    setProfile(await getProfile());
+  }, []);
+
   const value = useMemo(
-    () => ({ profile, resolved, signIn, setUp, signOut, signOutEverywhere }),
-    [profile, resolved, signIn, setUp, signOut, signOutEverywhere],
+    () => ({ profile, resolved, signIn, setUp, signOut, signOutEverywhere, changePassword }),
+    [profile, resolved, signIn, setUp, signOut, signOutEverywhere, changePassword],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

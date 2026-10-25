@@ -255,6 +255,24 @@ def test_a_near_copy_is_dropped(client, session, heat, model, monkeypatch):  # n
     assert "near-copy" in body["dropped"][0]["problems"][0]
 
 
+def test_a_close_but_different_question_is_kept(client, session, heat, model, monkeypatch):  # noqa: F811
+    """Below the threshold set from labelled pairs (0.95): at 0.93 a teacher
+    usually judged the two questions different, so both are kept."""
+    def vec(text: str) -> list[float]:
+        if "frying pan" in text:
+            return [1.0, 0.0]
+        if "sufuria" in text:
+            return [0.93, 0.3676]  # cosine 0.93 with the frying-pan question
+        return [0.0, 1.0]  # the seeded bank, far from both
+
+    monkeypatch.setattr(generation, "get_embedder", lambda: lambda texts: [vec(t) for t in texts])
+    model.reply["value"] = answer([
+        good("Which part of a frying pan should let heat through?"),
+        good("Which material makes the best handle for a sufuria?"),
+    ])
+    assert run(client, session, heat).json()["produced"] == 2
+
+
 def test_each_option_keeps_its_own_misconception_when_the_key_is_not_first(
     client, session, heat, model  # noqa: F811
 ):

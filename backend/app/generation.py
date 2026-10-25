@@ -64,9 +64,14 @@ MAX_TOKENS = 16000
 QUESTIONS_PER_RUN = 5
 RUNS_PER_DAY = 5
 # A new question this close to one already in the bank, by sentence-embedding
-# cosine, is a paraphrase rather than a new question. A first guess: checkpoint
-# 6 measures where real paraphrases and real new questions fall.
-DUPLICATE_SIMILARITY = 0.90
+# cosine, is a paraphrase rather than a new question. Set from 50 question
+# pairs labelled by hand (run 20261025_073023, 14 marked the same): at 0.95,
+# 9 of the 11 pairs flagged were the same question (82%) and 9 of the 14 were
+# caught; at the first guess of 0.90, only 10 of 19 flagged were the same
+# (53%). Between 0.90 and 0.95 sat 8 pairs, 7 of them different questions, so
+# 0.90 threw away good questions to catch one duplicate - which a teacher
+# reviewing the draft can reject anyway.
+DUPLICATE_SIMILARITY = 0.95
 # Kenya keeps East Africa Time all year, so a fixed offset is exact - and,
 # unlike a zoneinfo lookup, needs no time-zone database on Windows.
 EAT = timezone(timedelta(hours=3))

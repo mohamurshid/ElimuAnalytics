@@ -17,7 +17,7 @@ Every correction points at the commit that made it, so it can be inspected.
 
 ## 1. Automated tests
 
-**475 backend tests** (pytest), plus frontend lint, type check and a
+**477 backend tests** (pytest), plus frontend lint, type check and a
 production build. Run locally with `tasks ci` (backend) and `tasks webci`
 (frontend); GitHub Actions runs CI on every push. All pass at the time of
 writing.
@@ -32,7 +32,7 @@ stand-ins, so the suite is free, offline and repeatable.
 | `test_reports.py` | 44 | The report prompt: verbatim-citation rule, no gendered pronouns, evidence thresholds, word limit, failure pattern |
 | `test_classrooms.py` | 36 | Classes and learners, school scoping, withdraw-not-delete, grade must be exactly "Grade 1"-"Grade 6" |
 | `test_curriculum.py` | 31 | Corpus normalisation (PDF glyph repair), curriculum-head cut |
-| `test_generation.py` | 26 | AI question writing: drafts only, every server check, near-copies, option shuffle, daily cap, failures |
+| `test_generation.py` | 28 | AI question writing: drafts only, every server check, near-copies, option shuffle, daily cap, failures |
 | `test_grounding.py` | 25 | The grounding checker: verified quotes, fabricated citations, Kiswahili |
 | `test_assessments.py` | 24 | Answer submission is idempotent; unknown learners, drafts and withdrawn items refused |
 | `test_item_status.py` | 24 | Only approved questions reach a learner's device; no key or mark scheme in what the device receives; review, report, retire, versions |
@@ -91,6 +91,7 @@ stand-ins, so the suite is free, offline and repeatable.
 | F32 | Password for a teacher who signs in only with Google (found reading the code, 24 October) | They can get a password | Change password asked for a current password they never had, so they could never set one - nor use the password fallback in quiz mode | The profile page offers "Set a password" with no current-password field; setting one signs out other devices and cancels any waiting setup code. Quiz mode offers the password fallback only to accounts that have one. 3 tests | 841b830 |
 | F33 | Screen-reader names on the write-a-question screen | Every field named | The browser tool's accessibility tree showed the optional note boxes without a name. They sit inside a label, which screen readers do read, so this was likely the tool rather than the page | Explicit names added so it does not depend on that | 841b830 |
 | F34 | Filler on the correct option (confirmation run, 25 October, same 34 sub-strands and seed, both settings) | No question lost to a note on the correct option that only says it is correct | Before: 31 questions dropped for a note on the correct option, 23 of them filler ("This is the correct answer, so no misconception applies", "Correct: ...", "Hakuna maelezo ... ndilo jibu sahihi"). After: 0 filler; 5 still dropped (4 low, 1 medium), each a note describing a false belief, which the check drops by design | Prompt says the field must be exactly empty and the explanation goes in the rationale; check unchanged. Pass rate 84.1% -> 92.9% at low effort, 91.5% -> 95.9% at medium | 1fee06d |
+| F35 | Near-copy threshold (50 hand-labelled pairs, 25 October) | Flags a pair only when it is the same question | At the first guess of 0.90, 9 of 19 flagged pairs were different questions (precision 53%) | Raised to 0.95: 9 of 11 flagged are the same (82%), 9 of 14 duplicates caught; the rest reach teacher review. Test that a 0.93 pair is kept | (next commit) |
 
 ---
 
@@ -144,10 +145,33 @@ these counts is as likely noise as change. The key's position is what the
 model wrote; the server shuffles the options when a question is saved
 (F20).
 
-**Pending:** whether the keys are *correct* is judged by hand on a blind
-sample of 40 questions (20 per setting), and the near-copy threshold from 50
-labelled pairs. The 25 October sheets (`tasks gen --score 20261025_073023`)
-are the ones to mark, since they measure the prompt in use.
+**Checked by hand** (25 October, run 20261025_073023, `tasks gen --score
+20261025_073023`; marked by the developer, a CBE-trained teacher still to
+check a sample):
+
+| | Low effort | Medium effort | Both |
+|---|---|---|---|
+| Answer key correct | 20/20 | 20/20 | 40/40 (95% CI 91-100%) |
+| Misconception notes sensible | 20/20 | 20/20 | 40/40 |
+
+Correctness does not separate the two settings, so **medium effort stays**,
+on the automatic figures: more questions pass the checks (95.9% vs 92.9%)
+and the key is less often the longest option (31% vs 38%), for about 0.08
+US cents more per request.
+
+**Near-copy threshold** (the 50 most similar pairs from the run, labelled
+same / different by hand; 14 same):
+
+| Threshold | Pairs flagged | Of which the same question | Same questions caught |
+|---|---|---|---|
+| 0.80 | 33 | 42% (14/33) | 14/14 |
+| 0.85 | 25 | 44% (11/25) | 11/14 |
+| 0.90 (first guess) | 19 | 53% (10/19) | 10/14 |
+| **0.95 (chosen)** | 11 | **82% (9/11)** | 9/14 |
+
+Between 0.90 and 0.95 sat 8 pairs, 7 of them different questions: the old
+threshold threw away good questions to catch one duplicate, which a
+reviewing teacher can reject anyway (F35).
 
 ---|---|---|
 | Questions passing the server's checks | 84.1% (143/170) | 91.5% (151/165) |

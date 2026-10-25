@@ -1,0 +1,51 @@
+﻿pair_id,similarity,sub_strand,question_1,question_2,same_question (y/n)
+P01,0.999,Grade 6|Science and Technology|3.0|3.1,Which material lets light pass through so you can see clearly through it?,Which material lets light pass through so that you can see clearly through it?,y
+P02,0.983,Grade 6|Agriculture and Nutrition|1.0|1.2,Which of these is a seedbed that helps conserve soil moisture?,Which of these is a seedbed that helps keep soil moisture?,y
+P03,0.983,Grade 4|Kiswahili|4.2|4.2.1,"Unapopokea ujumbe kutoka kwa mtu usiyemjua mtandaoni, unafaa kufanya nini?","Unapopokea ujumbe kutoka kwa mtu usiyemjua mtandaoni, unapaswa kufanya nini?",y
+P04,0.978,Grade 5|Science and Technology|3.0|3.3,Heat from the sun reaches the Earth through the empty space between them. Which mode of heat transfer is this?,Heat from the sun reaches the Earth through empty space. Which mode of heat transfer is this?,y
+P05,0.974,Grade 6|Agriculture and Nutrition|1.0|1.2,Why do we conserve moisture in a seedbed?,Why is it important to conserve moisture in a seedbed?,y
+P06,0.969,Grade 4|Social Studies|5.0|5.3,Which is an effect of child abuse on a child?,Which is a likely effect of child abuse on a child?,n
+P07,0.969,Grade 4|Social Studies|3.0|3.1,Which one is an aspect of traditional culture in the County?,Which of these is an aspect of traditional culture in our county?,y
+P08,0.968,Grade 4|English|9.1|9.1.1,Which word has the /f/ sound in its ‘gh’?,Which word has the /f/ sound made by the letters ‘gh’?,y
+P09,0.966,Grade 4|Science and Technology|3.0|3.2,Which of these is a natural source of light?,Which one is a natural source of light?,y
+P10,0.955,Grade 5|Science and Technology|3.0|3.3,Which of these materials is a good conductor of heat?,Which of these is a good conductor of heat?,y
+P11,0.95,Grade 5|Kiswahili|8.4|8.4.1,Ni kitenzi kipi kiko katika hali ya kutendewa?,Ni kitenzi kipi kiko katika hali ya kutendeka?,n
+P12,0.938,Grade 5|Agriculture and Nutrition|1.0|1.1,Which value do learners show when they dig the organic waste pit together?,Which value do learners show when they work together to build the organic waste pit?,y
+P13,0.931,Grade 6|Science and Technology|1.0|1.1,"Which fungus is often seen as a white, powdery or fuzzy growth on stale bread in a Kenyan kitchen?",Which fungus often grows as a fuzzy layer on old bread left in a Kenyan kitchen?,n
+P14,0.926,Grade 6|Social Studies|3.0|3.1,Which of these best describes beef farming in Eastern Africa?,Which of these is a challenge facing beef farming in Eastern Africa?,n
+P15,0.917,Grade 6|Science and Technology|1.0|1.1,Which of these is a common fungus that grows in the shape of a umbrella in a school compound after rain?,Which of these is a common fungus that you can find growing in the school compound after rain?,n
+P16,0.915,Grade 6|Science and Technology|3.0|3.1,"During a solar eclipse, which body moves between the Sun and the Earth and blocks the sunlight?","During a solar eclipse, which body moves between the Sun and the Earth?",n
+P17,0.908,Grade 4|Kiswahili|4.2|4.2.1,Ni tovuti ipi inafaa zaidi kusakura ili kupata vifungu vya kusoma vya Grade 4?,Ni tovuti ipi inayofaa kwa mwanafunzi wa Grade 4 kusoma vifungu vya kusoma?,n
+P18,0.903,Grade 4|Social Studies|5.0|5.3,Which one is a form of child abuse in our community?,Which of these is a form of child abuse?,n
+P19,0.901,Grade 4|Social Studies|5.0|5.3,Which cultural practice is harmful to children?,Which traditional practice is harmful to children?,n
+P20,0.898,Grade 6|Social Studies|1.0|1.2,Which is the best answer to the question: why are physical features important?,Why are physical features important?,n
+P21,0.897,Grade 6|Science and Technology|1.0|1.1,Which fungus is used to make bread rise and is used to brew local beverages?,Which fungus is used to make dough rise when baking bread or making fermented drinks?,y
+P22,0.896,Grade 5|Science and Technology|2.0|2.1,Which of these is a homogeneous mixture?,Which mixture is homogeneous (uniform)?,n
+P23,0.895,Grade 4|Social Studies|3.0|3.1,Which item would be best to collect for a class display of traditional culture?,A class wants to show traditional culture in a display. Which item should they choose?,n
+P24,0.891,Grade 5|Science and Technology|3.0|3.3,"When one end of a metal spoon left in hot tea becomes hot, which mode of heat transfer is this?",A metal spoon left in a hot cup of tea becomes hot at the handle. What is this mode of heat transfer called?,n
+P25,0.889,Grade 5|Kiswahili|8.4|8.4.1,Ni kitenzi kipi kiko katika hali ya kutendeka?,Ni sentensi ipi ina kitenzi katika hali ya kutendeka?,n
+P26,0.836,Grade 5|Social Studies|2.0|2.1,How do Kenya's language groups benefit from depending on each other?,Why should learners value the different language groups in Kenya?,n
+P27,0.831,Grade 6|Agriculture and Nutrition|1.0|1.2,Which of these is a seedbed type that conserves moisture and is listed in the curriculum?,Which two seedbed types should learners prepare to conserve soil moisture?,y
+P28,0.826,Grade 5|Kiswahili|6.2|6.2.1,Ni jambo gani linaonyesha mwanafunzi anafurahia kusoma makala?,Mwanafunzi anaelekezwa kuchagua makala atakayosoma wapi?,y
+P29,0.825,Grade 5|Mathematics|1.0|1.4,A farmer packs 136 eggs in each tray. He fills 14 trays. How many eggs does he pack in all?,Each tray holds 125 eggs. A shop has 24 trays. How many eggs are there in all?,n
+P30,0.809,Grade 6|Kiswahili|9.2|9.2.1,"Baada ya kusoma matini, msomaji anafaidika na nini?","Ili kufaidika na ujumbe na lugha ya matini, msomaji anapaswa kufanya nini?",y
+P31,0.806,Grade 5|Kiswahili|6.2|6.2.1,Kwa nini mwanafunzi anasoma makala za aina mbalimbali?,"Baada ya kusoma makala, mwanafunzi afanye nini na wenzake?",n
+P32,0.802,Grade 5|Kiswahili|8.4|8.4.1,"Ni sentensi ipi imeandikwa upya kwa kauli ya kutendewa, ikimaanisha sawa na 'Babu yangu alijenga nyumba'?",Ni sentensi ipi ni mnyambuliko sahihi wa 'Mwalimu alifunga mlango' katika hali ya kutendewa?,n
+P33,0.801,Grade 4|Social Studies|3.0|3.1,What is a traditional artefact?,Which of these is an artefact?,n
+P34,0.798,Grade 5|Kiswahili|6.2|6.2.1,"Baada ya kusoma makala, mwanafunzi afanye nini na wenzake?",Kwa nini mzazi au mlezi humsaidia mwanafunzi kupata makala zaidi ya kusoma?,n
+P35,0.797,Grade 5|Social Studies|2.0|2.1,Which question asks how people in Kenya gain from meeting different language groups?,How do Kenya's language groups benefit from depending on each other?,n
+P36,0.796,Grade 6|Social Studies|3.0|3.1,Which of these is a challenge facing beef farming in Eastern Africa?,Which task helps learners show where beef farming is practised in Eastern Africa?,n
+P37,0.793,Grade 6|Kiswahili|1.4|1.4.2,Chagua neno sahihi: Kitabu ___ kiko mbali kabisa na mimi.,Chagua neno sahihi: ___ vitabu vyetu viko mbali kabisa.,n
+P38,0.782,Grade 5|Agriculture and Nutrition|1.0|1.1,Which waste should learners put in an organic waste pit?,How does using an organic waste pit help our environment?,n
+P39,0.778,Grade 4|Social Studies|5.0|5.3,Which is an effect of child abuse on a child?,Which of these is a form of child abuse?,n
+P40,0.755,Grade 6|Social Studies|3.0|3.1,Which message would be best for a poster on the importance of beef farming?,What should learners create to show the importance of beef farming?,n
+P41,0.753,Grade 6|Agriculture and Nutrition|1.0|1.2,Why do we conserve moisture in a seedbed?,Which of these is a seedbed that helps keep soil moisture?,n
+P42,0.753,Grade 4|Mathematics|2.0|2.4,A bucket has 5 litres of water. Wanjiru pours out 2 litres. How many litres are left in the bucket?,A drum has 10 litres of water. Kamau uses 4 litres of it for washing. How many litres of water are left in the drum?,n
+P43,0.752,Grade 5|Kiswahili|6.2|6.2.1,"Baada ya kusoma makala, Wanjiku anafanya nini ili kuimarisha alichojifunza?",Ni jambo gani linaonyesha mwanafunzi anafurahia kusoma makala?,n
+P44,0.729,Grade 5|Agriculture and Nutrition|3.0|3.3,Why do we launder our personal cotton items?,Keeping personal cotton items clean is linked to which health idea?,n
+P45,0.729,Grade 4|Social Studies|5.0|5.3,Which one is a form of child abuse in our community?,Which is a likely effect of child abuse on a child?,n
+P46,0.719,Grade 5|Social Studies|2.0|2.3,Which of these is a method of instruction used in African traditional education?,Which action best shows that a learner has applied lessons from African traditional education in the community?,n
+P47,0.716,Grade 6|Kiswahili|9.2|9.2.1,Kwa nini mwanafunzi anapaswa kusoma aina mbalimbali za matini?,"Wanafunzi wanapojadiliana matini walizosoma, wanapaswa kuzingatia jambo gani?",n
+P48,0.708,Grade 5|Kiswahili|8.4|8.4.1,Ni kitenzi kipi kinaonyesha watu wawili wakitendeana?,Ni sentensi ipi ni mnyambuliko sahihi wa 'Mwalimu alifunga mlango' katika hali ya kutendewa?,n
+P49,0.706,Grade 5|Kiswahili|8.4|8.4.1,Ni sentensi ipi ina kitenzi katika hali ya kutendeka?,Ni sentensi ipi ni mnyambuliko sahihi wa 'Mwalimu alifunga mlango' katika hali ya kutendewa?,n
+P50,0.705,Grade 5|Kiswahili|6.2|6.2.1,Kwa nini mwanafunzi anasoma makala za aina mbalimbali?,"Msomaji akikutana na neno gumu katika makala, afanye nini ili apate maana yake?",n

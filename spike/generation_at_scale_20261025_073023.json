@@ -1,0 +1,115 @@
+{
+ "stamp": "20261025_073023",
+ "metrics": {
+  "low": {
+   "requests": 34,
+   "failed": 0,
+   "failures": [],
+   "proposed": 170,
+   "kept": 158,
+   "dropped": 12,
+   "drop_reasons": {
+    "the question contains its own answer": 4,
+    "the curriculum excerpt is not in the curriculum text": 3,
+    "the correct option cannot carry a misconception": 4,
+    "it is a near-copy of another question": 1
+   },
+   "cost_total_usd": 0.05738,
+   "cost_mean_usd": 0.00169,
+   "seconds_mean": 15.0,
+   "seconds_p90": 20.4,
+   "key_longest": 60,
+   "key_positions": {
+    "A": 58,
+    "C": 33,
+    "B": 53,
+    "D": 14
+   },
+   "question_words_mean": 13.6,
+   "question_words_max": 42,
+   "kiswahili_kept": 26,
+   "kiswahili_english_flags": [],
+   "pass_by_area": {
+    "Agriculture and Nutrition": [
+     30,
+     30
+    ],
+    "English": [
+     20,
+     20
+    ],
+    "Kiswahili": [
+     26,
+     30
+    ],
+    "Mathematics": [
+     26,
+     30
+    ],
+    "Science and Technology": [
+     30,
+     30
+    ],
+    "Social Studies": [
+     26,
+     30
+    ]
+   }
+  },
+  "medium": {
+   "requests": 34,
+   "failed": 0,
+   "failures": [],
+   "proposed": 170,
+   "kept": 163,
+   "dropped": 7,
+   "drop_reasons": {
+    "the question contains its own answer": 3,
+    "the curriculum excerpt is not in the curriculum text": 2,
+    "the correct option cannot carry a misconception": 1,
+    "it is a near-copy of another question": 1
+   },
+   "cost_total_usd": 0.08571,
+   "cost_mean_usd": 0.00252,
+   "seconds_mean": 20.6,
+   "seconds_p90": 25.8,
+   "key_longest": 51,
+   "key_positions": {
+    "A": 25,
+    "B": 60,
+    "C": 52,
+    "D": 26
+   },
+   "question_words_mean": 13.6,
+   "question_words_max": 42,
+   "kiswahili_kept": 28,
+   "kiswahili_english_flags": [],
+   "pass_by_area": {
+    "Agriculture and Nutrition": [
+     28,
+     30
+    ],
+    "English": [
+     19,
+     20
+    ],
+    "Kiswahili": [
+     28,
+     30
+    ],
+    "Mathematics": [
+     28,
+     30
+    ],
+    "Science and Technology": [
+     30,
+     30
+    ],
+    "Social Studies": [
+     30,
+     30
+    ]
+   }
+  }
+ }
+}

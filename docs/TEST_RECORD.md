@@ -88,8 +88,9 @@ stand-ins, so the suite is free, offline and repeatable.
 | F29 | Write your own question (live, phone width) | Saved and usable at once | As expected: empty form, duplicate options and a much-longer key each caught; saved approved with its optional note; "Write another" gives a clean form | - | 020e936 |
 | F30 | Mark a paper quiz, one learner at a time (live, phone width) | Marks only open questions; nothing saved until Submit | As expected: earlier answers shown as recorded, Right / Wrong / Blank and Next learner work, Submit bar appears and goes with Clear. Wording fixed: double full stop after a name ending in ".", "1 answer ... keep them", a learner's list status now shows what is left to mark | Wording fixes | 020e936 |
 | F31 | Overview, waiting questions (live) | A head teacher sees a reported question without opening its strand | As expected: "1 reported question" with a link to its strand; hidden when nothing waits | - | f936c0d |
-| F32 | Password for a teacher who signs in only with Google (found reading the code, 24 October) | They can get a password | Change password asked for a current password they never had, so they could never set one - nor use the password fallback in quiz mode | The profile page offers "Set a password" with no current-password field; setting one signs out other devices and cancels any waiting setup code. Quiz mode offers the password fallback only to accounts that have one. 3 tests | (next commit) |
-| F33 | Screen-reader names on the write-a-question screen | Every field named | The browser tool's accessibility tree showed the optional note boxes without a name. They sit inside a label, which screen readers do read, so this was likely the tool rather than the page | Explicit names added so it does not depend on that | (next commit) |
+| F32 | Password for a teacher who signs in only with Google (found reading the code, 24 October) | They can get a password | Change password asked for a current password they never had, so they could never set one - nor use the password fallback in quiz mode | The profile page offers "Set a password" with no current-password field; setting one signs out other devices and cancels any waiting setup code. Quiz mode offers the password fallback only to accounts that have one. 3 tests | 841b830 |
+| F33 | Screen-reader names on the write-a-question screen | Every field named | The browser tool's accessibility tree showed the optional note boxes without a name. They sit inside a label, which screen readers do read, so this was likely the tool rather than the page | Explicit names added so it does not depend on that | 841b830 |
+| F34 | Filler on the correct option (confirmation run, 25 October, same 34 sub-strands and seed, both settings) | No question lost to a note on the correct option that only says it is correct | Before: 31 questions dropped for a note on the correct option, 23 of them filler ("This is the correct answer, so no misconception applies", "Correct: ...", "Hakuna maelezo ... ndilo jibu sahihi"). After: 0 filler; 5 still dropped (4 low, 1 medium), each a note describing a false belief, which the check drops by design | Prompt says the field must be exactly empty and the explanation goes in the rationale; check unchanged. Pass rate 84.1% -> 92.9% at low effort, 91.5% -> 95.9% at medium | 1fee06d |
 
 ---
 
@@ -119,13 +120,36 @@ These are different tests and must not be compared with each other.
 Cost of a bilingual report: 0.35 US cents, about 23 seconds (production,
 17 October).
 
-**AI question generation** (21 October, run 20261021_095316,
-`spike/generation_at_scale.py`): 34 sub-strands, 2 from each of the 17
-grade / learning-area pairs, one 5-question request per setting. Total
-cost $0.146.
+**AI question generation** (`spike/generation_at_scale.py`): 34
+sub-strands, 2 from each of the 17 grade / learning-area pairs (seed
+169962), one 5-question request per sub-strand per setting. Run
+20261021_095316 (21 October, $0.146) measured the first prompt; run
+20261025_073023 (25 October, $0.143) the same sample after the prompt fix
+in F34.
 
-| | Haiku, low effort | Haiku, medium effort |
-|---|---|---|
+| | Low effort, 21 Oct | Low effort, 25 Oct | Medium effort, 21 Oct | Medium effort, 25 Oct |
+|---|---|---|---|---|
+| Questions passing the server's checks | 84.1% (143/170) | 92.9% (158/170) | 91.5% (151/165) | 95.9% (163/170) |
+| Dropped for a note on the correct option | 21 | 4 | 10 | 1 |
+| Requests failed | 0/34 | 0/34 | 1/34 (cut off, F21) | 0/34 |
+| Cost per request | 0.17 US cents | 0.17 US cents | 0.26 US cents | 0.25 US cents |
+| Time per request (mean) | 15.2 s | 15.0 s | 21.0 s | 20.6 s |
+| Key is the longest option | 31.5% | 38.0% | 33.8% | 31.3% |
+| Kiswahili questions with English words | 0/26 | 0/26 | 0/17 | 0/28 |
+
+The other drop reasons are small and moved both ways between runs (a
+question containing its own answer: 4 -> 7; an excerpt not found in the
+curriculum: 2 -> 5; near-copies: 4 -> 2, both settings together), which at
+these counts is as likely noise as change. The key's position is what the
+model wrote; the server shuffles the options when a question is saved
+(F20).
+
+**Pending:** whether the keys are *correct* is judged by hand on a blind
+sample of 40 questions (20 per setting), and the near-copy threshold from 50
+labelled pairs. The 25 October sheets (`tasks gen --score 20261025_073023`)
+are the ones to mark, since they measure the prompt in use.
+
+---|---|---|
 | Questions passing the server's checks | 84.1% (143/170) | 91.5% (151/165) |
 | Requests failed | 0/34 | 1/34 (cut off, see F21) |
 | Cost per request | 0.17 US cents | 0.26 US cents |

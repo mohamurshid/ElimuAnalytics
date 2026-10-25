@@ -93,6 +93,20 @@ class SubStrand:
     language: str
 
 
+# Run 20261021_095316 lost 23 of 335 questions (13 at low effort, 10 at
+# medium) to filler on the correct option - "This is the correct answer, so
+# no misconception applies" - although the prompt said "an empty string".
+# The check rightly drops anything written there: in 8 more questions, all
+# at low effort, the note described a false belief, meaning the model had
+# the key in the wrong place. So the check stays and the instruction says
+# exactly what to write, what not to, and where the explanation goes.
+KEY_MISCONCEPTION_RULE = (
+    'For the correct option, "misconception" must be exactly "" - leave it empty. '
+    'Do not write anything there, not even a note that the option is correct or '
+    'that no misconception applies; why it is right goes in "rationale".'
+)
+
+
 def build_prompt(
     sub: SubStrand,
     chunk_texts: Sequence[str],
@@ -135,10 +149,9 @@ longer or more detailed than the others.
 - Uses everyday Kenyan settings where a setting helps, and never calls a learner he or she.
 
 For each question also give:
-- "options": each with its "text" and a "misconception". The correct option's \
-misconception is an empty string. Each wrong option's misconception is one sentence for \
-the teacher on what choosing it suggests the learner believes; do not repeat the option's \
-text in it.
+- "options": each with its "text" and a "misconception". Each wrong option's \
+misconception is one sentence for the teacher on what choosing it suggests the learner \
+believes; do not repeat the option's text in it. {KEY_MISCONCEPTION_RULE}
 - "correct_option": the position of the correct answer in "options", counting from 0.
 - "rationale": one sentence for the teacher on why the correct answer is right.
 - "excerpt": a phrase of at most 25 words copied word for word from the curriculum text \

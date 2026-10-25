@@ -182,6 +182,20 @@ def test_a_kiswahili_strand_is_written_in_kiswahili():
     assert "Kiswahili sanifu" in build_prompt(sub, ["maandishi"], 5)
 
 
+def test_the_prompt_says_exactly_what_goes_on_the_correct_option():
+    """Run 20261021_095316 lost 23 questions to filler such as "This is the
+    correct answer" on the key. The check that drops them stays (it also
+    catches a key in the wrong place); the instruction is pinned here."""
+    from app.questions import KEY_MISCONCEPTION_RULE
+
+    sub = SubStrand("Grade 5", "Science and Technology", "Force and Energy", "3.3",
+                    "Heat Transfer", "English")
+    prompt = build_prompt(sub, ["text"], 5)
+    assert KEY_MISCONCEPTION_RULE in prompt
+    assert 'must be exactly ""' in KEY_MISCONCEPTION_RULE
+    assert '"rationale"' in KEY_MISCONCEPTION_RULE
+
+
 # --- checks ----------------------------------------------------------------
 @pytest.mark.parametrize(
     "flawed, problem",

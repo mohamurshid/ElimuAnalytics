@@ -8,11 +8,15 @@ export const ROLE_LABEL: Record<string, string> = {
 /** "Wanjiru Kamau" -> "WK". One word gives one letter. */
 export function initials(name: string | undefined): string {
   if (!name) return "?";
-  return name
+  // The first LETTER of each word: "Muhammad (second)" is "MS", not "M(" -
+  // found 25 October with a teacher named that way.
+  const letters = name
     .trim()
     .split(/\s+/)
+    .map((w) => w.match(/\p{L}/u)?.[0] ?? "")
     .filter(Boolean)
     .slice(0, 2)
-    .map((w) => w[0]?.toUpperCase() ?? "")
+    .map((c) => c.toUpperCase())
     .join("");
+  return letters || "?";
 }

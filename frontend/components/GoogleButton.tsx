@@ -7,7 +7,13 @@
  * Google and back, and the server finishes it by setting the session cookie
  * and returning the browser to the app.
  *
- * Text only. Google's own mark is not drawn here.
+ * Styled to Google's "Sign in with Google" branding guidelines (25 October):
+ * their standard-colour G, unchanged, copied from the button code Google
+ * publishes with the guidelines (public/google-g.svg - not redrawn), on
+ * their light or dark button colours (--gsi-* in globals.css),
+ * 12px before the G, 10px after it, 12px after the text. Google Sans is not
+ * loaded; the label uses the app's font, which the guidelines tolerate less
+ * than they would like, and is noted as such.
  */
 
 import { useEffect, useState } from "react";
@@ -37,9 +43,11 @@ export function GoogleButton() {
       <a
         href="/api/auth/google/start"
         className="mt-6 flex min-h-11 w-full items-center justify-center rounded-md border
-                   border-line-strong bg-surface px-4 text-[15px] font-medium text-ink
-                   hover:bg-sunken"
+                   border-[var(--gsi-stroke)] bg-[var(--gsi-fill)] pl-3 pr-3 text-[15px]
+                   font-medium text-[var(--gsi-text)] hover:opacity-90"
       >
+        {/* eslint-disable-next-line @next/next/no-img-element -- a 20px static SVG */}
+        <img src="/google-g.svg" alt="" width={20} height={20} className="mr-2.5 size-5" />
         Continue with Google
       </a>
     </div>

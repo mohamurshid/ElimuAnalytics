@@ -20,7 +20,8 @@ import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
 
-import { Badge, Button, Card, Loading, Note, PageHeader } from "@/components/ui";
+import { Icon } from "@/components/Icon";
+import { Badge, Button, Card, IconTile, Loading, Note, PageHeader } from "@/components/ui";
 import { api, ApiError, errorMessage } from "@/lib/api";
 import type {
   Catalogue,
@@ -167,7 +168,7 @@ function Picker() {
           <div
             role="group"
             aria-label="Grade"
-            className="grid grid-cols-3 gap-1 rounded-md border border-line-strong bg-surface p-1"
+            className="grid grid-cols-3 gap-1 rounded-xl bg-sunken p-1"
           >
             {GRADES.map((g) => (
               <button
@@ -175,8 +176,8 @@ function Picker() {
                 type="button"
                 aria-pressed={grade === g}
                 onClick={() => pickGrade(g)}
-                className={`min-h-11 rounded px-2 text-[15px] font-medium
-                            ${grade === g ? "bg-sunken text-ink" : "text-ink-muted hover:text-ink"}`}
+                className={`min-h-11 rounded-lg px-2 text-[15px] font-semibold transition-all
+                            ${grade === g ? "bg-surface text-ink shadow-soft" : "text-ink-muted hover:text-ink"}`}
               >
                 {g}
               </button>
@@ -190,7 +191,7 @@ function Picker() {
               : `${classGrade} isn’t in the catalogue yet; Grades 4–6 come first.`}
           </p>
 
-          <Card className="mt-4">
+          <Card className="mt-4 overflow-hidden">
             <ul className="divide-y divide-line">
               {gradeData?.learning_areas.map((a) => {
                 const subs = a.strands.reduce((n, s) => n + s.sub_strands.length, 0);
@@ -201,11 +202,12 @@ function Picker() {
                       <button
                         type="button"
                         onClick={() => openArea(a)}
-                        className="flex min-h-14 w-full items-center gap-3 px-4 py-3 text-left
+                        className="group flex min-h-16 w-full items-center gap-3 px-4 py-3 text-left
                                    hover:bg-sunken"
                       >
+                        <IconTile name="book" />
                         <span className="min-w-0 flex-1">
-                          <span className="block text-[15px] font-medium text-ink">
+                          <span className="block text-[15px] font-semibold text-ink">
                             {a.learning_area}
                           </span>
                           <span className="block text-sm text-ink-muted">
@@ -213,10 +215,14 @@ function Picker() {
                             {mine > 0 && ` · ${mine} added`}
                           </span>
                         </span>
-                        <span aria-hidden className="text-ink-subtle">›</span>
+                        <Icon
+                          name="chevronRight"
+                          className="size-5 text-ink-subtle transition-transform group-hover:translate-x-0.5"
+                        />
                       </button>
                     ) : (
-                      <div className="flex min-h-14 items-center gap-3 px-4 py-3">
+                      <div className="flex min-h-16 items-center gap-3 px-4 py-3">
+                        <IconTile name="book" tone="neutral" />
                         <span className="min-w-0 flex-1">
                           <span className="block text-[15px] font-medium text-ink-subtle">
                             {a.learning_area}
@@ -249,17 +255,20 @@ function Picker() {
           {area.strands.map((strand) => (
             <section key={strand.name} aria-label={strand.name}>
               <h2 className="mb-2 text-base font-semibold text-ink">{strand.name}</h2>
-              <Card>
+              <Card className="overflow-hidden">
                 <ul className="divide-y divide-line">
                   {strand.sub_strands.map((sub) => {
                     const isAdded = added.has(sub.key);
                     return (
                       <li key={sub.key} className="flex items-center gap-3 px-4 py-3">
                         <p className="min-w-0 flex-1 text-[15px] text-ink">
-                          <span className="text-ink-muted">{sub.number}</span> {sub.name}
+                          <span className="font-semibold text-ink-muted tabular-nums">{sub.number}</span> {sub.name}
                         </p>
                         {isAdded ? (
-                          <Badge tone="ok">Added</Badge>
+                          <Badge tone="ok">
+                            <Icon name="check" className="-ml-0.5 mr-1 size-3.5" />
+                            Added
+                          </Badge>
                         ) : (
                           <Button
                             variant="secondary"
@@ -268,6 +277,7 @@ function Picker() {
                             onClick={() => add(sub)}
                             aria-label={`Add ${sub.number} ${sub.name}`}
                           >
+                            {busyKey !== sub.key && <Icon name="plus" className="size-4" />}
                             {busyKey === sub.key ? "Adding…" : "Add"}
                           </Button>
                         )}

@@ -19,10 +19,11 @@
 
 import { useCallback, useEffect, useState } from "react";
 
-import { Badge, Button, Card, Field, Loading, Note, PageHeader } from "@/components/ui";
+import { Icon } from "@/components/Icon";
+import { Badge, Button, Card, Field, IconTile, Loading, Note, PageHeader, Select } from "@/components/ui";
 import { api, errorMessage } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import { ROLE_LABEL } from "@/lib/people";
+import { initials, ROLE_LABEL } from "@/lib/people";
 import type { StaffMember, StaffWithCode } from "@/lib/types";
 
 type Role = "teacher" | "school_admin";
@@ -79,11 +80,14 @@ export default function StaffPage() {
     <>
       <PageHeader
         back={{ href: "/profile", label: "Profile" }}
+        eyebrow={profile?.school}
         title="Teachers"
-        description={profile?.school}
+        description={staff ? `${staff.filter((m) => m.is_active).length} active` : undefined}
         actions={
           !adding && (
-            <Button onClick={() => { setAdding(true); setCode(null); }}>Add a teacher</Button>
+            <Button onClick={() => { setAdding(true); setCode(null); }}>
+              <Icon name="plus" className="size-5" /> Add a teacher
+            </Button>
           )
         }
       />
@@ -95,7 +99,7 @@ export default function StaffPage() {
 
         {!staff && !error && <Loading what="the teachers" />}
         {staff && (
-          <Card>
+          <Card className="overflow-hidden">
             <ul className="divide-y divide-line">
               {staff.map((member) => (
                 <StaffRow key={member.teacher_id} member={member} onChange={load} onCode={issued} />
@@ -110,11 +114,14 @@ export default function StaffPage() {
 
 function CodeCard({ result, onClose }: { result: StaffWithCode; onClose: () => void }) {
   return (
-    <Card className="border-ok/40 p-4">
-      <h2 className="text-base font-semibold text-ink">Setup code for {result.name}</h2>
+    <Card className="border-ok/40 p-4 sm:p-6">
+      <h2 className="flex items-center gap-3 text-lg font-semibold text-ink">
+        <IconTile name="lock" />
+        Setup code for {result.name}
+      </h2>
       <p
-        className="mt-3 select-all rounded-md bg-sunken px-4 py-3 text-center font-mono text-3xl
-                   font-semibold tracking-[0.2em] text-ink"
+        className="mt-4 select-all rounded-2xl border-2 border-dashed border-line-strong bg-sunken px-4 py-4
+                   text-center font-mono text-3xl font-bold tracking-[0.2em] text-ink"
       >
         {result.setup_code}
       </p>
@@ -161,9 +168,12 @@ function AddForm({
   }
 
   return (
-    <Card className="p-4">
+    <Card className="p-4 sm:p-6">
       <form onSubmit={add} className="space-y-4">
-        <h2 className="text-base font-semibold text-ink">Add a teacher</h2>
+        <h2 className="flex items-center gap-3 text-lg font-semibold text-ink">
+          <IconTile name="user" />
+          Add a teacher
+        </h2>
         <Field label="Name" required minLength={2} value={name}
                onChange={(e) => setName(e.target.value)} />
         <Field label="Email" type="email" inputMode="email" autoCapitalize="none"
@@ -185,18 +195,10 @@ function AddForm({
 
 function RolePicker({ value, onChange }: { value: Role; onChange: (r: Role) => void }) {
   return (
-    <label className="block">
-      <span className="text-sm font-medium text-ink">Role</span>
-      <select
-        value={value}
-        onChange={(e) => onChange(e.target.value as Role)}
-        className="mt-1.5 block min-h-11 w-full rounded-md border border-line-strong bg-surface
-                   px-3 text-base text-ink"
-      >
-        <option value="teacher">Teacher</option>
-        <option value="school_admin">Head teacher - can also manage teachers and classes</option>
-      </select>
-    </label>
+    <Select label="Role" value={value} onChange={(e) => onChange(e.target.value as Role)}>
+      <option value="teacher">Teacher</option>
+      <option value="school_admin">Head teacher - can also manage teachers and classes</option>
+    </Select>
   );
 }
 
@@ -251,10 +253,18 @@ function StaffRow({
   }
 
   return (
-    <li className="px-4 py-3">
-      <div className="flex flex-wrap items-start gap-x-3 gap-y-1">
+    <li className="px-4 py-4">
+      <div className="flex items-start gap-3">
+        <span
+          aria-hidden="true"
+          className={`flex size-11 shrink-0 items-center justify-center rounded-full text-sm font-bold ${
+            member.is_active ? "bg-brand-fill text-brand-strong" : "bg-sunken text-ink-subtle"
+          }`}
+        >
+          {initials(member.name)}
+        </span>
         <div className="min-w-0 flex-1">
-          <p className="text-[15px] font-medium text-ink">
+          <p className="text-[15px] font-semibold text-ink">
             {member.name}
             {member.is_you && <span className="font-normal text-ink-muted"> (you)</span>}
           </p>
@@ -280,7 +290,7 @@ function StaffRow({
       <Note tone="error">{error}</Note>
 
       {mode === "view" && !member.is_you && (
-        <div className="mt-2 flex flex-wrap gap-2">
+        <div className="mt-3 flex flex-wrap gap-2 pl-14">
           {member.is_active ? (
             <>
               <Button variant="secondary" size="sm" disabled={busy} onClick={() => setMode("confirm-code")}>
@@ -299,7 +309,7 @@ function StaffRow({
       )}
 
       {mode === "confirm-code" && (
-        <div role="alertdialog" aria-label="New setup code" className="mt-3 rounded-md bg-warn-fill p-3">
+        <div role="alertdialog" aria-label="New setup code" className="mt-3 rounded-xl bg-warn-fill p-4">
           <p className="text-[15px] text-ink">
             Give {member.name} a new code? Their current password stops working and they are
             signed out everywhere until they use it.
@@ -312,7 +322,7 @@ function StaffRow({
       )}
 
       {mode === "confirm-off" && (
-        <div role="alertdialog" aria-label="Deactivate" className="mt-3 rounded-md bg-risk-fill p-3">
+        <div role="alertdialog" aria-label="Deactivate" className="mt-3 rounded-xl bg-risk-fill p-4">
           <p className="text-[15px] text-ink">
             Deactivate {member.name}? They are signed out everywhere at once and can&rsquo;t sign
             in. Their classes and records stay, and you can reactivate them later.
@@ -327,7 +337,7 @@ function StaffRow({
       )}
 
       {mode === "edit" && (
-        <form onSubmit={save} className="mt-3 space-y-4 rounded-md bg-sunken p-3">
+        <form onSubmit={save} className="mt-3 space-y-4 rounded-xl bg-sunken p-4">
           <Field label="Name" required minLength={2} value={name}
                  onChange={(e) => setName(e.target.value)} />
           <Field label="Email" type="email" required value={email} autoCapitalize="none"

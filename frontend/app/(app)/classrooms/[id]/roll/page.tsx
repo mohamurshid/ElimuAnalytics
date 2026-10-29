@@ -17,14 +17,15 @@
  * what the backend actually did.
  */
 
-import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
 import { api, ApiError, errorMessage } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import type { Classroom, Removal, Student } from "@/lib/types";
-import { Button, Empty, Field, Loading, Note } from "@/components/ui";
+import { Icon } from "@/components/Icon";
+import { Badge, Button, Card, Empty, Field, Loading, Note, PageHeader, Segmented } from "@/components/ui";
+import { initials } from "@/lib/people";
 
 export default function ClassRollPage() {
   const params = useParams<{ id: string }>();
@@ -153,121 +154,117 @@ export default function ClassRollPage() {
 
   return (
     <>
-      <Link
-        href={`/classrooms/${classId}`}
-        className="text-sm text-neutral-500 hover:text-neutral-900"
-      >
-        ← Competency heatmap
-      </Link>
-
-      <div className="mt-2 flex items-baseline justify-between">
-        <h1 className="text-2xl font-semibold">{title} — roll</h1>
-        <label className="flex items-center gap-2 text-sm text-neutral-600">
-          <input
-            type="checkbox"
-            checked={showWithdrawn}
-            onChange={(e) => setShowWithdrawn(e.target.checked)}
+      <PageHeader
+        back={{ href: `/classrooms/${classId}`, label: title }}
+        eyebrow={title}
+        title="Learners"
+        description={
+          classroom && !classroom.is_active
+            ? "This class has been withdrawn. Learners cannot be enrolled into it."
+            : roll
+              ? `${roll.filter((l) => l.is_active).length} enrolled`
+              : undefined
+        }
+        actions={
+          <Segmented
+            label="Which learners to show"
+            value={showWithdrawn ? "all" : "current"}
+            onChange={(v) => setShowWithdrawn(v === "all")}
+            options={[
+              { value: "current", label: "Current" },
+              { value: "all", label: "Include withdrawn" },
+            ]}
           />
-          Show withdrawn
-        </label>
-      </div>
-      {classroom && !classroom.is_active && (
-        <p className="mt-1 text-sm text-neutral-500">
-          This class has been withdrawn. Learners cannot be enrolled into it.
-        </p>
-      )}
+        }
+      />
 
-      <div className="mt-4 space-y-3">
+      <div className="mb-4 space-y-3 empty:hidden">
         <Note tone="error">{error}</Note>
         <Note>{notice}</Note>
       </div>
 
       {classroom?.is_active && (
-        <form
-          onSubmit={enrol}
-          className="mt-6 flex flex-wrap items-end gap-3 rounded border
-                     border-neutral-200 bg-white p-4"
-        >
-          <div className="w-72">
-            <Field
-              label="Learner name"
-              required
-              placeholder="Wanjiru A."
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-            />
-          </div>
-          <Button type="submit" disabled={busy}>
-            Enrol
-          </Button>
-        </form>
+        <Card className="mb-6 p-4 sm:p-5">
+          <form onSubmit={enrol} className="flex flex-col gap-3 sm:flex-row sm:items-end">
+            <div className="flex-1">
+              <Field
+                label="Add a learner"
+                name="learner-name"
+                required
+                placeholder="e.g. Wanjiru A."
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+              />
+            </div>
+            <Button type="submit" disabled={busy}>
+              <Icon name="plus" className="size-5" /> Enrol
+            </Button>
+          </form>
+        </Card>
       )}
 
-      <section className="mt-6">
+      <section>
         {!roll && !error && <Loading what="the roll" />}
 
         {roll && roll.length === 0 && !error && (
-          <Empty>No learners enrolled yet.</Empty>
+          <Empty icon="users">No learners enrolled yet.</Empty>
         )}
 
         {roll && roll.length > 0 && (
-          <table className="w-full border-collapse text-sm">
-            <thead>
-              <tr className="border-b border-neutral-300 text-left">
-                <th className="py-2 pr-4 font-medium">Learner</th>
-                <th className="py-2 pr-4 font-medium">Responses</th>
-                <th className="py-2 pr-4 font-medium">Status</th>
-                <th className="py-2 font-medium" />
-              </tr>
-            </thead>
-            <tbody>
-              {roll.map((learner) => (
-                <tr key={learner.student_id} className="border-b border-neutral-200">
-                  <td className="py-2 pr-4">{learner.name}</td>
-                  <td className="py-2 pr-4">
-                    {learner.response_count}
-                    {learner.response_count > 0 && (
+          <ul className="divide-y divide-line overflow-hidden rounded-2xl border border-line bg-surface shadow-soft">
+            {roll.map((learner) => (
+              <li
+                key={learner.student_id}
+                className="flex flex-wrap items-center gap-3 px-4 py-3"
+              >
+                <span
+                  aria-hidden="true"
+                  className={`flex size-10 shrink-0 items-center justify-center rounded-full text-sm font-bold
+                              ${learner.is_active ? "bg-brand-fill text-brand-strong" : "bg-sunken text-ink-subtle"}`}
+                >
+                  {initials(learner.name)}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className={`block truncate font-semibold ${learner.is_active ? "text-ink" : "text-ink-muted"}`}>
+                    {learner.name}
+                  </span>
+                  <span className="mt-0.5 flex flex-wrap items-center gap-2 text-sm text-ink-muted">
+                    {learner.response_count} {learner.response_count === 1 ? "answer" : "answers"}
+                    {learner.response_count > 0 && learner.is_active && (
                       <span
-                        className="ml-2 text-xs text-neutral-500"
-                        title="Removing this learner will withdraw the record
-                               rather than delete it, because deleting would
-                               cascade to these responses."
+                        className="text-xs text-ink-subtle"
+                        title="Removing this learner will withdraw the record rather than delete it, because deleting would cascade to these responses."
                       >
-                        kept on removal
+                        · kept on removal
                       </span>
                     )}
-                  </td>
-                  <td className="py-2 pr-4">
-                    {learner.is_active ? (
-                      <span className="text-neutral-600">active</span>
-                    ) : (
-                      <span className="text-neutral-400">withdrawn</span>
-                    )}
-                  </td>
-                  <td className="py-2 text-right">
-                    {isAdmin && learner.is_active && (
-                      <Button
-                        variant="danger"
-                        disabled={busy}
-                        onClick={() => remove(learner)}
-                      >
-                        Remove
-                      </Button>
-                    )}
-                    {isAdmin && !learner.is_active && (
-                      <Button
-                        variant="secondary"
-                        disabled={busy}
-                        onClick={() => restoreLearner(learner)}
-                      >
-                        Restore
-                      </Button>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                    {!learner.is_active && <Badge>Withdrawn</Badge>}
+                  </span>
+                </span>
+                {isAdmin && learner.is_active && (
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => remove(learner)}
+                    className="min-h-11 shrink-0 rounded-xl px-3 text-sm font-semibold text-ink-muted
+                               hover:bg-risk-fill hover:text-risk disabled:opacity-50"
+                  >
+                    Remove
+                  </button>
+                )}
+                {isAdmin && !learner.is_active && (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    disabled={busy}
+                    onClick={() => restoreLearner(learner)}
+                  >
+                    <Icon name="refresh" className="size-4" /> Restore
+                  </Button>
+                )}
+              </li>
+            ))}
+          </ul>
         )}
       </section>
     </>

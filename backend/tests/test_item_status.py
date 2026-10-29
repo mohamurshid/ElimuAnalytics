@@ -262,6 +262,26 @@ def test_malformed_questions_are_described(options, key, misconceptions, problem
     assert any(problem in p for p in mcq_problems(options, key, misconceptions))
 
 
+@pytest.mark.parametrize(
+    "options",
+    [
+        ["con-FLICT", "CON-flict", "con-flict"],  # word stress: the capitals are the answer
+        ["SUB-ject (noun)", "sub-JECT (noun)"],
+        ["Copper", "COPPER"],
+    ],
+)
+def test_capitals_inside_a_word_make_options_different(options):
+    assert "two options are the same" not in mcq_problems(options, 0)
+
+
+@pytest.mark.parametrize(
+    "options",
+    [["Copper", "copper"], ["the Sun", "The sun"], ["heat  energy", "Heat energy"]],
+)
+def test_a_capital_at_the_start_of_a_word_does_not(options):
+    assert "two options are the same" in mcq_problems(options, 0)
+
+
 def test_a_text_only_question_is_still_valid_for_paper_marking():
     assert mcq_problems(None, None) == []
     assert mcq_problems(OPTIONS, 0, MISCONCEPTIONS) == []

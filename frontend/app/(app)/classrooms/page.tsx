@@ -30,7 +30,20 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
-import { Badge, Button, Card, Empty, Loading, Note, PageHeader } from "@/components/ui";
+import { Icon } from "@/components/Icon";
+import {
+  Badge,
+  Button,
+  Card,
+  Empty,
+  Field,
+  IconTile,
+  Loading,
+  Note,
+  PageHeader,
+  Segmented,
+  Select,
+} from "@/components/ui";
 import { api, errorMessage } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import type { Classroom, Removal, Restore } from "@/lib/types";
@@ -167,55 +180,41 @@ export default function ClassesPage() {
         actions={
           isAdmin && !adding ? (
             <Button onClick={() => setAdding(true)} className="w-full sm:w-auto">
-              Add a class
+              <Icon name="plus" className="size-5" /> Add a class
             </Button>
           ) : undefined
         }
       />
 
       {isAdmin && adding && (
-        <Card className="mb-6 p-4 sm:p-5">
+        <Card className="mb-6 p-4 sm:p-6">
           <form onSubmit={create}>
-            <h2 className="text-base font-semibold text-ink">Add a class</h2>
-            <div className="mt-4 grid gap-4 sm:grid-cols-2">
-              <label className="block">
-                <span className="text-sm font-medium text-ink">Grade</span>
-                <select
-                  required
-                  value={grade}
-                  onChange={(e) => setGrade(e.target.value)}
-                  className="mt-1.5 block min-h-11 w-full rounded-md border border-line-strong
-                             bg-surface px-3 text-base text-ink focus:border-ink focus:outline-none"
-                >
-                  <option value="" disabled>
-                    Choose a grade
-                  </option>
-                  {GRADES.map((g) => (
-                    <option key={g} value={g}>
-                      {g}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="block">
-                <span className="text-sm font-medium text-ink">
-                  Stream <span className="font-normal text-ink-subtle">(optional)</span>
-                </span>
-                <input
-                  value={stream}
-                  maxLength={100}
-                  onChange={(e) => setStream(e.target.value)}
-                  placeholder="e.g. Blue"
-                  className="mt-1.5 block min-h-11 w-full rounded-md border border-line-strong
-                             bg-surface px-3 text-base text-ink placeholder:text-ink-subtle
-                             focus:border-ink focus:outline-none"
-                />
-              </label>
+            <div className="flex items-center gap-3">
+              <IconTile name="classes" />
+              <h2 className="text-lg font-semibold text-ink">Add a class</h2>
             </div>
-            <p className="mt-2 text-sm text-ink-subtle">
-              Add a stream if your school has more than one class in this grade.
-            </p>
-            <div className="mt-5 flex flex-wrap gap-2">
+            <div className="mt-5 grid gap-4 sm:grid-cols-2">
+              <Select required label="Grade" value={grade} onChange={(e) => setGrade(e.target.value)}>
+                <option value="" disabled>
+                  Choose a grade
+                </option>
+                {GRADES.map((g) => (
+                  <option key={g} value={g}>
+                    {g}
+                  </option>
+                ))}
+              </Select>
+              <Field
+                label="Stream (optional)"
+                name="stream"
+                value={stream}
+                maxLength={100}
+                onChange={(e) => setStream(e.target.value)}
+                placeholder="e.g. Blue"
+                hint="Add a stream if your school has more than one class in this grade."
+              />
+            </div>
+            <div className="mt-6 flex flex-wrap gap-2">
               <Button type="submit" disabled={busy || !grade}>
                 {busy ? "Adding…" : "Add class"}
               </Button>
@@ -235,30 +234,22 @@ export default function ClassesPage() {
         </Card>
       )}
 
-      <div
-        role="group"
-        aria-label="Which classes to show"
-        className="mb-4 inline-flex rounded-md border border-line-strong bg-surface p-0.5"
-      >
-        {(["current", "withdrawn"] as const).map((value) => (
-          <button
-            key={value}
-            type="button"
-            aria-pressed={view === value}
-            onClick={() => {
-              setView(value);
-              setRows(null);
-              setConfirming(null);
-            }}
-            className={`min-h-10 rounded px-4 text-sm font-medium
-                        ${view === value ? "bg-sunken text-ink" : "text-ink-muted hover:text-ink"}`}
-          >
-            {value === "current" ? "Current" : "Withdrawn"}
-          </button>
-        ))}
-      </div>
+      <Segmented
+        label="Which classes to show"
+        className="mb-5"
+        value={view}
+        onChange={(value) => {
+          setView(value);
+          setRows(null);
+          setConfirming(null);
+        }}
+        options={[
+          { value: "current", label: "Current" },
+          { value: "withdrawn", label: "Withdrawn" },
+        ]}
+      />
 
-      <div className="mb-4 space-y-3">
+      <div className="mb-4 space-y-3 empty:hidden">
         <Note tone="error">{error}</Note>
         <Note>{notice}</Note>
       </div>
@@ -267,10 +258,13 @@ export default function ClassesPage() {
 
       {shown && shown.length === 0 && (
         <Empty
+          icon={view === "current" ? "classes" : "book"}
           title={view === "current" ? "No classes yet" : "No withdrawn classes"}
           action={
             view === "current" && isAdmin && !adding ? (
-              <Button onClick={() => setAdding(true)}>Add a class</Button>
+              <Button onClick={() => setAdding(true)}>
+                <Icon name="plus" className="size-5" /> Add a class
+              </Button>
             ) : undefined
           }
         >
@@ -283,45 +277,49 @@ export default function ClassesPage() {
       )}
 
       {shown && shown.length > 0 && (
-        <ul className="divide-y divide-line overflow-hidden rounded-lg border border-line bg-surface">
+        <ul className="grid gap-3 sm:grid-cols-2">
           {shown.map((row) => {
             const asking = confirming === row.class_id;
             return (
-              <li key={row.class_id}>
+              <li
+                key={row.class_id}
+                className="overflow-hidden rounded-2xl border border-line bg-surface shadow-soft transition-shadow hover:shadow-lift"
+              >
                 <div className="flex items-center">
                   <Link
                     href={`/classrooms/${row.class_id}`}
-                    className="flex min-h-18 min-w-0 flex-1 items-center gap-3.5 px-4 py-3 hover:bg-sunken"
+                    className="group flex min-h-20 min-w-0 flex-1 items-center gap-4 p-4"
                   >
-                    {/* Neutral, not blue: blue is reserved for levels. */}
+                    {/* Brand green, not blue: blue is reserved for levels. */}
                     <span
                       aria-hidden="true"
-                      className={`flex size-12 shrink-0 flex-col items-center justify-center rounded-lg
-                                  border border-line bg-sunken
-                                  ${row.is_active ? "text-ink" : "text-ink-subtle"}`}
+                      className={`flex size-14 shrink-0 flex-col items-center justify-center rounded-2xl
+                                  ${row.is_active ? "bg-brand-fill text-brand-strong" : "bg-sunken text-ink-subtle"}`}
                     >
-                      <span className="text-[9px] font-semibold uppercase leading-none tracking-wider text-ink-subtle">
+                      <span className="text-[10px] font-semibold uppercase leading-none tracking-wider opacity-80">
                         Grade
                       </span>
-                      <span className="mt-0.5 text-xl font-semibold leading-none tabular-nums">
+                      <span className="mt-0.5 text-2xl font-bold leading-none tabular-nums">
                         {gradeNumber(row.grade)}
                       </span>
                     </span>
                     <span className="min-w-0 flex-1">
                       <span
-                        className={`block truncate text-base font-semibold
+                        className={`block truncate text-[17px] font-semibold
                                     ${row.is_active ? "text-ink" : "text-ink-muted"}`}
                       >
                         {className(row)}
                       </span>
-                      <span className="mt-0.5 flex flex-wrap items-center gap-2 text-sm text-ink-muted">
+                      <span className="mt-1 flex flex-wrap items-center gap-2 text-sm text-ink-muted">
+                        <Icon name="users" className="size-4" />
                         {learners(row.student_count)}
                         {!row.is_active && <Badge>Withdrawn</Badge>}
                       </span>
                     </span>
-                    <span aria-hidden="true" className="text-xl leading-none text-ink-subtle">
-                      ›
-                    </span>
+                    <Icon
+                      name="chevronRight"
+                      className="size-5 shrink-0 text-ink-subtle transition-transform group-hover:translate-x-0.5"
+                    />
                   </Link>
 
                   {isAdmin && row.is_active && !asking && (
@@ -329,7 +327,7 @@ export default function ClassesPage() {
                       type="button"
                       disabled={busy}
                       onClick={() => setConfirming(row.class_id)}
-                      className="mr-2 min-h-11 shrink-0 rounded-md px-3 text-sm font-medium
+                      className="mr-2 min-h-11 shrink-0 rounded-xl px-3 text-sm font-semibold
                                  text-ink-muted hover:bg-risk-fill hover:text-risk disabled:opacity-50"
                     >
                       Remove
@@ -343,7 +341,7 @@ export default function ClassesPage() {
                       onClick={() => restore(row)}
                       className="mr-3 shrink-0"
                     >
-                      Restore
+                      <Icon name="refresh" className="size-4" /> Restore
                     </Button>
                   )}
                 </div>
@@ -352,7 +350,7 @@ export default function ClassesPage() {
                   <div
                     role="alertdialog"
                     aria-label={`Remove ${className(row)}`}
-                    className="border-t border-line bg-risk-fill px-4 py-3"
+                    className="border-t border-risk/20 bg-risk-fill px-4 py-3.5"
                   >
                     <p className="text-[15px] text-ink">
                       Remove <strong>{className(row)}</strong>? If its learners have

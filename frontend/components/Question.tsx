@@ -76,12 +76,14 @@ export function QuestionView({
             return (
               <li
                 key={n}
-                className={`rounded-md border px-3 py-2.5 ${
+                className={`rounded-xl border px-3 py-2.5 ${
                   isKey ? "border-ok/40 bg-ok-fill" : "border-line bg-surface"
                 }`}
               >
                 <div className="flex items-start gap-2">
-                  <span className="w-5 shrink-0 font-semibold text-ink-muted">{LETTERS[n]}</span>
+                  <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-sunken text-xs font-bold text-ink-muted">
+                    {LETTERS[n]}
+                  </span>
                   <span className="min-w-0 flex-1 text-[15px] text-ink">{option}</span>
                   {isKey && <Badge tone="ok">✓ Correct</Badge>}
                 </div>
@@ -107,7 +109,7 @@ export function QuestionView({
       )}
 
       {item.curriculum_excerpt && (
-        <blockquote className="mt-3 border-l-2 border-line-strong pl-3 text-sm text-ink-muted">
+        <blockquote className="mt-3 rounded-r-xl border-l-4 border-brand-strong/40 bg-brand-fill/50 py-2 pl-3 pr-3 text-sm text-ink-muted">
           <span className="font-medium text-ink">From the curriculum:</span> “
           {item.curriculum_excerpt}”
         </blockquote>
@@ -183,7 +185,7 @@ export function QuestionEditor({
           onChange={(e) => setText(e.target.value)}
           rows={3}
           required
-          className="mt-1 block w-full rounded-md border border-line-strong bg-surface px-3 py-2
+          className="mt-1 block w-full rounded-xl border border-line-strong bg-surface px-3 py-2
                      text-base text-ink"
         />
       </label>
@@ -194,7 +196,7 @@ export function QuestionEditor({
             Options — choose the correct one
           </legend>
           {options.map((option, n) => (
-            <div key={n} className="rounded-md border border-line p-3">
+            <div key={n} className="rounded-xl border border-line p-3">
               <div className="flex items-end gap-3">
                 <input
                   type="radio"
@@ -230,7 +232,7 @@ export function QuestionEditor({
                       onChange={(e) =>
                         setMisconceptions((m) => m.map((x, i) => (i === n ? e.target.value : x)))
                       }
-                      className="mt-1.5 block w-full rounded-md border border-line-strong
+                      className="mt-1.5 block w-full rounded-xl border border-line-strong
                                  bg-surface px-3 py-2 text-base text-ink"
                     />
                   </label>
@@ -247,7 +249,7 @@ export function QuestionEditor({
           value={rationale}
           onChange={(e) => setRationale(e.target.value)}
           rows={2}
-          className="mt-1 block w-full rounded-md border border-line-strong bg-surface px-3 py-2
+          className="mt-1 block w-full rounded-xl border border-line-strong bg-surface px-3 py-2
                      text-base text-ink"
         />
       </label>
@@ -319,7 +321,12 @@ export function QuestionWriter({
     const cleaned = options.map((o) => o.trim());
     if (text.trim().length < 5) return "Write the question first.";
     if (cleaned.some((o) => !o)) return "Fill in every option, or remove the empty one.";
-    if (new Set(cleaned.map((o) => o.toLowerCase())).size !== cleaned.length)
+    // Same rule as the server (item_status._option_key): a capital at the
+    // start of a word is ignored, capitals inside one are kept, so the
+    // word-stress options "con-FLICT" and "CON-flict" stay different.
+    const optionKey = (o: string) =>
+      o.split(/\s+/).join(" ").replace(/\b(\w)/g, (c) => c.toLowerCase());
+    if (new Set(cleaned.map(optionKey)).size !== cleaned.length)
       return "Two options are the same.";
     if (key === null) return "Choose which option is correct.";
     return null;
@@ -367,7 +374,7 @@ export function QuestionWriter({
           onChange={(e) => setText(e.target.value)}
           rows={3}
           placeholder="For example: Which of these materials is the best conductor of heat?"
-          className="mt-1.5 block w-full rounded-md border border-line-strong bg-surface px-3 py-2
+          className="mt-1.5 block w-full rounded-xl border border-line-strong bg-surface px-3 py-2
                      text-base text-ink placeholder:text-ink-subtle"
         />
       </label>
@@ -379,7 +386,7 @@ export function QuestionWriter({
         {options.map((option, n) => (
           <div
             key={n}
-            className={`rounded-md border p-3 ${
+            className={`rounded-xl border p-3 ${
               key === n ? "border-ok/40 bg-ok-fill" : "border-line bg-surface"
             }`}
           >
@@ -392,14 +399,16 @@ export function QuestionWriter({
                 aria-label={`Option ${LETTERS[n]} is correct`}
                 className="size-5 shrink-0"
               />
-              <span className="w-4 shrink-0 font-semibold text-ink-muted">{LETTERS[n]}</span>
+              <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-sunken text-xs font-bold text-ink-muted">
+                {LETTERS[n]}
+              </span>
               <input
                 value={option}
                 onChange={(e) =>
                   setOptions((o) => o.map((x, i) => (i === n ? e.target.value : x)))
                 }
                 aria-label={`Option ${LETTERS[n]}`}
-                className="block min-h-11 min-w-0 flex-1 rounded-md border border-line-strong
+                className="block min-h-11 min-w-0 flex-1 rounded-xl border border-line-strong
                            bg-surface px-3 text-base text-ink"
               />
               {options.length > 2 && (
@@ -407,7 +416,7 @@ export function QuestionWriter({
                   type="button"
                   onClick={() => removeOption(n)}
                   aria-label={`Remove option ${LETTERS[n]}`}
-                  className="flex size-11 shrink-0 items-center justify-center rounded-md
+                  className="flex size-11 shrink-0 items-center justify-center rounded-xl
                              text-xl text-ink-subtle hover:bg-sunken hover:text-ink"
                 >
                   ×
@@ -429,7 +438,7 @@ export function QuestionWriter({
                     onChange={(e) =>
                       setNotes((m) => m.map((x, i) => (i === n ? e.target.value : x)))
                     }
-                    className="mt-1 block w-full rounded-md border border-line-strong bg-surface
+                    className="mt-1 block w-full rounded-xl border border-line-strong bg-surface
                                px-3 py-2 text-base text-ink"
                   />
                 </label>
@@ -458,7 +467,7 @@ export function QuestionWriter({
           value={rationale}
           onChange={(e) => setRationale(e.target.value)}
           rows={2}
-          className="mt-1.5 block w-full rounded-md border border-line-strong bg-surface px-3 py-2
+          className="mt-1.5 block w-full rounded-xl border border-line-strong bg-surface px-3 py-2
                      text-base text-ink"
         />
       </label>

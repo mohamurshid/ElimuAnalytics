@@ -20,3 +20,9 @@ export function initials(name: string | undefined): string {
     .join("");
   return letters || "?";
 }
+
+/** "Good morning" by the device's clock, for the line above a page title. */
+export function greeting(): string {
+  const h = new Date().getHours();
+  return h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening";
+}

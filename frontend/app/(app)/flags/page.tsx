@@ -19,9 +19,12 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
-import { ButtonLink, Empty, Loading, Note, PageHeader } from "@/components/ui";
+import { Icon } from "@/components/Icon";
+import { LevelAvatar, LevelChip } from "@/components/Level";
+import { ButtonLink, Card, Empty, Loading, Note, PageHeader } from "@/components/ui";
 import { api, errorMessage } from "@/lib/api";
-import { shortTier, tierColour } from "@/lib/tiers";
+import { useAuth } from "@/lib/auth";
+import { greeting } from "@/lib/people";
 import type { Flag } from "@/lib/types";
 
 /** "3.0 Force and Energy / 3.3 Heat Transfer" -> the sub-strand leads. */
@@ -39,6 +42,7 @@ function flaggedOn(iso: string | null): string {
 }
 
 export default function FlagsPage() {
+  const { profile } = useAuth();
   const [rows, setRows] = useState<Flag[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -62,9 +66,14 @@ export default function FlagsPage() {
     };
   }, [fetchFlags]);
 
+  const firstName = profile?.name?.split(" ")[0];
+  const below = rows?.filter((r) => r.severity === "Below expectation").length ?? 0;
+  const approaches = rows?.filter((r) => r.severity === "Approaches expectation").length ?? 0;
+
   return (
     <>
       <PageHeader
+        eyebrow={firstName ? `${greeting()}, ${firstName}` : greeting()}
         title="Learners to support"
         description="Learners who were below expectation in two assessments in a row. One weak result on its own isn’t enough to appear here."
       />
@@ -75,62 +84,86 @@ export default function FlagsPage() {
 
       {rows && rows.length === 0 && (
         <Empty
+          icon="seedling"
           title="No one needs support yet"
           action={
             <ButtonLink href="/classrooms" variant="primary">
+              <Icon name="classes" />
               Go to your classes
             </ButtonLink>
           }
         >
-          Learners appear here after two assessments in a row below
-          expectation. Give your class a quiz to get started.
+          Give a class a quiz, then record their levels. A learner appears here
+          after two low results in a row on the same strand.
         </Empty>
+      )}
+
+      {rows && rows.length === 0 && (
+        <ol className="mt-4 grid gap-3 sm:grid-cols-3">
+          {[
+            { icon: "paper" as const, title: "Give a quiz", body: "On a phone, or on paper you mark." },
+            { icon: "save" as const, title: "Record levels", body: "From the class page, after each quiz." },
+            { icon: "support" as const, title: "See who needs help", body: "Two low results in a row bring a learner here." },
+          ].map((step, i) => (
+            <li key={step.title}>
+              <Card className="flex h-full items-start gap-3 p-4">
+                <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-brand-fill text-brand-strong">
+                  <Icon name={step.icon} />
+                </span>
+                <span>
+                  <span className="block text-xs font-semibold text-ink-subtle">Step {i + 1}</span>
+                  <span className="block text-[15px] font-semibold text-ink">{step.title}</span>
+                  <span className="mt-0.5 block text-sm text-ink-muted">{step.body}</span>
+                </span>
+              </Card>
+            </li>
+          ))}
+        </ol>
       )}
 
       {rows && rows.length > 0 && (
         <>
-          <p className="mb-3 text-sm text-ink-subtle">
-            {rows.length} {rows.length === 1 ? "learner" : "learners"}
-          </p>
-          <ul className="divide-y divide-line overflow-hidden rounded-lg border border-line bg-surface">
+          <dl className="mb-5 grid grid-cols-3 gap-3">
+            {[
+              { label: "Need support", n: rows.length, tone: "bg-brand-fill text-brand-strong" },
+              { label: "Below", n: below, tone: "bg-sunken text-ink" },
+              { label: "Approaches", n: approaches, tone: "bg-sunken text-ink" },
+            ].map((stat) => (
+              <div key={stat.label} className={`rounded-2xl px-4 py-3 ${stat.tone}`}>
+                <dt className="text-xs font-semibold opacity-80">{stat.label}</dt>
+                <dd className="mt-0.5 text-2xl font-bold tabular-nums">{stat.n}</dd>
+              </div>
+            ))}
+          </dl>
+          <ul className="space-y-2.5">
             {rows.map((flag) => {
               const { strand, sub } = splitStrand(flag.strand);
               return (
                 <li key={flag.flag_id}>
                   <Link
                     href={`/students/${flag.student_id}`}
-                    className="flex min-h-16 items-center gap-3 px-4 py-3 hover:bg-sunken"
+                    className="flex min-h-20 items-center gap-3.5 rounded-2xl border border-line bg-surface px-4 py-3 shadow-soft transition-all hover:-translate-y-0.5 hover:shadow-lift"
                   >
-                    {/* Severity is the learner's KICD tier when flagged, so it
-                        separates Approaches from Below - the triage a teacher
-                        needs. The band carries it in colour and the subline in
-                        words, because colour must never be the only signal. */}
-                    <span
-                      aria-hidden="true"
-                      className="h-10 w-1 shrink-0 rounded-full"
-                      style={{ background: tierColour(flag.severity) }}
-                    />
+                    {/* Severity is the learner's KICD level when flagged, so
+                        it separates Approaches from Below - the triage a
+                        teacher needs - in colour and, on the chip, in words. */}
+                    <LevelAvatar name={flag.learner} tier={flag.severity} />
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-base font-semibold text-ink">
                         {flag.learner}
                       </span>
-                      <span className="block truncate text-sm text-ink-muted">
-                        <span className="font-medium text-ink">{shortTier(flag.severity)}</span>
-                        {" · "}
+                      <span className="mt-0.5 block truncate text-sm text-ink-muted">
                         {sub}
                         {strand && <span className="text-ink-subtle"> · {strand}</span>}
                       </span>
-                    </span>
-                    <span className="shrink-0 text-right">
-                      {flag.flagged_at && (
-                        <span className="block text-xs text-ink-subtle">
-                          {flaggedOn(flag.flagged_at)}
-                        </span>
-                      )}
-                      <span aria-hidden="true" className="text-xl leading-none text-ink-subtle">
-                        ›
+                      <span className="mt-1.5 flex items-center gap-2">
+                        <LevelChip tier={flag.severity} size="sm" />
+                        {flag.flagged_at && (
+                          <span className="text-xs text-ink-subtle">since {flaggedOn(flag.flagged_at)}</span>
+                        )}
                       </span>
                     </span>
+                    <Icon name="chevronRight" className="size-5 shrink-0 text-ink-subtle" />
                   </Link>
                 </li>
               );

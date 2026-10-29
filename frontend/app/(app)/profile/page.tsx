@@ -17,7 +17,8 @@
 import { useRouter } from "next/navigation";
 import { useState, useSyncExternalStore } from "react";
 
-import { Button, ButtonLink, Card, Field, Note, PageHeader } from "@/components/ui";
+import { Icon } from "@/components/Icon";
+import { Button, ButtonLink, Card, Field, IconTile, Note, PageHeader } from "@/components/ui";
 import { errorMessage } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { initials, ROLE_LABEL } from "@/lib/people";
@@ -62,12 +63,12 @@ export default function ProfilePage() {
       <PageHeader title="Profile" />
 
       <div className="space-y-6">
-        <Card>
-          <div className="flex items-center gap-4 p-5">
+        <Card className="overflow-hidden">
+          <div className="flex items-center gap-4 bg-brand-fill/60 p-5">
             <span
               aria-hidden="true"
-              className="flex size-14 shrink-0 items-center justify-center rounded-full
-                         border border-line-strong bg-sunken text-lg font-semibold text-ink"
+              className="flex size-16 shrink-0 items-center justify-center rounded-full
+                         bg-action text-xl font-bold text-action-ink shadow-soft"
             >
               {initials(profile.name)}
             </span>
@@ -109,13 +110,16 @@ export default function ProfilePage() {
         </section>
 
         {profile.role !== "teacher" && (
-          <Card className="p-4">
-            <h2 className="text-base font-semibold text-ink">Teachers at your school</h2>
-            <p className="mt-1 text-sm text-ink-muted">
-              Add teachers, give them setup codes, and manage their accounts.
-            </p>
-            <ButtonLink href="/staff" variant="secondary" className="mt-3">
-              Manage teachers
+          <Card className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:p-5">
+            <IconTile name="users" />
+            <div className="min-w-0 flex-1">
+              <h2 className="text-base font-semibold text-ink">Teachers at your school</h2>
+              <p className="mt-0.5 text-sm text-ink-muted">
+                Add teachers, give them setup codes, and manage their accounts.
+              </p>
+            </div>
+            <ButtonLink href="/staff" variant="secondary">
+              Manage teachers <Icon name="chevronRight" className="size-4" />
             </ButtonLink>
           </Card>
         )}
@@ -127,15 +131,16 @@ export default function ProfilePage() {
           signOutEverywhere={signOutEverywhere}
         />
 
-        <section aria-labelledby="appearance-heading">
-          <h2 id="appearance-heading" className="text-lg font-semibold text-ink">
+        <section aria-labelledby="appearance-heading" className="rounded-2xl border border-line bg-surface p-4 shadow-soft sm:p-5">
+          <h2 id="appearance-heading" className="flex items-center gap-3 text-lg font-semibold text-ink">
+            <IconTile name="sparkles" size="sm" />
             Appearance
           </h2>
           <p className="mt-1 text-sm text-ink-muted">Saved on this device only.</p>
           <div
             role="radiogroup"
             aria-labelledby="appearance-heading"
-            className="mt-3 grid grid-cols-3 gap-1 rounded-md border border-line-strong bg-surface p-1"
+            className="mt-3 grid grid-cols-3 gap-1 rounded-xl bg-sunken p-1"
           >
             {THEMES.map((option) => (
               <button
@@ -144,9 +149,9 @@ export default function ProfilePage() {
                 role="radio"
                 aria-checked={theme === option.value}
                 onClick={() => applyTheme(option.value)}
-                className={`min-h-11 rounded px-2 text-sm font-medium
+                className={`min-h-11 rounded-lg px-2 text-sm font-semibold transition-all
                             ${theme === option.value
-                              ? "bg-sunken text-ink"
+                              ? "bg-surface text-ink shadow-soft"
                               : "text-ink-muted hover:text-ink"}`}
               >
                 {option.label}
@@ -197,8 +202,11 @@ function PasswordSection({ hasPassword }: { hasPassword: boolean }) {
   }
 
   return (
-    <section aria-labelledby="password-heading">
-      <h2 id="password-heading" className="text-lg font-semibold text-ink">Password</h2>
+    <section aria-labelledby="password-heading" className="rounded-2xl border border-line bg-surface p-4 shadow-soft sm:p-5">
+      <h2 id="password-heading" className="flex items-center gap-3 text-lg font-semibold text-ink">
+        <IconTile name="lock" size="sm" />
+        Password
+      </h2>
       {!hasPassword && !done && (
         <p className="mt-1 text-sm text-ink-muted">
           You sign in with Google. A password lets you sign in without it, and unlock quiz
@@ -270,8 +278,9 @@ function EverywhereSection({
   }
 
   return (
-    <section aria-labelledby="everywhere-heading">
-      <h2 id="everywhere-heading" className="text-lg font-semibold text-ink">
+    <section aria-labelledby="everywhere-heading" className="rounded-2xl border border-line bg-surface p-4 shadow-soft sm:p-5">
+      <h2 id="everywhere-heading" className="flex items-center gap-3 text-lg font-semibold text-ink">
+        <IconTile name="phone" size="sm" />
         Signed in somewhere else?
       </h2>
       <p className="mt-1 text-sm text-ink-muted">
@@ -283,7 +292,7 @@ function EverywhereSection({
           Sign out everywhere
         </Button>
       ) : (
-        <div role="alertdialog" aria-label="Sign out everywhere" className="mt-3 rounded-md bg-risk-fill p-3">
+        <div role="alertdialog" aria-label="Sign out everywhere" className="mt-3 rounded-xl bg-risk-fill p-4">
           <p className="text-[15px] text-ink">Sign out of every device, including this one?</p>
           <div className="mt-3 flex flex-wrap gap-2">
             <Button variant="danger" disabled={busy} onClick={go}>

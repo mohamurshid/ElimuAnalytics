@@ -20,6 +20,7 @@ import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { strandTitle } from "@/components/ClassStrands";
+import { Icon } from "@/components/Icon";
 import { QuestionView, QuestionWriter } from "@/components/Question";
 import { Button, ButtonLink, Card, Loading, Note, PageHeader } from "@/components/ui";
 import { api, ApiError, errorMessage } from "@/lib/api";
@@ -65,6 +66,7 @@ export default function WriteQuestionPage() {
     <>
       <PageHeader
         back={{ href: back, label: "Questions" }}
+        eyebrow="Your own question"
         title="Write a question"
         description={strand ? [title, context].filter(Boolean).join(" · ") : undefined}
       />
@@ -75,7 +77,7 @@ export default function WriteQuestionPage() {
       {strand && (
         <div className="space-y-6">
           {last && !writing && (
-            <Card className="p-4">
+            <Card className="p-4 sm:p-6">
               <Note tone="ok">
                 Saved. {saved.length > 1 ? `${saved.length} questions written. ` : ""}
                 It’s approved and can be used in the next quiz.
@@ -90,7 +92,7 @@ export default function WriteQuestionPage() {
                     setWriting(true);
                   }}
                 >
-                  Write another
+                  <Icon name="plus" className="size-5" /> Write another
                 </Button>
                 <ButtonLink href={back}>Back to the questions</ButtonLink>
               </div>
@@ -98,7 +100,7 @@ export default function WriteQuestionPage() {
           )}
 
           {writing && (
-            <Card className="p-4">
+            <Card className="p-4 sm:p-6">
               <QuestionWriter
                 key={formKey}
                 strandId={strandId}

@@ -32,7 +32,8 @@ import { useCallback, useEffect, useState } from "react";
 
 import { ClassStrands } from "@/components/ClassStrands";
 import { ClassSummary, Heatmap, Legend } from "@/components/Heatmap";
-import { Button, ButtonLink, Card, Empty, Loading, Note, PageHeader } from "@/components/ui";
+import { Icon, type IconName } from "@/components/Icon";
+import { ButtonLink, Card, Empty, Loading, Note, PageHeader, Segmented } from "@/components/ui";
 import { api, ApiError, errorMessage } from "@/lib/api";
 import { HOME } from "@/lib/routes";
 import type { Assessment, Heatmap as HeatmapData } from "@/lib/types";
@@ -186,10 +187,12 @@ export default function ClassPage() {
     <>
       <PageHeader
         back={{ href: "/classrooms", label: "Classes" }}
+        eyebrow="Class"
         title={title}
         description={counts}
         actions={
-          <ButtonLink href={`/classrooms/${classId}/roll`} variant="ghost" className="-ml-2 sm:ml-0">
+          <ButtonLink href={`/classrooms/${classId}/roll`} variant="secondary">
+            <Icon name="users" />
             Manage learners
           </ButtonLink>
         }
@@ -238,48 +241,38 @@ export default function ClassPage() {
 
       {data && data.learners.length > 0 && (
         <div className="space-y-6">
-          <div className="grid gap-3 md:grid-cols-2">
-            <Card className="p-4">
-              <h2 className="text-base font-semibold text-ink">Give a quiz</h2>
-              <p className="mt-1 text-sm text-ink-muted">
-                Learners answer on this device, or you mark a paper quiz.
-              </p>
-              <div className="mt-4 grid grid-cols-2 gap-2">
-                <ButtonLink href={`/classrooms/${classId}/administer`} variant="primary">
-                  On this device
-                </ButtonLink>
-                <ButtonLink href={`/classrooms/${classId}/quiz`} variant="secondary">
-                  Mark paper quiz
-                </ButtonLink>
-              </div>
-            </Card>
-
-            <Card className="divide-y divide-line">
-              <div className="flex flex-wrap items-center justify-between gap-3 p-4">
-                <div className="min-w-0 flex-1 basis-48">
-                  <h2 className="text-base font-semibold text-ink">Record levels</h2>
-                  <p className="mt-0.5 text-sm text-ink-muted">
-                    Saves each learner’s level after a quiz. Two low results in a
-                    row add a learner to Support.
-                  </p>
-                </div>
-                <Button variant="secondary" disabled={busy !== null} onClick={record}>
-                  {busy === "record" ? "Saving…" : "Record levels"}
-                </Button>
-              </div>
-              <div className="flex flex-wrap items-center justify-between gap-3 p-4">
-                <div className="min-w-0 flex-1 basis-48">
-                  <h2 className="text-base font-semibold text-ink">Recalibrate questions</h2>
-                  <p className="mt-0.5 text-sm text-ink-muted">
-                    Re-checks how hard each question is, using every answer so far.
-                  </p>
-                </div>
-                <Button variant="secondary" disabled={busy !== null} onClick={calibrate}>
-                  {busy === "calibrate" ? "Working…" : "Recalibrate"}
-                </Button>
-              </div>
-            </Card>
-          </div>
+          <section aria-labelledby="actions-heading">
+            <h2 id="actions-heading" className="sr-only">Actions</h2>
+            <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+              <ActionTile
+                href={`/classrooms/${classId}/administer`}
+                icon="phone"
+                title="Quiz on a device"
+                body="Learners answer one at a time"
+                primary
+              />
+              <ActionTile
+                href={`/classrooms/${classId}/quiz`}
+                icon="paper"
+                title="Mark a paper quiz"
+                body="Print, then mark each learner"
+              />
+              <ActionTile
+                icon="save"
+                title={busy === "record" ? "Saving…" : "Record levels"}
+                body="After a quiz. Two low results add a learner to Support"
+                onClick={record}
+                disabled={busy !== null}
+              />
+              <ActionTile
+                icon="refresh"
+                title={busy === "calibrate" ? "Working…" : "Recalibrate"}
+                body="Re-check how hard each question is"
+                onClick={calibrate}
+                disabled={busy !== null}
+              />
+            </div>
+          </section>
 
           <ClassStrands
             classId={classId}
@@ -290,7 +283,12 @@ export default function ClassPage() {
 
           {evidence && evidence.strands.length > 0 && (
             <Card className="p-4">
-              <h2 className="mb-4 text-base font-semibold text-ink">How the class is doing</h2>
+              <div className="mb-5 flex items-center gap-3">
+                <span className="flex size-10 items-center justify-center rounded-xl bg-brand-fill text-brand-strong">
+                  <Icon name="trend" />
+                </span>
+                <h2 className="text-lg font-semibold text-ink">How the class is doing</h2>
+              </div>
               <ClassSummary data={evidence} />
             </Card>
           )}
@@ -301,29 +299,22 @@ export default function ClassPage() {
                 <h2 id="learners-heading" className="text-lg font-semibold text-ink">
                   Learners
                 </h2>
-                <div
-                  role="group"
-                  aria-label="Sort learners"
-                  className="inline-flex rounded-md border border-line-strong bg-surface p-0.5"
-                >
-                  {(["need", "name"] as const).map((value) => (
-                    <button
-                      key={value}
-                      type="button"
-                      aria-pressed={order === value}
-                      onClick={() => setOrder(value)}
-                      className={`min-h-10 rounded px-3 text-sm font-medium
-                                  ${order === value ? "bg-sunken text-ink" : "text-ink-muted hover:text-ink"}`}
-                    >
-                      {value === "need" ? "Most need first" : "A–Z"}
-                    </button>
-                  ))}
-                </div>
+                <Segmented
+                  label="Sort learners"
+                  value={order}
+                  onChange={setOrder}
+                  options={[
+                    { value: "need", label: "Most need first" },
+                    { value: "name", label: "A–Z" },
+                  ]}
+                />
               </div>
               <div className="mb-3">
                 <Legend minimum={data.minimum_responses} />
               </div>
-              <Heatmap data={evidence} order={order} />
+              <Card className="p-2 sm:p-3">
+                <Heatmap data={evidence} order={order} />
+              </Card>
               <p className="mt-4 text-sm text-ink-subtle">
                 Levels are estimated from the answers recorded so far. A level
                 marked provisional is based on fewer than {data.confident_responses}{" "}
@@ -334,5 +325,56 @@ export default function ClassPage() {
         </div>
       )}
     </>
+  );
+}
+
+/** One of the class's four jobs: an icon, a name and one line on what it does. */
+function ActionTile({
+  icon,
+  title,
+  body,
+  href,
+  onClick,
+  disabled,
+  primary = false,
+}: {
+  icon: IconName;
+  title: string;
+  body: string;
+  href?: string;
+  onClick?: () => void;
+  disabled?: boolean;
+  primary?: boolean;
+}) {
+  const className = `group flex h-full min-h-32 flex-col items-start gap-3 rounded-2xl border p-4 text-left
+    shadow-soft transition-all hover:-translate-y-0.5 hover:shadow-lift disabled:cursor-not-allowed
+    disabled:opacity-60 disabled:hover:translate-y-0 ${
+      primary ? "border-transparent bg-action text-action-ink" : "border-line bg-surface text-ink"
+    }`;
+  const inner = (
+    <>
+      <span
+        className={`flex size-10 items-center justify-center rounded-xl ${
+          primary ? "bg-white/15" : "bg-brand-fill text-brand-strong"
+        }`}
+      >
+        <Icon name={icon} />
+      </span>
+      <span>
+        <span className="block text-[15px] font-semibold">{title}</span>
+        <span className={`mt-0.5 block text-sm leading-snug ${primary ? "opacity-85" : "text-ink-muted"}`}>
+          {body}
+        </span>
+      </span>
+    </>
+  );
+  return href ? (
+    <Link href={href} className={className}>
+      {inner}
+    </Link>
+  ) : (
+    <button type="button" onClick={onClick} disabled={disabled} className={className}>
+      {inner}
+    </button>
   );
 }

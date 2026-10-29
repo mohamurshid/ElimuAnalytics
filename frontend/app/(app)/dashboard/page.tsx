@@ -29,9 +29,11 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 
 import { ClassSummary } from "@/components/Heatmap";
-import { Badge, ButtonLink, Card, Empty, Loading, Note, PageHeader } from "@/components/ui";
+import { Icon } from "@/components/Icon";
+import { Badge, ButtonLink, Card, Empty, IconTile, Loading, Note, PageHeader } from "@/components/ui";
 import { api, errorMessage } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { greeting } from "@/lib/people";
 import { HOME } from "@/lib/routes";
 import type { Classroom, Flag, Heatmap as HeatmapData, Strand } from "@/lib/types";
 
@@ -61,16 +63,18 @@ function ClassCard({ classroom }: { classroom: Classroom }) {
     <Card className="overflow-hidden">
       <Link
         href={`/classrooms/${classroom.class_id}`}
-        className="flex min-h-14 items-center justify-between gap-3 border-b border-line px-4 py-3 hover:bg-sunken"
+        className="group flex min-h-16 items-center gap-3 border-b border-line px-4 py-3.5 hover:bg-sunken"
       >
-        <span className="min-w-0">
+        <IconTile name="classes" />
+        <span className="min-w-0 flex-1">
           <span className="block truncate text-base font-semibold text-ink">{title}</span>
           <span className="block text-sm text-ink-muted">
             {plural(classroom.student_count, "learner", "learners")}
           </span>
         </span>
-        <span className="shrink-0 text-sm font-medium text-ink-muted">
-          Open <span aria-hidden="true">›</span>
+        <span className="flex shrink-0 items-center gap-1 text-sm font-semibold text-brand-strong">
+          Open
+          <Icon name="chevronRight" className="size-4 transition-transform group-hover:translate-x-0.5" />
         </span>
       </Link>
       <div className="p-4">
@@ -108,12 +112,13 @@ function Waiting({ strands, isHead }: { strands: Strand[]; isHead: boolean }) {
 
   return (
     <section aria-labelledby="waiting-heading">
-      <h2 id="waiting-heading" className="mb-3 text-lg font-semibold text-ink">
+      <h2 id="waiting-heading" className="mb-3 flex items-center gap-2.5 text-lg font-semibold text-ink">
+        <IconTile name="sparkles" tone="accent" size="sm" />
         Waiting for review
       </h2>
       <Card className="overflow-hidden">
         {reportedCount > 0 && (
-          <div className="border-b border-line px-4 py-3 last:border-b-0">
+          <div className="border-b border-line px-4 py-4 last:border-b-0">
             <p className="text-[15px] font-semibold text-ink">
               {plural(reportedCount, "reported question", "reported questions")}
             </p>
@@ -126,13 +131,13 @@ function Waiting({ strands, isHead }: { strands: Strand[]; isHead: boolean }) {
                 <li key={s.strand_id}>
                   <Link
                     href={`/classrooms/${s.class_id}/strands/${s.strand_id}`}
-                    className="flex min-h-11 items-center justify-between gap-3 rounded-md
-                               px-2 hover:bg-sunken"
+                    className="flex min-h-11 items-center justify-between gap-3 rounded-xl
+                               px-3 hover:bg-sunken"
                   >
                     <span className="min-w-0 truncate text-[15px] text-ink">{name(s)}</span>
                     <span className="flex shrink-0 items-center gap-2">
                       <Badge tone="risk">{s.reported_items}</Badge>
-                      <span aria-hidden="true" className="text-ink-subtle">›</span>
+                      <Icon name="chevronRight" className="size-4 text-ink-subtle" />
                     </span>
                   </Link>
                 </li>
@@ -141,7 +146,7 @@ function Waiting({ strands, isHead }: { strands: Strand[]; isHead: boolean }) {
           </div>
         )}
         {draftCount > 0 && (
-          <div className="px-4 py-3">
+          <div className="px-4 py-4">
             <p className="text-[15px] font-semibold text-ink">
               {plural(draftCount, "AI-written question", "AI-written questions")} to review
             </p>
@@ -153,13 +158,13 @@ function Waiting({ strands, isHead }: { strands: Strand[]; isHead: boolean }) {
                 <li key={s.strand_id}>
                   <Link
                     href={`/classrooms/${s.class_id}/strands/${s.strand_id}/review`}
-                    className="flex min-h-11 items-center justify-between gap-3 rounded-md
-                               px-2 hover:bg-sunken"
+                    className="flex min-h-11 items-center justify-between gap-3 rounded-xl
+                               px-3 hover:bg-sunken"
                   >
                     <span className="min-w-0 truncate text-[15px] text-ink">{name(s)}</span>
                     <span className="flex shrink-0 items-center gap-2">
                       <Badge tone="warn">{s.draft_items}</Badge>
-                      <span aria-hidden="true" className="text-ink-subtle">›</span>
+                      <Icon name="chevronRight" className="size-4 text-ink-subtle" />
                     </span>
                   </Link>
                 </li>
@@ -208,46 +213,60 @@ export default function OverviewPage() {
   return (
     <>
       <PageHeader
+        eyebrow={firstName ? `${greeting()}, ${firstName}` : greeting()}
         title="Overview"
-        description={firstName ? `Your classes at a glance, ${firstName}.` : "Your classes at a glance."}
+        description="Your classes at a glance."
       />
 
       <div className="space-y-8">
         {/* The one number on this page a teacher acts on. */}
         <Link
           href={HOME}
-          className="flex min-h-20 items-center justify-between gap-4 rounded-lg border border-line bg-surface px-5 py-4 hover:bg-sunken"
+          className="group relative flex min-h-28 items-center justify-between gap-4 overflow-hidden
+                     rounded-3xl bg-action px-5 py-5 text-action-ink shadow-lift transition-transform
+                     hover:-translate-y-0.5 sm:px-7"
         >
-          <span>
-            <span className="block text-sm font-medium text-ink-muted">Need support</span>
-            <span className="mt-0.5 block text-[15px] text-ink">
-              {supportCount === null
-                ? flags && "error" in flags
-                  ? flags.error
-                  : "Checking…"
-                : supportCount === 0
-                  ? "No one yet"
-                  : `${plural(supportCount, "learner", "learners")} to look at`}
+          <span
+            aria-hidden="true"
+            className="pointer-events-none absolute -right-10 -top-12 size-44 rounded-full bg-white/10"
+          />
+          <span className="relative flex items-center gap-4">
+            <span className="flex size-12 shrink-0 items-center justify-center rounded-2xl bg-white/15">
+              <Icon name="support" className="size-6" />
+            </span>
+            <span>
+              <span className="block text-sm font-semibold opacity-85">Need support</span>
+              <span className="mt-0.5 block text-[17px] font-semibold">
+                {supportCount === null
+                  ? flags && "error" in flags
+                    ? flags.error
+                    : "Checking…"
+                  : supportCount === 0
+                    ? "No one yet"
+                    : `${plural(supportCount, "learner", "learners")} to look at`}
+              </span>
             </span>
           </span>
-          <span className="flex items-center gap-3">
+          <span className="relative flex items-center gap-2">
             {supportCount !== null && (
-              <span className="text-3xl font-semibold tabular-nums text-ink">{supportCount}</span>
+              <span className="text-4xl font-bold tabular-nums">{supportCount}</span>
             )}
-            <span aria-hidden="true" className="text-xl text-ink-subtle">›</span>
+            <Icon name="chevronRight" className="size-6 transition-transform group-hover:translate-x-0.5" />
           </span>
         </Link>
 
         <Waiting strands={strandList} isHead={isHead} />
 
         <section aria-labelledby="classes-heading">
-          <h2 id="classes-heading" className="mb-3 text-lg font-semibold text-ink">
+          <h2 id="classes-heading" className="mb-3 flex items-center gap-2.5 text-lg font-semibold text-ink">
+            <IconTile name="classes" size="sm" />
             Your classes
           </h2>
           {classes === null && <Loading what="classes" />}
           {classes && "error" in classes && <Note tone="error">{classes.error}</Note>}
           {classList && classList.length === 0 && (
             <Empty
+              icon="classes"
               title="No classes yet"
               action={<ButtonLink href="/classrooms" variant="primary">Go to Classes</ButtonLink>}
             >
@@ -264,7 +283,8 @@ export default function OverviewPage() {
         </section>
 
         <section aria-labelledby="questions-heading">
-          <h2 id="questions-heading" className="text-lg font-semibold text-ink">
+          <h2 id="questions-heading" className="flex items-center gap-2.5 text-lg font-semibold text-ink">
+            <IconTile name="book" size="sm" />
             Questions
           </h2>
           <p className="mb-3 mt-1 text-sm text-ink-muted">
@@ -275,10 +295,10 @@ export default function OverviewPage() {
           {strands === null && <Loading what="questions" />}
           {strands && "error" in strands && <Note tone="error">{strands.error}</Note>}
           {strands && "data" in strands && strands.data.length === 0 && (
-            <Empty>No strands have questions yet.</Empty>
+            <Empty icon="book">No strands have questions yet.</Empty>
           )}
           {strands && "data" in strands && strands.data.length > 0 && (
-            <ul className="divide-y divide-line overflow-hidden rounded-lg border border-line bg-surface">
+            <ul className="divide-y divide-line overflow-hidden rounded-2xl border border-line bg-surface shadow-soft">
               {strands.data.map((s) => {
                 const [strandName, sub] = s.name.split(" / ");
                 const calibrated = s.calibrated_items > 0;
@@ -307,7 +327,7 @@ export default function OverviewPage() {
                   </>
                 );
                 const row =
-                  "flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3";
+                  "flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3.5";
                 return (
                   <li key={s.strand_id}>
                     {s.class_id ? (

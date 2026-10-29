@@ -25,7 +25,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { strandTitle } from "@/components/ClassStrands";
 import { QuestionEditor, QuestionView } from "@/components/Question";
-import { Badge, Button, ButtonLink, Card, Loading, Note, PageHeader } from "@/components/ui";
+import { Icon } from "@/components/Icon";
+import { Badge, Button, ButtonLink, Card, IconTile, Loading, Note, PageHeader } from "@/components/ui";
 import { api, ApiError, errorMessage } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import type { GenerationRun, Item, Strand, StrandGeneration } from "@/lib/types";
@@ -45,6 +46,12 @@ export default function StrandPage() {
   const [run, setRun] = useState<GenerationRun | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [writing, setWriting] = useState(false);
+  // Set on the tap itself, before the request goes out. `writing` only turns
+  // on once the server has answered, and a second tap in that gap sent a
+  // second request, which the server refused with a 409 (found 29 October).
+  const [starting, setStarting] = useState(false);
+  // The ref is the guard (it changes at once); the state drives the button.
+  const startingNow = useRef(false);
   const polling = useRef(false);
 
   const load = useCallback(async () => {
@@ -109,13 +116,34 @@ export default function StrandPage() {
   }, [load, follow]);
 
   async function write() {
+    if (startingNow.current || polling.current) return;
+    startingNow.current = true;
     setError(null);
+    setStarting(true);
     try {
       const started = await api.post<GenerationRun>(`/api/strands/${strandId}/generate`, {});
       setRun(started);
       void follow(started.run_id);
     } catch (e) {
+      // A run already under way - from another tab, another teacher, or a
+      // visit left before it finished - is not a fault. Show it being
+      // written and follow it, rather than an error beside an idle button.
+      // A 409 for any other reason (no curriculum text) still reads as one.
+      if (e instanceof ApiError && e.status === 409) {
+        try {
+          const gen = await load();
+          if (gen.running) {
+            void follow(gen.running.run_id);
+            return;
+          }
+        } catch {
+          // Fall through to the original message.
+        }
+      }
       setError(errorMessage(e, "Could not start writing questions"));
+    } finally {
+      startingNow.current = false;
+      setStarting(false);
     }
   }
 
@@ -128,6 +156,7 @@ export default function StrandPage() {
     <>
       <PageHeader
         back={{ href: `/classrooms/${classId}`, label: "Class" }}
+        eyebrow="Strand"
         title={title}
         description={[context, strand?.grade, strand?.learning_area].filter(Boolean).join(" · ")}
       />
@@ -144,19 +173,21 @@ export default function StrandPage() {
           </div>
 
           {drafts > 0 && (
-            <Card className="p-4">
-              <h2 className="text-base font-semibold text-ink">
-                {plural(drafts, "question is", "questions are")} waiting for review
-              </h2>
-              <p className="mt-1 text-sm text-ink-muted">
-                Written by AI. None is given to learners until a teacher approves it.
-              </p>
+            <Card className="flex flex-col gap-4 border-accent/40 bg-accent-fill/40 p-4 sm:flex-row sm:items-center sm:p-5">
+              <IconTile name="sparkles" tone="accent" />
+              <div className="min-w-0 flex-1">
+                <h2 className="text-base font-semibold text-ink">
+                  {plural(drafts, "question is", "questions are")} waiting for review
+                </h2>
+                <p className="mt-0.5 text-sm text-ink-muted">
+                  Written by AI. None is given to learners until a teacher approves it.
+                </p>
+              </div>
               <ButtonLink
                 href={`/classrooms/${classId}/strands/${strandId}/review`}
                 variant="primary"
-                className="mt-4"
               >
-                Review questions
+                Review questions <Icon name="chevronRight" className="size-4" />
               </ButtonLink>
             </Card>
           )}
@@ -166,13 +197,14 @@ export default function StrandPage() {
             strand={strand}
             generation={generation}
             run={run}
-            writing={writing}
+            writing={writing || starting}
             onWrite={write}
           />
 
           {isHead && reported.length > 0 && (
             <section aria-labelledby="reported-heading">
-              <h2 id="reported-heading" className="mb-3 text-lg font-semibold text-ink">
+              <h2 id="reported-heading" className="mb-3 flex items-center gap-2.5 text-lg font-semibold text-ink">
+                <IconTile name="alert" tone="neutral" size="sm" />
                 Reported questions
               </h2>
               <p className="mb-3 text-sm text-ink-muted">
@@ -188,15 +220,16 @@ export default function StrandPage() {
           )}
 
           <section aria-labelledby="approved-heading">
-            <h2 id="approved-heading" className="mb-3 text-lg font-semibold text-ink">
+            <h2 id="approved-heading" className="mb-3 flex items-center gap-2.5 text-lg font-semibold text-ink">
+              <IconTile name="check" size="sm" />
               Approved questions
             </h2>
             {approved.length === 0 ? (
-              <Card className="p-4 text-sm text-ink-muted">
+              <Card className="p-5 text-center text-[15px] text-ink-muted">
                 None yet. Write your own, or have the AI write some and review them.
               </Card>
             ) : (
-              <Card>
+              <Card className="overflow-hidden">
                 <ul className="divide-y divide-line">
                   {approved.map((item) => (
                     <ApprovedQuestion key={item.item_id} item={item} onChange={load} />
@@ -231,42 +264,50 @@ function WriteCard({
   const linked = Boolean(strand.curriculum_key);
 
   return (
-    <Card className="p-4">
-      <h2 className="text-base font-semibold text-ink">Write more questions</h2>
-      {!linked ? (
-        <p className="mt-1 text-sm text-ink-muted">
-          This strand isn’t linked to the curriculum catalogue, so the AI has no curriculum
-          text to write from.
-        </p>
-      ) : (
-        <>
-          <p className="mt-1 text-sm text-ink-muted">
-            AI writes {per} questions from this sub-strand’s KICD curriculum. You review
-            each one before it is used. Your school has {plural(left, "request", "requests")}{" "}
-            left today.
+    <Card className="p-4 sm:p-5">
+      <h2 className="text-lg font-semibold text-ink">Add questions</h2>
+      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+        <div className="flex flex-col rounded-2xl border border-line bg-sunken/50 p-4">
+          <IconTile name="sparkles" tone="accent" />
+          <h3 className="mt-3 text-[15px] font-semibold text-ink">Write with AI</h3>
+          {!linked ? (
+            <p className="mt-1 flex-1 text-sm text-ink-muted">
+              This strand isn’t linked to the curriculum catalogue, so the AI has no curriculum
+              text to write from.
+            </p>
+          ) : (
+            <>
+              <p className="mt-1 flex-1 text-sm text-ink-muted">
+                {per} questions from this sub-strand’s KICD curriculum. You review each one
+                before it is used. Your school has {plural(left, "request", "requests")} left
+                today.
+              </p>
+              <Button
+                variant="secondary"
+                className="mt-4 self-start"
+                disabled={writing || left === 0}
+                onClick={onWrite}
+              >
+                <Icon name={writing ? "refresh" : "sparkles"} className={`size-4 ${writing ? "animate-spin" : ""}`} />
+                {writing ? "Writing… about 40 seconds" : `Write ${per} questions`}
+              </Button>
+            </>
+          )}
+        </div>
+        <div className="flex flex-col rounded-2xl border border-line bg-sunken/50 p-4">
+          <IconTile name="plus" />
+          <h3 className="mt-3 text-[15px] font-semibold text-ink">Write your own</h3>
+          <p className="mt-1 flex-1 text-sm text-ink-muted">
+            It’s ready to use as soon as you save it.
           </p>
-          <Button
+          <ButtonLink
+            href={`/classrooms/${classId}/strands/${strand.strand_id}/write`}
             variant="secondary"
-            className="mt-4"
-            disabled={writing || left === 0}
-            onClick={onWrite}
+            className="mt-4 self-start"
           >
-            {writing ? "Writing… about 40 seconds" : `Write ${per} questions with AI`}
-          </Button>
-        </>
-      )}
-
-      <div className="mt-4 border-t border-line pt-4">
-        <p className="text-sm text-ink-muted">
-          Or write one yourself. It’s ready to use as soon as you save it.
-        </p>
-        <ButtonLink
-          href={`/classrooms/${classId}/strands/${strand.strand_id}/write`}
-          variant="secondary"
-          className="mt-3"
-        >
-          Write your own question
-        </ButtonLink>
+            <Icon name="plus" className="size-4" /> Write a question
+          </ButtonLink>
+        </div>
       </div>
 
       {run && run.status === "ready" && !writing && (
@@ -313,11 +354,12 @@ function ApprovedQuestion({ item, onChange }: { item: Item; onChange: () => Prom
   return (
     <li>
       <details className="group">
-        <summary className="flex min-h-12 cursor-pointer list-none items-center gap-3 px-4 py-3">
+        <summary className="flex min-h-14 cursor-pointer list-none items-center gap-3 px-4 py-3 hover:bg-sunken">
           <span className="min-w-0 flex-1 text-[15px] text-ink">{item.question_text}</span>
-          <span aria-hidden className="text-ink-subtle transition group-open:rotate-90">
-            ›
-          </span>
+          <Icon
+            name="chevronRight"
+            className="size-5 shrink-0 text-ink-subtle transition-transform group-open:rotate-90"
+          />
         </summary>
         <div className="border-t border-line px-4 py-4">
           <QuestionView item={item} showQuestion={false} />
@@ -326,7 +368,7 @@ function ApprovedQuestion({ item, onChange }: { item: Item; onChange: () => Prom
               Report a problem
             </Button>
           ) : (
-            <form onSubmit={report} className="mt-4 space-y-3 rounded-md bg-sunken p-3">
+            <form onSubmit={report} className="mt-4 space-y-3 rounded-xl bg-sunken p-4">
               <label className="block">
                 <span className="text-sm font-medium text-ink">What is wrong with it?</span>
                 <textarea
@@ -336,8 +378,9 @@ function ApprovedQuestion({ item, onChange }: { item: Item; onChange: () => Prom
                   required
                   minLength={5}
                   placeholder="For example: option B is also correct"
-                  className="mt-1 block w-full rounded-md border border-line-strong bg-surface
-                             px-3 py-2 text-base text-ink"
+                  className="mt-1.5 block w-full rounded-xl border border-line-strong bg-surface
+                             px-3.5 py-2.5 text-base text-ink focus:border-action focus:outline-none
+                             focus:ring-4 focus:ring-brand-fill"
                 />
               </label>
               <p className="text-sm text-ink-muted">
@@ -379,7 +422,7 @@ function ReportedQuestion({ item, onChange }: { item: Item; onChange: () => Prom
   }
 
   return (
-    <Card className="p-4">
+    <Card className="p-4 sm:p-5">
       <Note tone="warn">Reported: {item.report_reason}</Note>
       <div className="mt-3">
         {editing ? (

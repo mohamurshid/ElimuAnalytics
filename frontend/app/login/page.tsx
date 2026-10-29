@@ -21,7 +21,8 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
 
 import { GOOGLE_REASONS, GoogleButton } from "@/components/GoogleButton";
-import { Logo } from "@/components/Logo";
+import { Icon } from "@/components/Icon";
+import { SiteHeader } from "@/components/SiteHeader";
 import { Button, Field, Note } from "@/components/ui";
 import { ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
@@ -72,15 +73,25 @@ function SignIn() {
   }
 
   return (
-    <main className="flex min-h-screen flex-col px-5 pt-10 pb-8 sm:items-center sm:justify-center sm:px-4 sm:pt-8">
+    <>
+      <SiteHeader current="login" />
+    <main className="relative isolate flex min-h-[calc(100dvh-4rem)] flex-col overflow-hidden px-5 pt-8 pb-8 sm:items-center sm:justify-center sm:px-4">
+      {/* A soft wash of the brand behind the card; decoration only. */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-x-0 -top-40 -z-10 mx-auto h-[28rem] max-w-3xl rounded-full opacity-70 blur-3xl"
+        style={{ background: "radial-gradient(closest-side, var(--brand-fill), transparent)" }}
+      />
       <div className="w-full sm:max-w-sm">
-        <Logo />
 
         <form
           onSubmit={submit}
-          className="mt-10 sm:mt-6 sm:rounded-lg sm:border sm:border-line sm:bg-surface sm:p-6"
+          className="mt-2 sm:mt-0 sm:rounded-3xl sm:border sm:border-line sm:bg-surface sm:p-7 sm:shadow-lift"
         >
-          <h1 className="text-2xl font-semibold tracking-tight text-ink">Sign in</h1>
+          <span className="mb-4 flex size-12 items-center justify-center rounded-2xl bg-brand-fill text-brand-strong">
+            <Icon name="user" className="size-6" />
+          </span>
+          <h1 className="text-[28px] font-bold tracking-tight text-ink">Sign in</h1>
           <p className="mt-1.5 text-[15px] leading-relaxed text-ink-muted">
             See which learners need support, and what to teach them next.
           </p>
@@ -126,7 +137,7 @@ function SignIn() {
 
         <p className="mt-6 text-center text-[15px] text-ink-muted">
           Have a setup code from your head teacher?{" "}
-          <Link href="/setup" className="font-medium text-ink underline underline-offset-2">
+          <Link href="/setup" className="font-semibold text-brand-strong underline underline-offset-2">
             Set up your account
           </Link>
         </p>
@@ -136,5 +147,6 @@ function SignIn() {
         </p>
       </div>
     </main>
+    </>
   );
 }

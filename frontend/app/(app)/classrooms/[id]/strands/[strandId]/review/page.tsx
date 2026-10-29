@@ -22,6 +22,7 @@
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
+import { Icon } from "@/components/Icon";
 import { QuestionEditor, QuestionView } from "@/components/Question";
 import { Button, ButtonLink, Card, Empty, Loading, Note, PageHeader } from "@/components/ui";
 import { api, errorMessage } from "@/lib/api";
@@ -90,6 +91,7 @@ export default function ReviewPage() {
     <>
       <PageHeader
         back={{ href: back, label: "Questions" }}
+        eyebrow="Written by AI"
         title="Review questions"
         description={
           drafts === null
@@ -105,6 +107,7 @@ export default function ReviewPage() {
 
       {drafts !== null && remaining === 0 && (
         <Empty
+          icon="check"
           title="All reviewed"
           action={
             <ButtonLink href={back} variant="primary">
@@ -119,8 +122,26 @@ export default function ReviewPage() {
         </Empty>
       )}
 
+      {current && decided.approved + decided.rejected + remaining > 1 && (
+        <div
+          role="progressbar"
+          aria-label="Reviewed so far"
+          aria-valuemin={0}
+          aria-valuemax={decided.approved + decided.rejected + remaining}
+          aria-valuenow={decided.approved + decided.rejected}
+          className="mb-4 h-2 overflow-hidden rounded-full bg-sunken"
+        >
+          <div
+            className="h-full rounded-full bg-action transition-all duration-500"
+            style={{
+              width: `${((decided.approved + decided.rejected) / (decided.approved + decided.rejected + remaining)) * 100}%`,
+            }}
+          />
+        </div>
+      )}
+
       {current && (
-        <Card className="p-4">
+        <Card className="p-4 sm:p-6">
           {mode === "edit" ? (
             <QuestionEditor item={current} onSaved={saved} onCancel={() => setMode("view")} />
           ) : (
@@ -128,7 +149,7 @@ export default function ReviewPage() {
               <QuestionView item={current} hints />
 
               {mode === "confirm-reject" ? (
-                <div role="alertdialog" aria-label="Reject this question" className="mt-5 rounded-md bg-risk-fill p-3">
+                <div role="alertdialog" aria-label="Reject this question" className="mt-5 rounded-xl bg-risk-fill p-4">
                   <p className="text-[15px] text-ink">
                     Reject this question? It will never be given to learners.
                   </p>
@@ -148,6 +169,7 @@ export default function ReviewPage() {
                     disabled={busy}
                     onClick={() => decide("approve")}
                   >
+                    {!busy && <Icon name="check" className="size-5" />}
                     {busy ? "Saving…" : "Approve"}
                   </Button>
                   <Button variant="secondary" disabled={busy} onClick={() => setMode("edit")}>

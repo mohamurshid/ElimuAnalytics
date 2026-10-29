@@ -33,7 +33,7 @@ export function QuizLengthPicker({
       <div
         role="radiogroup"
         aria-label="Number of questions"
-        className="mt-1 grid grid-cols-4 gap-1 rounded-md border border-line-strong bg-surface p-1"
+        className="mt-1 grid grid-cols-4 gap-1 rounded-xl bg-sunken p-1"
       >
         {CHOICES.map((choice) => {
           const pointless =
@@ -46,10 +46,10 @@ export function QuizLengthPicker({
               aria-checked={value === choice.value}
               disabled={pointless}
               onClick={() => onChange(choice.value)}
-              className={`min-h-10 min-w-12 rounded px-2 text-[15px] font-medium
+              className={`min-h-10 min-w-12 rounded-lg px-2 text-[15px] font-medium
                           disabled:cursor-not-allowed disabled:text-ink-subtle disabled:opacity-50
                           ${value === choice.value
-                            ? "bg-sunken text-ink"
+                            ? "bg-surface text-ink shadow-soft"
                             : "text-ink-muted hover:text-ink"}`}
             >
               {choice.label}

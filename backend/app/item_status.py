@@ -25,6 +25,8 @@ approve what the AI writes is a measurement the write-up needs.
 
 from __future__ import annotations
 
+import re
+
 DRAFT = "draft"
 APPROVED = "approved"
 REPORTED = "reported"
@@ -41,6 +43,22 @@ AI = "ai"
 
 MIN_OPTIONS = 2
 MAX_OPTIONS = 6
+
+
+_WORD_START = re.compile(r"\b(\w)")
+
+
+def _option_key(option: str) -> str:
+    """What makes two options "the same".
+
+    The capital at the start of a word is ignored, so "Copper" and "copper"
+    are one option written twice. Capitals inside a word are kept, because in
+    a word-stress question they ARE the answer: "con-FLICT" and "CON-flict"
+    are different options. Comparing with casefold() threw out both of those
+    as duplicates - two of five good Grade 5 English questions in one run
+    (29 October). Spacing is collapsed either way.
+    """
+    return _WORD_START.sub(lambda m: m.group(1).lower(), " ".join(option.split()))
 
 
 def mcq_problems(
@@ -67,7 +85,7 @@ def mcq_problems(
     cleaned = [o.strip() for o in options]
     if any(not o for o in cleaned):
         problems.append("an option is empty")
-    if len({o.casefold() for o in cleaned}) != len(cleaned):
+    if len({_option_key(o) for o in cleaned}) != len(cleaned):
         problems.append("two options are the same")
     if not 0 <= correct_option < len(options):
         problems.append("the correct option is not one of the options")

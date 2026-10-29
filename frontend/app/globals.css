@@ -1,138 +1,134 @@
 @import "tailwindcss";
 
 /*
- * Elimu Analytics - design tokens.
+ * Elimu Analytics - design tokens (redesign, 29 October).
  *
- * ONE RULE holds the palette together: saturated blue only ever means a
- * KICD tier. Chrome is warm neutral and actions are ink, so a teacher never
- * has to wonder whether a blue thing is a button or a result. The semantic
- * colours (ok / warn / risk) describe SYSTEM state - a report that can be
- * sent home, a generation that failed - and are never applied to a learner.
+ * The look of a friendly education app rather than a plain dashboard: a
+ * brand green for actions and highlights, a warm accent for small moments,
+ * cool soft neutrals, rounded cards with soft shadows, and Figtree.
+ *
+ * TWO RULES survive from the first design (19 October):
+ *   - blue means a KICD level and nothing else. The brand is green so a
+ *     button is never mistaken for a result, and the level ramp stays one
+ *     hue, ordered by lightness, darker = more need - colour-blind safe and
+ *     readable in greyscale print
+ *   - a learner is never coloured red. ok / warn / risk describe SYSTEM
+ *     state (a report that can be sent, a failed run), never a child
+ *
+ * The "Continue with Google" colours (--gsi-*) are Google's, fixed by its
+ * branding guidelines - the one third-party palette allowed on screen.
  */
 :root {
   color-scheme: light dark;
-
-  /* Neutrals. Warm rather than grey: reads as paper, survives a projector. */
-  --background: #f9f9f7;
-
-  /* "Continue with Google": Google's own button colours, not ours. Its
-     branding guidelines fix them (light: white, #747775 stroke, #1F1F1F
-     text; dark: #131314, #8E918F, #E3E3E3) - the one place a third party's
-     palette is allowed on screen. */
-  --gsi-fill: #ffffff;
-  --gsi-stroke: #747775;
-  --gsi-text: #1f1f1f;
-  --surface: #fcfcfb;
-  --sunken: #f1f0ec;
-  --border: #e3e1da;
-  --border-strong: #c9c6bc;
-  --foreground: #0b0b0b;
-  --muted: #52514e;
-  --subtle: #7a786f;
-
-  /* Actions are ink, deliberately not blue. */
-  --action: #141413;
-  --action-hover: #2b2a27;
-  --action-ink: #fcfcfb;
-
-  /* System state only - never a learner's standing. */
-  --ok: #1f6f43;
-  --ok-fill: #e8f2ec;
-  --warn: #8a5a00;
-  --warn-fill: #fbf1dd;
-  --risk: #9b2226;
-  --risk-fill: #fbeaea;
-
-  /* KICD tier ramp - one hue, ordinal, darker = more need for intervention.
-     Validated against the light surface: monotone lightness, every adjacent
-     step clears the gap floor, and the lightest step still separates from the
-     surface. "Darker = more need" is deliberate: the cells a teacher must act
-     on are the ones that carry weight on the page.
-
-     Deliberately NOT a red-amber-green status palette. These are children's
-     competency levels, not alarms, and colouring a learner red is a framing
-     this project should not adopt. */
+  --background: #f6f7f9;
+  --surface: #ffffff;
+  --sunken: #eef1f5;
+  --border: #e4e7ec;
+  --border-strong: #cfd4dc;
+  --foreground: #101828;
+  --muted: #475467;
+  --subtle: #667085;
+  --action: #047857;
+  --action-hover: #065f46;
+  --action-ink: #ffffff;
+  --brand-fill: #e7f5ef;
+  --brand-strong: #065f46;
+  --accent: #f5a524;
+  --accent-fill: #fff6e5;
+  --accent-strong: #b45309;
+  --ok: #067647;
+  --ok-fill: #ecfdf3;
+  --warn: #b54708;
+  --warn-fill: #fffaeb;
+  --risk: #b42318;
+  --risk-fill: #fef3f2;
   --tier-exceeds: #86b6ef;
   --tier-meets: #3987e5;
   --tier-approaches: #1c5cab;
   --tier-below: #0d366b;
-  --tier-none: #c3c2b7;
+  --tier-none: #c7ccd6;
+  --gsi-fill: #ffffff;
+  --gsi-stroke: #747775;
+  --gsi-text: #1f1f1f;
+  --elev-1: 0 1px 2px rgb(16 24 40 / 0.04), 0 4px 16px -4px rgb(16 24 40 / 0.08);
+  --elev-2: 0 2px 4px rgb(16 24 40 / 0.05), 0 16px 32px -12px rgb(16 24 40 / 0.18);
 }
 
 @media (prefers-color-scheme: dark) {
   :root:where(:not([data-theme="light"])) {
-    --gsi-fill: #131314;
-    --gsi-stroke: #8e918f;
-    --gsi-text: #e3e3e3;
-    --background: #0d0d0d;
-    --surface: #1a1a19;
-    --sunken: #242321;
-    --border: #302f2c;
-    --border-strong: #45443f;
-    --foreground: #f0efec;
-    --muted: #c3c2b7;
-    --subtle: #8e8c83;
-
-    --action: #f0efec;
-    --action-hover: #d9d7d0;
-    --action-ink: #0d0d0d;
-
-    --ok: #7fcfa3;
-    --ok-fill: #17271e;
-    --warn: #e3b457;
-    --warn-fill: #2a2114;
-    --risk: #f08a8d;
-    --risk-fill: #2b1718;
-
-    /* Same hue, stepped for the dark surface rather than flipped. On dark,
-       prominence runs the other way, so the ordering inverts to keep
-       "most need stands out most". */
+    --background: #0b1220;
+    --surface: #111a2b;
+    --sunken: #182235;
+    --border: #233047;
+    --border-strong: #344361;
+    --foreground: #e6ebf3;
+    --muted: #a7b1c2;
+    --subtle: #7c879a;
+    --action: #34d399;
+    --action-hover: #6ee7b7;
+    --action-ink: #04241a;
+    --brand-fill: #0e2a21;
+    --brand-strong: #6ee7b7;
+    --accent: #fbbf4d;
+    --accent-fill: #2a2010;
+    --accent-strong: #fbbf4d;
+    --ok: #47cd89;
+    --ok-fill: #0c2a1c;
+    --warn: #fdb022;
+    --warn-fill: #2a1f0b;
+    --risk: #f97066;
+    --risk-fill: #2d1414;
     --tier-exceeds: #184f95;
     --tier-meets: #2a78d6;
     --tier-approaches: #6da7ec;
     --tier-below: #b7d3f6;
-    --tier-none: #383835;
+    --tier-none: #3a465c;
+    --gsi-fill: #131314;
+    --gsi-stroke: #8e918f;
+    --gsi-text: #e3e3e3;
+    --elev-1: 0 1px 2px rgb(0 0 0 / 0.3), 0 4px 16px -4px rgb(0 0 0 / 0.4);
+    --elev-2: 0 2px 4px rgb(0 0 0 / 0.3), 0 16px 32px -12px rgb(0 0 0 / 0.6);
   }
 }
 
 /* The same dark tokens, chosen explicitly on the profile page rather than
-   inherited from the phone's setting. Generated from the block above so the
-   two can never disagree; change one, regenerate the other. Duplicated
-   rather than written with light-dark(), which older Android browsers on
-   budget phones do not support. */
+   inherited from the phone's setting. Generated from the same table as the
+   block above, so the two cannot disagree. Duplicated rather than written
+   with light-dark(), which older Android browsers on budget phones lack. */
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --gsi-fill: #131314;
-  --gsi-stroke: #8e918f;
-  --gsi-text: #e3e3e3;
-  --background: #0d0d0d;
-  --surface: #1a1a19;
-  --sunken: #242321;
-  --border: #302f2c;
-  --border-strong: #45443f;
-  --foreground: #f0efec;
-  --muted: #c3c2b7;
-  --subtle: #8e8c83;
-
-  --action: #f0efec;
-  --action-hover: #d9d7d0;
-  --action-ink: #0d0d0d;
-
-  --ok: #7fcfa3;
-  --ok-fill: #17271e;
-  --warn: #e3b457;
-  --warn-fill: #2a2114;
-  --risk: #f08a8d;
-  --risk-fill: #2b1718;
-
-  /* Same hue, stepped for the dark surface rather than flipped. On dark,
-     prominence runs the other way, so the ordering inverts to keep
-     "most need stands out most". */
+  --background: #0b1220;
+  --surface: #111a2b;
+  --sunken: #182235;
+  --border: #233047;
+  --border-strong: #344361;
+  --foreground: #e6ebf3;
+  --muted: #a7b1c2;
+  --subtle: #7c879a;
+  --action: #34d399;
+  --action-hover: #6ee7b7;
+  --action-ink: #04241a;
+  --brand-fill: #0e2a21;
+  --brand-strong: #6ee7b7;
+  --accent: #fbbf4d;
+  --accent-fill: #2a2010;
+  --accent-strong: #fbbf4d;
+  --ok: #47cd89;
+  --ok-fill: #0c2a1c;
+  --warn: #fdb022;
+  --warn-fill: #2a1f0b;
+  --risk: #f97066;
+  --risk-fill: #2d1414;
   --tier-exceeds: #184f95;
   --tier-meets: #2a78d6;
   --tier-approaches: #6da7ec;
   --tier-below: #b7d3f6;
-  --tier-none: #383835;
+  --tier-none: #3a465c;
+  --gsi-fill: #131314;
+  --gsi-stroke: #8e918f;
+  --gsi-text: #e3e3e3;
+  --elev-1: 0 1px 2px rgb(0 0 0 / 0.3), 0 4px 16px -4px rgb(0 0 0 / 0.4);
+  --elev-2: 0 2px 4px rgb(0 0 0 / 0.3), 0 16px 32px -12px rgb(0 0 0 / 0.6);
 }
 
 :root[data-theme="light"] {
@@ -152,6 +148,11 @@
   --color-action: var(--action);
   --color-action-hover: var(--action-hover);
   --color-action-ink: var(--action-ink);
+  --color-brand-fill: var(--brand-fill);
+  --color-brand-strong: var(--brand-strong);
+  --color-accent: var(--accent);
+  --color-accent-fill: var(--accent-fill);
+  --color-accent-strong: var(--accent-strong);
   --color-ok: var(--ok);
   --color-ok-fill: var(--ok-fill);
   --color-warn: var(--warn);
@@ -164,9 +165,13 @@
   --color-tier-below: var(--tier-below);
   --color-tier-none: var(--tier-none);
 
-  /* No webfont. system-ui costs nothing to download on a school connection
-     and is already tuned for the screen it is on. */
-  --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  /* Figtree, self-hosted by next/font (no call to Google at run time), one
+     variable file of about 30 KB for Latin. System fonts follow while it
+     loads, and if it never does. */
+  --font-sans: var(--font-figtree), system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+
+  --shadow-soft: var(--elev-1);
+  --shadow-lift: var(--elev-2);
 }
 
 body {
@@ -176,12 +181,12 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* One focus style everywhere, in ink rather than a new hue, so the palette
-   rule holds and keyboard users can always see where they are. */
+/* One focus style everywhere, in the brand colour, so keyboard users can
+   always see where they are. */
 :focus-visible {
-  outline: 2px solid var(--foreground);
+  outline: 2px solid var(--action);
   outline-offset: 2px;
-  border-radius: 4px;
+  border-radius: 6px;
 }
 
 /* A cell is a tint plus a solid band. The text never sits on the ramp colour,
@@ -189,8 +194,8 @@ body {
    the ordinal signal and survives a greyscale print, where the tints alone
    would not. */
 .tier-cell {
-  background: color-mix(in oklab, var(--tier) 14%, var(--surface));
-  border-left: 4px solid var(--tier);
+  background: color-mix(in oklab, var(--tier) 15%, var(--surface));
+  border-left: 5px solid var(--tier);
 }
 
 /* Forced colours and print: tints disappear, so the band does the work and
@@ -211,5 +216,27 @@ body {
   body {
     background: #ffffff;
     color: #000000;
+  }
+}
+
+/* Landing page: a short rise for panels that change, skipped for anyone who
+   has asked their device for less motion. */
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    transition-duration: 1ms !important;
   }
 }

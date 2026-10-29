@@ -42,10 +42,12 @@
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
+import { Icon } from "@/components/Icon";
 import { type QuizLength, QuizLengthPicker } from "@/components/QuizLength";
 import { Button, Card, Field, Loading, Note, PageHeader, Select } from "@/components/ui";
 import { api, ApiError, errorMessage, login } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { initials } from "@/lib/people";
 import type {
   AnsweredPairs,
   AssessmentReceipt,
@@ -327,6 +329,7 @@ export default function AdministerPage() {
       <>
         <PageHeader
           back={{ href: `/classrooms/${classId}`, label: title }}
+          eyebrow={title}
           title="Quiz on this device"
           description="Learners answer on this phone or tablet, one at a time. You choose who is answering before handing it over, and it stays in quiz mode until you enter your PIN — so no learner can reach anyone’s results from it."
         />
@@ -348,7 +351,7 @@ export default function AdministerPage() {
         )}
 
         {ready && strands.length > 0 && (
-          <Card className="mt-4 p-4">
+          <Card className="mt-4 p-4 sm:p-6">
             <form onSubmit={start} className="space-y-5">
               <Select
                 label="Strand"
@@ -391,6 +394,7 @@ export default function AdministerPage() {
               />
 
               <Button type="submit" disabled={busy || !strandId} className="w-full sm:w-auto">
+                <Icon name="phone" className="size-5" />
                 {busy ? "Starting…" : "Start quiz"}
               </Button>
             </form>
@@ -406,10 +410,13 @@ export default function AdministerPage() {
       <div className="mx-auto max-w-2xl px-4 py-8 sm:px-6 sm:py-10">
         {phase === "roster" && quiz && (
           <>
-            <p className="text-sm text-ink-muted">
+            <p className="inline-flex items-center gap-1.5 rounded-full bg-brand-fill px-3 py-1 text-sm font-semibold text-brand-strong">
+              <Icon name="lock" className="size-4" /> Quiz mode
+            </p>
+            <p className="mt-3 text-sm text-ink-muted">
               {title} · {quiz.strand} · {quiz.items.length} questions
             </p>
-            <h1 className="mt-1 text-2xl font-semibold tracking-tight text-ink">
+            <h1 className="mt-1 text-[28px] font-bold tracking-tight text-ink">
               Who is answering?
             </h1>
             <p className="mt-1 text-[15px] text-ink-muted">
@@ -431,20 +438,32 @@ export default function AdministerPage() {
                       type="button"
                       disabled={nothingLeft}
                       onClick={() => handOver(student)}
-                      className={`flex min-h-16 w-full flex-col justify-center rounded-md border
-                                  px-3 py-2.5 text-left transition-colors ${
+                      className={`flex min-h-18 w-full items-center gap-3 rounded-2xl border
+                                  px-3 py-3 text-left transition-all ${
                                     nothingLeft
                                       ? "cursor-not-allowed border-line bg-sunken text-ink-subtle"
-                                      : "border-line-strong bg-surface text-ink hover:bg-sunken"
+                                      : "border-line bg-surface text-ink shadow-soft hover:-translate-y-0.5 hover:shadow-lift active:scale-[0.98]"
                                   }`}
                     >
-                      <span className="text-[15px] font-medium">{student.name}</span>
-                      <span className="mt-0.5 text-sm text-ink-muted">
+                      <span
+                        aria-hidden="true"
+                        className={`flex size-10 shrink-0 items-center justify-center rounded-full text-sm font-bold ${
+                          justFinished || nothingLeft
+                            ? "bg-sunken text-ink-subtle"
+                            : "bg-brand-fill text-brand-strong"
+                        }`}
+                      >
+                        {justFinished || nothingLeft ? <Icon name="check" className="size-5" /> : initials(student.name)}
+                      </span>
+                      <span className="min-w-0">
+                      <span className="block truncate text-[15px] font-semibold">{student.name}</span>
+                      <span className="mt-0.5 block text-sm text-ink-muted">
                         {justFinished
                           ? "Finished just now"
                           : nothingLeft
                             ? "Already answered"
                             : `${left} ${left === 1 ? "question" : "questions"} left`}
+                      </span>
                       </span>
                     </button>
                   </li>
@@ -483,21 +502,29 @@ export default function AdministerPage() {
 
         {phase === "answering" && learner && queue[position] && (
           <>
-            <div className="flex items-baseline justify-between gap-3">
-              <p className="text-[15px] font-medium text-ink">{learner.name}</p>
-              <p className="text-sm text-ink-muted">
-                Question {position + 1} of {queue.length}
+            <div className="flex items-center justify-between gap-3">
+              <p className="flex items-center gap-2 text-[15px] font-semibold text-ink">
+                <span
+                  aria-hidden="true"
+                  className="flex size-8 items-center justify-center rounded-full bg-brand-fill text-xs font-bold text-brand-strong"
+                >
+                  {initials(learner.name)}
+                </span>
+                {learner.name}
+              </p>
+              <p className="rounded-full bg-sunken px-3 py-1 text-sm font-semibold tabular-nums text-ink-muted">
+                {position + 1} / {queue.length}
               </p>
             </div>
 
-            <div aria-hidden className="mt-2 h-1.5 w-full rounded-full bg-sunken">
+            <div aria-hidden className="mt-4 h-2.5 w-full overflow-hidden rounded-full bg-sunken">
               <div
-                className="h-1.5 rounded-full bg-action transition-[width]"
+                className="h-full rounded-full bg-action transition-[width] duration-500"
                 style={{ width: `${((position + 1) / queue.length) * 100}%` }}
               />
             </div>
 
-            <h1 className="mt-8 text-xl font-medium leading-snug text-ink sm:text-2xl">
+            <h1 className="mt-8 text-[22px] font-semibold leading-snug text-ink sm:text-[26px]">
               {queue[position].question_text}
             </h1>
 
@@ -507,13 +534,15 @@ export default function AdministerPage() {
                   <button
                     type="button"
                     onClick={() => answer(index)}
-                    className="flex min-h-14 w-full items-center gap-3 rounded-md border
-                               border-line-strong bg-surface px-4 py-3 text-left text-[17px]
-                               text-ink transition-colors hover:bg-sunken active:bg-sunken"
+                    className="group flex min-h-16 w-full items-center gap-3.5 rounded-2xl border-2
+                               border-line bg-surface px-4 py-3 text-left text-[18px]
+                               text-ink shadow-soft transition-all hover:border-action
+                               active:scale-[0.98] active:bg-brand-fill"
                   >
                     <span
-                      className="flex size-8 shrink-0 items-center justify-center rounded-full
-                                 border border-line-strong text-sm font-semibold text-ink-muted"
+                      className="flex size-9 shrink-0 items-center justify-center rounded-full
+                                 bg-sunken text-sm font-bold text-ink-muted transition-colors
+                                 group-hover:bg-action group-hover:text-action-ink"
                     >
                       {String.fromCharCode(65 + index)}
                     </span>
@@ -533,12 +562,17 @@ export default function AdministerPage() {
         )}
 
         {phase === "handback" && learner && (
-          <div className="py-20 text-center">
-            <h1 className="text-2xl font-semibold tracking-tight text-ink">
+          <div className="py-16 text-center">
+            {/* A thank-you, not a score: the learner is never told how they did. */}
+            <span className="mx-auto mb-6 flex size-24 items-center justify-center rounded-full bg-brand-fill text-brand-strong">
+              <Icon name="check" className="size-12" strokeWidth={2.2} />
+            </span>
+            <h1 className="text-[28px] font-bold tracking-tight text-ink">
               {/* A name may already end in a full stop: "Amina W." */}
               Finished, {learner.name.replace(/\.$/, "")}.
             </h1>
-            <p className="mt-2 text-[15px] text-ink-muted">
+            <p className="mt-2 flex items-center justify-center gap-2 text-[17px] text-ink-muted">
+              <Icon name="hand" className="size-5" />
               Please give the device back to your teacher.
             </p>
             <div className="mt-10">
@@ -550,8 +584,14 @@ export default function AdministerPage() {
         )}
 
         {phase === "locked" && (
-          <form onSubmit={unlock} className="mx-auto max-w-sm py-16">
-            <h1 className="text-xl font-semibold text-ink">Leave quiz mode</h1>
+          <form
+            onSubmit={unlock}
+            className="mx-auto max-w-sm rounded-3xl border border-line bg-surface p-6 shadow-lift sm:mt-10"
+          >
+            <span className="mb-4 flex size-12 items-center justify-center rounded-2xl bg-brand-fill text-brand-strong">
+              <Icon name="lock" className="size-6" />
+            </span>
+            <h1 className="text-xl font-bold text-ink">Leave quiz mode</h1>
             <p className="mt-1 text-[15px] text-ink-muted">
               {usePassword
                 ? `Enter the password for ${profile?.email ?? "your account"}.`

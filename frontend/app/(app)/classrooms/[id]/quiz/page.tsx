@@ -46,6 +46,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
+import { Icon } from "@/components/Icon";
 import { type QuizLength, QuizLengthPicker } from "@/components/QuizLength";
 import {
   Badge,
@@ -53,12 +54,14 @@ import {
   ButtonLink,
   Card,
   Empty,
+  IconTile,
   Loading,
   Note,
   PageHeader,
   Select,
 } from "@/components/ui";
 import { api, ApiError, errorMessage } from "@/lib/api";
+import { initials } from "@/lib/people";
 import type {
   AnsweredPairs,
   AssessmentReceipt,
@@ -318,6 +321,7 @@ export default function QuizPage() {
     <>
       <PageHeader
         back={{ href: `/classrooms/${classId}`, label: title }}
+        eyebrow={title}
         title="Mark a paper quiz"
         description="Make a quiz, print it for the class, then mark each learner’s answers here. Nothing is saved until you submit."
       />
@@ -337,8 +341,11 @@ export default function QuizPage() {
       )}
 
       {ready && strands.length > 0 && (
-        <Card className="mt-4 p-4">
-          <h2 className="text-base font-semibold text-ink">The quiz</h2>
+        <Card className="mt-4 p-4 sm:p-6">
+          <h2 className="flex items-center gap-3 text-lg font-semibold text-ink">
+            <IconTile name="paper" />
+            The quiz
+          </h2>
           <div className="mt-4 space-y-4">
             <Select
               label="Strand"
@@ -376,19 +383,20 @@ export default function QuizPage() {
 
             {quizId && (
               <ButtonLink href={`/classrooms/${classId}/quizzes/${quizId}/print`}>
-                Print question sheet
+                <Icon name="paper" className="size-4" /> Print question sheet
               </ButtonLink>
             )}
 
             {strandId && (
-              <details className="group rounded-md border border-line" open={quizzes.length === 0}>
-                <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between px-3 text-[15px] font-medium text-ink">
-                  {quizzes.length > 0 ? "Make a new quiz" : "Make a quiz"}
-                  <span aria-hidden className="text-ink-subtle transition group-open:rotate-90">
-                    ›
+              <details className="group rounded-xl border border-line" open={quizzes.length === 0}>
+                <summary className="flex min-h-12 cursor-pointer list-none items-center justify-between rounded-xl px-3.5 text-[15px] font-semibold text-ink hover:bg-sunken">
+                  <span className="flex items-center gap-2">
+                    <Icon name="plus" className="size-4 text-brand-strong" />
+                    {quizzes.length > 0 ? "Make a new quiz" : "Make a quiz"}
                   </span>
+                  <Icon name="chevronRight" className="size-4 text-ink-subtle transition-transform group-open:rotate-90" />
                 </summary>
-                <div className="space-y-3 border-t border-line p-3">
+                <div className="space-y-3 border-t border-line p-3.5">
                   <QuizLengthPicker
                     value={length}
                     onChange={setLength}
@@ -414,7 +422,7 @@ export default function QuizPage() {
 
       {ready && learners.length === 0 && !error && (
         <div className="mt-6">
-          <Empty>
+          <Empty icon="users">
             No learners enrolled.{" "}
             <Link href={`/classrooms/${classId}/roll`} className="underline underline-offset-2">
               Enrol some on the roll
@@ -436,10 +444,16 @@ export default function QuizPage() {
       {learner && items.length > 0 && (
         <section aria-labelledby="learner-heading" className="mt-6">
           <Button variant="ghost" className="-ml-3" onClick={() => setCurrent(null)}>
-            <span aria-hidden="true">‹</span> All learners
+            <Icon name="chevronLeft" className="size-4" /> All learners
           </Button>
-          <Card className="mt-2 p-4">
-            <div className="flex items-start justify-between gap-3">
+          <Card className="mt-2 p-4 sm:p-6">
+            <div className="flex items-center gap-3">
+              <span
+                aria-hidden="true"
+                className="flex size-11 shrink-0 items-center justify-center rounded-full bg-brand-fill text-sm font-bold text-brand-strong"
+              >
+                {initials(learner.name)}
+              </span>
               <div className="min-w-0">
                 <h2 id="learner-heading" className="text-lg font-semibold text-ink">
                   {learner.name}
@@ -470,10 +484,12 @@ export default function QuizPage() {
                 const isLocked = locked.has(k);
                 const mark = grid[k] ?? null;
                 return (
-                  <li key={item.item_id} className="py-3">
-                    <p className="text-[15px] text-ink">
-                      <span className="mr-2 font-semibold text-ink-muted">{number(n)}.</span>
-                      {item.question_text}
+                  <li key={item.item_id} className="py-4">
+                    <p className="flex gap-2.5 text-[15px] text-ink">
+                      <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-sunken text-xs font-bold text-ink-muted">
+                        {number(n)}
+                      </span>
+                      <span className="min-w-0">{item.question_text}</span>
                     </p>
                     {isLocked ? (
                       <div className="mt-2">
@@ -483,7 +499,7 @@ export default function QuizPage() {
                       <div
                         role="radiogroup"
                         aria-label={`Question ${number(n)} for ${learner.name}`}
-                        className="mt-2 grid grid-cols-3 gap-1 rounded-md border border-line-strong bg-surface p-1"
+                        className="mt-2 grid grid-cols-3 gap-1 rounded-xl bg-sunken p-1"
                       >
                         {(
                           [
@@ -498,10 +514,10 @@ export default function QuizPage() {
                             role="radio"
                             aria-checked={mark === value}
                             onClick={() => setMark(learner.student_id, item.item_id, value)}
-                            className={`min-h-11 rounded text-[15px] font-medium transition-colors ${
+                            className={`min-h-11 rounded-lg text-[15px] font-semibold transition-all ${
                               mark === value
                                 ? value === null
-                                  ? "bg-sunken text-ink"
+                                  ? "bg-surface text-ink shadow-soft"
                                   : "bg-action text-action-ink"
                                 : "text-ink-muted hover:bg-sunken hover:text-ink"
                             }`}
@@ -526,7 +542,7 @@ export default function QuizPage() {
                 disabled={at <= 0}
                 onClick={() => setCurrent(learners[at - 1].student_id)}
               >
-                <span aria-hidden="true">‹</span> Previous
+                <Icon name="chevronLeft" className="size-4" /> Previous
               </Button>
               <Button
                 disabled={at >= learners.length - 1}
@@ -535,7 +551,7 @@ export default function QuizPage() {
                   window.scrollTo({ top: 0 });
                 }}
               >
-                Next learner <span aria-hidden="true">›</span>
+                Next learner <Icon name="chevronRight" className="size-4" />
               </Button>
             </div>
           </Card>
@@ -545,10 +561,11 @@ export default function QuizPage() {
       {/* --- every learner ------------------------------------------------ */}
       {!learner && ready && learners.length > 0 && items.length > 0 && (
         <section aria-labelledby="learners-heading" className="mt-6">
-          <h2 id="learners-heading" className="mb-3 text-lg font-semibold text-ink">
+          <h2 id="learners-heading" className="mb-3 flex items-center gap-2.5 text-lg font-semibold text-ink">
+            <IconTile name="users" size="sm" />
             Mark each learner
           </h2>
-          <Card>
+          <Card className="overflow-hidden">
             <ul className="divide-y divide-line">
               {learners.map((l) => {
                 const p = progress(l.student_id);
@@ -568,11 +585,27 @@ export default function QuizPage() {
                         setCurrent(l.student_id);
                         window.scrollTo({ top: 0 });
                       }}
-                      className="flex min-h-14 w-full items-center justify-between gap-3 px-4
+                      className="group flex min-h-16 w-full items-center justify-between gap-3 px-4
                                  py-3 text-left hover:bg-sunken"
                     >
-                      <span className="min-w-0 truncate text-[15px] font-medium text-ink">
-                        {l.name}
+                      <span className="flex min-w-0 items-center gap-3">
+                        <span
+                          aria-hidden="true"
+                          className={`flex size-9 shrink-0 items-center justify-center rounded-full text-xs font-bold ${
+                            p.open === 0 || (p.open > 0 && p.marking === p.open)
+                              ? "bg-action text-action-ink"
+                              : "bg-sunken text-ink-muted"
+                          }`}
+                        >
+                          {p.open === 0 || (p.open > 0 && p.marking === p.open) ? (
+                            <Icon name="check" className="size-4" strokeWidth={2.4} />
+                          ) : (
+                            initials(l.name)
+                          )}
+                        </span>
+                        <span className="min-w-0 truncate text-[15px] font-semibold text-ink">
+                          {l.name}
+                        </span>
                       </span>
                       <span className="flex shrink-0 items-center gap-2">
                         {p.open > 0 && p.marking === p.open ? (
@@ -580,7 +613,10 @@ export default function QuizPage() {
                         ) : (
                           <span className="text-sm text-ink-muted">{status}</span>
                         )}
-                        <span aria-hidden="true" className="text-ink-subtle">›</span>
+                        <Icon
+                          name="chevronRight"
+                          className="size-4 text-ink-subtle transition-transform group-hover:translate-x-0.5"
+                        />
                       </span>
                     </button>
                   </li>
@@ -590,7 +626,7 @@ export default function QuizPage() {
           </Card>
 
           {/* Wide screens: the whole class at a glance, read-only. */}
-          <div className="mt-6 hidden overflow-x-auto md:block">
+          <div className="mt-6 hidden overflow-x-auto rounded-2xl border border-line bg-surface p-4 shadow-soft md:block">
             <table className="border-separate border-spacing-0.5 text-sm">
               <caption className="mb-2 text-left text-sm text-ink-muted">
                 Summary: ✓ right, ✗ wrong, · recorded earlier, empty not marked. Open a
@@ -598,7 +634,7 @@ export default function QuizPage() {
               </caption>
               <thead>
                 <tr>
-                  <th scope="col" className="sticky left-0 z-10 bg-canvas px-2 py-2 text-left font-medium text-ink">
+                  <th scope="col" className="sticky left-0 z-10 bg-surface px-2 py-2 text-left font-medium text-ink">
                     Learner
                   </th>
                   {items.map((item, n) => (
@@ -616,7 +652,7 @@ export default function QuizPage() {
               <tbody>
                 {learners.map((l) => (
                   <tr key={l.student_id}>
-                    <th scope="row" className="sticky left-0 z-10 bg-canvas px-2 py-1 text-left font-normal whitespace-nowrap">
+                    <th scope="row" className="sticky left-0 z-10 bg-surface px-2 py-1 text-left font-normal whitespace-nowrap">
                       <button
                         type="button"
                         onClick={() => setCurrent(l.student_id)}
@@ -632,9 +668,9 @@ export default function QuizPage() {
                       return (
                         <td
                           key={item.item_id}
-                          className={`size-8 border text-center ${
+                          className={`size-8 rounded-md border text-center ${
                             isLocked
-                              ? "border-line bg-sunken text-ink-subtle"
+                              ? "border-line bg-sunken text-ink-muted"
                               : mark === "correct"
                                 ? "border-action bg-action text-action-ink"
                                 : mark === "wrong"
@@ -657,11 +693,13 @@ export default function QuizPage() {
       {/* Stays in reach while marking, above the phone's tab bar. */}
       {marked > 0 && (
         <div className="sticky bottom-[calc(4.75rem+env(safe-area-inset-bottom))] z-10 mt-6 md:bottom-4">
-          <Card className="flex flex-wrap items-center justify-between gap-3 p-3 shadow-sm">
-            <span className="text-[15px] text-ink">
+          <Card className="flex flex-wrap items-center justify-between gap-3 border-action/30 p-3 pl-4 shadow-lift">
+            <span className="flex items-center gap-2 text-[15px] font-semibold text-ink">
+              <span aria-hidden className="size-2 animate-pulse rounded-full bg-accent" />
               {marked} {marked === 1 ? "answer" : "answers"} marked, not saved yet
             </span>
             <Button disabled={busy} onClick={submit}>
+              <Icon name="save" className="size-4" />
               {busy ? "Saving…" : "Submit"}
             </Button>
           </Card>

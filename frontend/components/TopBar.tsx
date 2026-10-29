@@ -16,46 +16,16 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
+import { Icon, type IconName } from "@/components/Icon";
 import { Logo } from "@/components/Logo";
 import { useAuth } from "@/lib/auth";
 import { initials, ROLE_LABEL } from "@/lib/people";
 import { HOME } from "@/lib/routes";
 
-function SupportIcon() {
-  return (
-    <svg viewBox="0 0 24 24" className="size-6" fill="none" stroke="currentColor"
-         strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <circle cx="9" cy="8" r="3.25" />
-      <path d="M3.5 19.5c.6-3.2 2.8-5 5.5-5s4.9 1.8 5.5 5" />
-      <path d="M18 8v6M15 11h6" />
-    </svg>
-  );
-}
-
-function ClassesIcon() {
-  return (
-    <svg viewBox="0 0 24 24" className="size-6" fill="none" stroke="currentColor"
-         strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <rect x="3.5" y="4.5" width="17" height="15" rx="2" />
-      <path d="M3.5 9.5h17M9.5 9.5v10" />
-    </svg>
-  );
-}
-
-function OverviewIcon() {
-  return (
-    <svg viewBox="0 0 24 24" className="size-6" fill="none" stroke="currentColor"
-         strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M4 19.5h16" />
-      <path d="M7 16V11M12 16V6.5M17 16v-3" />
-    </svg>
-  );
-}
-
-const LINKS = [
-  { href: HOME, label: "Support", Icon: SupportIcon },
-  { href: "/classrooms", label: "Classes", Icon: ClassesIcon },
-  { href: "/dashboard", label: "Overview", Icon: OverviewIcon },
+const LINKS: { href: string; label: string; icon: IconName }[] = [
+  { href: HOME, label: "Support", icon: "support" },
+  { href: "/classrooms", label: "Classes", icon: "classes" },
+  { href: "/dashboard", label: "Overview", icon: "overview" },
 ];
 
 function useActive() {
@@ -72,41 +42,45 @@ export function TopBar() {
   const onProfile = usePathname().startsWith("/profile");
 
   return (
-    <header className="sticky top-0 z-20 border-b border-line bg-surface/95 backdrop-blur print:hidden">
-      <div className="mx-auto flex h-14 max-w-5xl items-center justify-between gap-4 px-4">
-        <Link href={HOME} className="min-h-11 inline-flex items-center" aria-label="Elimu Analytics home">
+    <header className="sticky top-0 z-20 border-b border-line bg-surface/90 backdrop-blur-md print:hidden">
+      <div className="mx-auto flex h-16 max-w-5xl items-center justify-between gap-4 px-4">
+        <Link href={HOME} className="inline-flex min-h-11 items-center" aria-label="Elimu Analytics home">
           <Logo />
         </Link>
 
         {/* Wide screens: the destinations sit in the bar itself. */}
         <nav aria-label="Main" className="hidden items-center gap-1 md:flex">
-          {LINKS.map(({ href, label }) => (
-            <Link
-              key={href}
-              href={href}
-              aria-current={isActive(href) ? "page" : undefined}
-              className={`inline-flex min-h-11 items-center rounded-md px-3 text-[15px]
-                          ${isActive(href)
-                            ? "bg-sunken font-medium text-ink"
-                            : "text-ink-muted hover:text-ink"}`}
-            >
-              {label}
-            </Link>
-          ))}
+          {LINKS.map(({ href, label, icon }) => {
+            const active = isActive(href);
+            return (
+              <Link
+                key={href}
+                href={href}
+                aria-current={active ? "page" : undefined}
+                className={`inline-flex min-h-11 items-center gap-2 rounded-xl px-3.5 text-[15px] font-semibold transition-colors
+                            ${active
+                              ? "bg-brand-fill text-brand-strong"
+                              : "text-ink-muted hover:bg-sunken hover:text-ink"}`}
+              >
+                <Icon name={icon} className="size-5" />
+                {label}
+              </Link>
+            );
+          })}
         </nav>
 
         {/* Initials, the pattern every phone user already knows. Sign-out
-            moved into the profile page, one tap further away - and placed at
-            the top of it, because school devices are shared. */}
+            lives at the top of the profile page, because school devices are
+            shared. */}
         <Link
           href="/profile"
           aria-label={profile ? `Your profile: ${profile.name}` : "Your profile"}
           aria-current={onProfile ? "page" : undefined}
-          className="-mr-1 flex min-h-11 items-center gap-3 rounded-md px-1 hover:bg-sunken"
+          className="-mr-1 flex min-h-11 items-center gap-3 rounded-xl px-1.5 hover:bg-sunken"
         >
           {profile && (
             <span className="hidden text-right leading-tight md:block">
-              <span className="block text-sm font-medium text-ink">{profile.name}</span>
+              <span className="block text-sm font-semibold text-ink">{profile.name}</span>
               <span className="block text-xs text-ink-subtle">
                 {ROLE_LABEL[profile.role] ?? profile.role}
               </span>
@@ -114,9 +88,10 @@ export function TopBar() {
           )}
           <span
             aria-hidden="true"
-            className={`flex size-9 items-center justify-center rounded-full border text-sm
-                        font-semibold text-ink
-                        ${onProfile ? "border-ink bg-sunken" : "border-line-strong bg-sunken"}`}
+            className={`flex size-10 items-center justify-center rounded-full text-sm font-bold
+                        ${onProfile
+                          ? "bg-action text-action-ink"
+                          : "bg-brand-fill text-brand-strong"}`}
           >
             {initials(profile?.name)}
           </span>
@@ -133,25 +108,27 @@ export function BottomNav() {
     <nav
       aria-label="Main"
       className="fixed inset-x-0 bottom-0 z-20 border-t border-line bg-surface/95
-                 pb-[env(safe-area-inset-bottom)] backdrop-blur md:hidden print:hidden"
+                 pb-[env(safe-area-inset-bottom)] backdrop-blur-md md:hidden print:hidden"
     >
       <ul className="mx-auto grid max-w-md grid-cols-3">
-        {LINKS.map(({ href, label, Icon }) => {
+        {LINKS.map(({ href, label, icon }) => {
           const active = isActive(href);
           return (
             <li key={href}>
               <Link
                 href={href}
                 aria-current={active ? "page" : undefined}
-                className={`relative flex min-h-16 flex-col items-center justify-center gap-1
-                            text-xs font-medium
-                            ${active ? "text-ink" : "text-ink-subtle hover:text-ink-muted"}`}
+                className={`flex min-h-16 flex-col items-center justify-center gap-1 text-xs font-semibold
+                            ${active ? "text-brand-strong" : "text-ink-subtle hover:text-ink-muted"}`}
               >
-                {active && (
-                  <span aria-hidden="true"
-                        className="absolute inset-x-6 top-0 h-0.5 rounded-full bg-ink" />
-                )}
-                <Icon />
+                {/* The active tab's icon sits in a pill, as in Android's own
+                    navigation bar - the pattern a phone user already reads. */}
+                <span
+                  className={`flex h-8 w-14 items-center justify-center rounded-full transition-colors
+                              ${active ? "bg-brand-fill" : ""}`}
+                >
+                  <Icon name={icon} className="size-6" />
+                </span>
                 {label}
               </Link>
             </li>

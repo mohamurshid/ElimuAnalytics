@@ -1,9 +1,14 @@
 import type { Metadata, Viewport } from "next";
+import { Figtree } from "next/font/google";
 
 import { AuthProvider } from "@/lib/auth";
 import { THEME_BOOTSTRAP } from "@/lib/theme";
 
 import "./globals.css";
+
+// Self-hosted at build time: the browser downloads it from this server,
+// never from Google.
+const figtree = Figtree({ subsets: ["latin"], variable: "--font-figtree", display: "swap" });
 
 export const metadata: Metadata = {
   title: "Elimu Analytics",
@@ -19,8 +24,8 @@ export const viewport: Viewport = {
   initialScale: 1,
   viewportFit: "cover",
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#fcfcfb" },
-    { media: "(prefers-color-scheme: dark)", color: "#1a1a19" },
+    { media: "(prefers-color-scheme: light)", color: "#ffffff" },
+    { media: "(prefers-color-scheme: dark)", color: "#111a2b" },
   ],
 };
 
@@ -30,7 +35,7 @@ export default function RootLayout({
   return (
     // suppressHydrationWarning: the bootstrap script may set data-theme on
     // <html> before React hydrates, which is the point of running it early.
-    <html lang="en" suppressHydrationWarning>
+    <html lang="en" className={figtree.variable} suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: THEME_BOOTSTRAP }} />
       </head>

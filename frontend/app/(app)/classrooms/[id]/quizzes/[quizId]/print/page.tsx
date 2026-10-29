@@ -14,6 +14,7 @@
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
+import { Icon } from "@/components/Icon";
 import { Button, ButtonLink, Loading, Note } from "@/components/ui";
 import { api, errorMessage } from "@/lib/api";
 import type { Classroom, QuizSet } from "@/lib/types";
@@ -52,11 +53,11 @@ export default function PrintQuizPage() {
     <>
       <div className="mb-6 flex flex-wrap items-center gap-2 print:hidden">
         <ButtonLink href={`/classrooms/${classId}/quiz`} variant="ghost" className="-ml-3">
-          ‹ Back to marking
+          <Icon name="chevronLeft" className="size-4" /> Back to marking
         </ButtonLink>
         <span className="flex-1" />
         <Button onClick={() => window.print()} disabled={!quiz}>
-          Print
+          <Icon name="paper" className="size-4" /> Print
         </Button>
       </div>
 
@@ -64,7 +65,7 @@ export default function PrintQuizPage() {
       {!quiz && !error && <Loading what="the quiz" />}
 
       {quiz && (
-        <article className="mx-auto max-w-2xl text-ink print:max-w-none print:text-black">
+        <article className="mx-auto max-w-2xl rounded-2xl border border-line bg-surface p-5 text-ink shadow-soft sm:p-8 print:max-w-none print:rounded-none print:border-0 print:bg-transparent print:p-0 print:text-black print:shadow-none">
           <header className="border-b border-line-strong pb-3">
             <h1 className="text-xl font-semibold">{sub}</h1>
             <p className="mt-1 text-sm text-ink-muted print:text-black">

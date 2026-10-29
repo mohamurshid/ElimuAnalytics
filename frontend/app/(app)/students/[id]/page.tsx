@@ -47,9 +47,10 @@ import { useParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { Legend } from "@/components/Heatmap";
-import { Button, Empty, Loading, Note } from "@/components/ui";
+import { Icon } from "@/components/Icon";
+import { LevelAvatar, LevelChip } from "@/components/Level";
+import { Badge, Button, Card, Empty, Loading, Note, PageHeader } from "@/components/ui";
 import { api, ApiError, downloadFile, errorMessage } from "@/lib/api";
-import { shortTier, tierColour } from "@/lib/tiers";
 import type { LearnerDiagnostics, Report } from "@/lib/types";
 
 const MINIMUM = 5;
@@ -85,28 +86,31 @@ function badgeLabel(report: Report): string {
   return report.verdict ?? "no verdict";
 }
 
-function badgeStyle(report: Report): string {
-  if (report.status === "pending") {
-    return "border-blue-300 bg-blue-50 text-blue-900";
+/**
+ * Report state is system state, so the semantic colours apply - they never
+ * touch a learner. GROUNDED is the only verdict that may be sent home.
+ */
+function badgeTone(report: Report): "neutral" | "ok" | "warn" | "risk" {
+  if (report.status === "pending") return "neutral";
+  if (report.status === "failed") return "risk";
+  switch (report.verdict) {
+    case "GROUNDED":
+      return "ok";
+    case "WEAK":
+      return "warn";
+    case "FABRICATED":
+      return "risk";
+    default:
+      return "neutral";
   }
-  if (report.status === "failed") {
-    return "border-red-300 bg-red-50 text-red-900";
-  }
-  return verdictStyle(report.verdict);
 }
 
-/** GROUNDED is the only verdict that may be sent home. */
-function verdictStyle(verdict: string | null): string {
-  switch (verdict) {
-    case "GROUNDED":
-      return "border-green-300 bg-green-50 text-green-900";
-    case "WEAK":
-      return "border-amber-300 bg-amber-50 text-amber-900";
-    case "FABRICATED":
-      return "border-red-300 bg-red-50 text-red-900";
-    default:
-      return "border-neutral-300 bg-neutral-50 text-neutral-700";
-  }
+/** The level that most needs attention, for the avatar ring. */
+const NEED = ["Below expectation", "Approaches expectation", "Meets expectation", "Exceeds expectation"];
+function worstTier(learner: LearnerDiagnostics): string | null {
+  const tiers = learner.cells.map((c) => c.tier).filter((t): t is string => !!t && NEED.includes(t));
+  if (tiers.length === 0) return null;
+  return NEED[Math.min(...tiers.map((t) => NEED.indexOf(t)))];
 }
 
 function ReportCard({
@@ -125,23 +129,18 @@ function ReportCard({
   const elapsed = pending ? secondsSince(report.generated_at) : null;
 
   return (
-    <div className="mt-3 rounded border border-neutral-200 bg-white p-4">
+    <div className="mt-4 rounded-xl border border-line bg-sunken/60 p-4">
       <div className="flex flex-wrap items-center gap-2">
-        <span
-          className={`rounded border px-2 py-0.5 text-xs font-semibold
-                      ${badgeStyle(report)}`}
-        >
-          {badgeLabel(report)}
-        </span>
-        <span className="text-xs text-neutral-500">{generated}</span>
+        <Badge tone={badgeTone(report)}>{badgeLabel(report)}</Badge>
+        <span className="text-xs text-ink-subtle">{generated}</span>
         {elapsed !== null && (
-          <span className="text-xs text-neutral-600">{elapsed}s elapsed</span>
+          <span className="text-xs text-ink-muted">{elapsed}s elapsed</span>
         )}
       </div>
 
       {/* The server's own sentence. Paraphrasing it is how a refusal turns
           into an apparent fault. */}
-      <p className="mt-2 text-sm text-neutral-700">{report.detail}</p>
+      <p className="mt-2 text-sm text-ink-muted">{report.detail}</p>
 
       {/* No second sentence about export. `detail` already carries the
           server's own account - "It can be exported", "cannot be exported or
@@ -154,10 +153,11 @@ function ReportCard({
       {report.status === "ready" && (
         <div className="mt-2 flex flex-wrap items-center gap-3">
           <p
-            className={`text-sm ${
-              report.exportable ? "text-green-800" : "text-red-800"
+            className={`flex items-center gap-1.5 text-sm font-semibold ${
+              report.exportable ? "text-ok" : "text-risk"
             }`}
           >
+            <Icon name={report.exportable ? "check" : "alert"} className="size-4" />
             {report.exportable ? "Fit to send home." : "Not fit to send home."}
           </p>
           {/* No button at all when the grounding check failed. The server
@@ -169,6 +169,7 @@ function ReportCard({
               disabled={downloading}
               onClick={() => onDownload(report)}
             >
+              <Icon name="paper" className="size-4" />
               {downloading ? "Preparing\u2026" : "Download PDF"}
             </Button>
           )}
@@ -181,13 +182,13 @@ function ReportCard({
         const check = report.grounding?.[language];
         if (!body) return null;
         return (
-          <section key={language} className="mt-4">
-            <h3 className="text-sm font-semibold">{language}</h3>
-            <p className="mt-1 whitespace-pre-wrap text-sm leading-relaxed">
+          <section key={language} className="mt-4 rounded-xl bg-surface p-4">
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-ink-subtle">{language}</h3>
+            <p className="mt-1.5 whitespace-pre-wrap text-[15px] leading-relaxed text-ink">
               {body}
             </p>
             {check && check.verbatim_quotes_verified.length > 0 && (
-              <p className="mt-2 text-xs text-neutral-600">
+              <p className="mt-2 text-xs text-ink-muted">
                 Verified citation
                 {check.verbatim_quotes_verified.length > 1 ? "s" : ""}:{" "}
                 {check.verbatim_quotes_verified
@@ -196,7 +197,7 @@ function ReportCard({
               </p>
             )}
             {check && check.verbatim_quotes_fabricated.length > 0 && (
-              <p className="mt-2 text-xs text-red-700">
+              <p className="mt-2 text-xs text-risk">
                 Not found in the curriculum:{" "}
                 {check.verbatim_quotes_fabricated
                   .map((quote) => `“${quote}”`)
@@ -208,7 +209,7 @@ function ReportCard({
       })}
 
       {report.status === "ready" && (
-      <p className="mt-4 text-xs text-neutral-500">
+      <p className="mt-4 text-xs text-ink-subtle">
         {report.model}
         {report.effort ? ` · effort ${report.effort}` : ""}
         {report.cost_usd !== null
@@ -438,141 +439,141 @@ export default function LearnerPage() {
 
   return (
     <>
-      <h1 className="text-2xl font-semibold">{data?.name ?? "Learner"}</h1>
-      {data && !data.is_active && (
-        <p className="mt-1 text-sm text-neutral-500">
-          Withdrawn. Past responses are kept, and this learner is excluded from
-          future calibration.
-        </p>
-      )}
+      <div className="mb-6 flex items-center gap-4">
+        {data && <LevelAvatar name={data.name} tier={worstTier(data)} />}
+        <div className="min-w-0 flex-1">
+          <PageHeader
+            className="mb-0"
+            eyebrow="Learner"
+            title={data?.name ?? "Learner"}
+            description={
+              data && !data.is_active
+                ? "Withdrawn. Past responses are kept, and this learner is excluded from future calibration."
+                : undefined
+            }
+          />
+        </div>
+      </div>
 
-      <div className="mt-4 space-y-2">
+      <div className="space-y-3 empty:hidden">
         <Note tone="error">{error}</Note>
         <Note tone="error">{historyError}</Note>
         <Note tone="error">{reportError}</Note>
       </div>
 
       {stalled && (
-        <div className="mt-2 rounded border border-amber-300 bg-amber-50 p-3
-                        text-sm text-amber-900">
-          This report is taking longer than two minutes. It may still be
-          running - the work happens on the server, so nothing is lost either
-          way.{" "}
-          <button className="underline" onClick={refresh} type="button">
-            Check again
-          </button>
+        <div className="mt-3">
+          <Note tone="warn">
+            This report is taking longer than two minutes. It may still be
+            running - the work happens on the server, so nothing is lost either
+            way.{" "}
+            <button className="font-semibold underline" onClick={refresh} type="button">
+              Check again
+            </button>
+          </Note>
         </div>
       )}
 
-      {!data && !error && (
-        <div className="mt-6">
-          <Loading what="diagnostics" />
-        </div>
-      )}
+      {!data && !error && <Loading what="diagnostics" />}
 
       {data && data.cells.length === 0 && (
-        <div className="mt-6">
-          <Empty>No strands have been assessed for this learner yet.</Empty>
-        </div>
+        <Empty icon="book">No strands have been assessed for this learner yet.</Empty>
       )}
 
       {data && data.cells.length > 0 && (
         <>
-          <div className="mt-6">
+          <div className="mb-4">
             <Legend minimum={MINIMUM} />
           </div>
 
-          <ul className="mt-4 space-y-3">
+          <ul className="space-y-4">
             {data.cells.map((cell) => {
               const report = latest.get(cell.strand_id);
               const busy =
                 generating === cell.strand_id ||
                 busyStrands.has(cell.strand_id);
               const expanded = report && open === report.report_id;
+              const [strandName, sub] = cell.strand.split(" / ");
 
               return (
-                <li
-                  key={cell.strand_id}
-                  className="tier-cell rounded-r px-4 py-3"
-                  style={{ ["--tier" as string]: tierColour(cell.tier) }}
-                >
-                  <div className="flex flex-wrap items-baseline justify-between
-                                  gap-2">
-                    <span className="font-medium">{cell.strand}</span>
-                    <span className="text-sm">
+                <li key={cell.strand_id}>
+                  <Card className="p-4 sm:p-5">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="text-[17px] font-semibold leading-snug text-ink">{sub ?? strandName}</p>
+                        {sub && <p className="text-sm text-ink-subtle">{strandName}</p>}
+                      </div>
                       {cell.theta === null ? (
-                        <span className="text-neutral-600">no estimate</span>
+                        <LevelChip tier={null} label="No level yet" />
                       ) : (
-                        <>
-                          <span className="font-medium">
-                            {shortTier(cell.tier)}
+                        <span className="flex items-center gap-2">
+                          <LevelChip tier={cell.tier} />
+                          {/* The estimate stays for anyone looking for it, but
+                              small: a number beside a level gets read as a mark. */}
+                          <span className="text-xs tabular-nums text-ink-subtle">
+                            θ {cell.theta.toFixed(2)}
                           </span>
-                          <span className="text-neutral-600">
-                            {" "}
-                            · θ {cell.theta.toFixed(2)}
-                          </span>
-                        </>
-                      )}
-                    </span>
-                  </div>
-                  {/* The server's own words. Paraphrasing a refusal is how a
-                      refusal turns into an apparent fault. */}
-                  <p className="mt-1 text-sm text-neutral-600">
-                    {cell.message}
-                  </p>
-
-                  {/* No estimate, no report. The endpoint would refuse, and
-                      offering the action would be offering a 409. */}
-                  {cell.theta !== null && (
-                    <div className="mt-2 flex flex-wrap items-center gap-2">
-                      <Button
-                        variant={report ? "secondary" : "primary"}
-                        disabled={busy}
-                        onClick={() => generate(cell.strand_id)}
-                      >
-                        {busy
-                          ? "Generating…"
-                          : report
-                            ? "Generate again"
-                            : "Generate report"}
-                      </Button>
-
-                      {report && (
-                        <>
-                          <Button
-                            variant="secondary"
-                            onClick={() =>
-                              setOpen(expanded ? null : report.report_id)
-                            }
-                          >
-                            {expanded ? "Hide report" : "Show report"}
-                          </Button>
-                          <span
-                            className={`rounded border px-2 py-0.5 text-xs
-                                        font-semibold
-                                        ${badgeStyle(report)}`}
-                          >
-                            {badgeLabel(report)}
-                          </span>
-                        </>
-                      )}
-
-                      {busy && (
-                        <span className="text-sm text-neutral-600">
-                          English and Kiswahili, about half a minute. Leaving
-                          this page will not stop it.
                         </span>
                       )}
                     </div>
-                  )}
+                    {/* The server's own words. Paraphrasing a refusal is how a
+                        refusal turns into an apparent fault. */}
+                    <p className="mt-2 text-[15px] leading-relaxed text-ink-muted">
+                      {cell.message}
+                    </p>
 
-                  {expanded && report && (
-                    <ReportCard
-                      report={report}
-                      onDownload={save}
-                      downloading={downloading === report.report_id}
-                    />
-                  )}
+                    {/* No estimate, no report. The endpoint would refuse, and
+                        offering the action would be offering a 409. */}
+                    {cell.theta !== null && (
+                      <div className="mt-4 flex flex-wrap items-center gap-2">
+                        <Button
+                          variant={report ? "secondary" : "primary"}
+                          disabled={busy}
+                          onClick={() => generate(cell.strand_id)}
+                        >
+                          <Icon name={busy ? "refresh" : "sparkles"} className={`size-4 ${busy ? "animate-spin" : ""}`} />
+                          {busy
+                            ? "Generating…"
+                            : report
+                              ? "Generate again"
+                              : "Generate report"}
+                        </Button>
+
+                        {report && (
+                          <>
+                            <Button
+                              variant="ghost"
+                              onClick={() =>
+                                setOpen(expanded ? null : report.report_id)
+                              }
+                            >
+                              {expanded ? "Hide report" : "Show report"}
+                              <Icon
+                                name="chevronRight"
+                                className={`size-4 transition-transform ${expanded ? "-rotate-90" : "rotate-90"}`}
+                              />
+                            </Button>
+                            <Badge tone={badgeTone(report)}>{badgeLabel(report)}</Badge>
+                          </>
+                        )}
+
+                        {busy && (
+                          <span className="w-full text-sm text-ink-muted">
+                            English and Kiswahili, about half a minute. Leaving
+                            this page will not stop it.
+                          </span>
+                        )}
+                      </div>
+                    )}
+
+                    {expanded && report && (
+                      <ReportCard
+                        report={report}
+                        onDownload={save}
+                        downloading={downloading === report.report_id}
+                      />
+                    )}
+                  </Card>
                 </li>
               );
             })}
@@ -581,7 +582,8 @@ export default function LearnerPage() {
       )}
 
       {reports !== null && reports.length === 0 && data && (
-        <p className="mt-6 text-sm text-neutral-500">
+        <p className="mt-6 flex gap-2 text-sm text-ink-subtle">
+          <Icon name="info" className="mt-0.5 size-4 shrink-0" />
           No reports generated yet. A report quotes the KICD curriculum
           verbatim and is checked against it before it can be sent home.
         </p>

@@ -28,6 +28,8 @@
 
 import Link from "next/link";
 
+import { LevelAvatar, LevelChip } from "@/components/Level";
+
 import { cellTitle, shortTier, tierColour, TIERS } from "@/lib/tiers";
 import type {
   DiagnosticCell,
@@ -49,6 +51,7 @@ const RANK: Record<string, number> = {
   "Exceeds expectation": 3,
 };
 const NO_LEVEL = 4;
+const BY_RANK = Object.keys(RANK);
 
 /** A strand from another grade's curriculum is labelled with that grade, so
  *  "3.3 Heat" (Grade 4) beside "3.3 Heat Transfer" (Grade 5) reads as the
@@ -76,26 +79,25 @@ export function byNeed(a: LearnerDiagnostics, b: LearnerDiagnostics): number {
   return a.name.localeCompare(b.name);
 }
 
+/** The level a learner most needs help with, for the avatar ring. */
+function worstTier(learner: LearnerDiagnostics): string | null {
+  const worst = learner.cells.length ? Math.min(...learner.cells.map(rankOf)) : NO_LEVEL;
+  return worst === NO_LEVEL ? null : BY_RANK[worst];
+}
+
 export function Legend({ minimum }: { minimum: number }) {
   return (
-    <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-ink-muted">
+    <div className="flex flex-wrap items-center gap-2 text-sm text-ink-muted">
       {[...TIERS].reverse().map((tier) => (
-        <span key={tier} className="flex items-center gap-2">
-          <span
-            aria-hidden
-            className="inline-block size-3 rounded-sm"
-            style={{ background: tierColour(tier) }}
-          />
-          {tier}
-        </span>
+        <LevelChip key={tier} tier={tier} size="sm" label={tier} />
       ))}
-      <span className="flex items-center gap-2">
+      <span className="inline-flex items-center gap-1.5 rounded-full border border-dashed border-line-strong px-2 py-0.5 text-xs font-semibold text-ink-muted">
         <span
           aria-hidden
-          className="inline-block size-3 rounded-sm border border-line-strong"
+          className="inline-block size-2.5 rounded-full border border-line-strong"
           style={{ backgroundImage: HATCH }}
         />
-        No level yet — fewer than {minimum} answers
+        No level yet: fewer than {minimum} answers
       </span>
     </div>
   );
@@ -109,7 +111,7 @@ export function Legend({ minimum }: { minimum: number }) {
  */
 export function ClassSummary({ data }: { data: HeatmapData }) {
   return (
-    <div className="space-y-5">
+    <div className="divide-y divide-line">
       {data.strands.map((strand) => {
         const counts = [0, 0, 0, 0, 0];
         for (const learner of data.learners) {
@@ -128,13 +130,13 @@ export function ClassSummary({ data }: { data: HeatmapData }) {
         const summary = parts.map((p) => `${p.n} ${p.label}`).join(", ");
         const context = [otherGrade(strand, data), sub && strandName].filter(Boolean).join(" · ");
         return (
-          <div key={strand.strand_id}>
+          <div key={strand.strand_id} className="py-4 first:pt-0 last:pb-0">
             <p className="text-[15px] font-semibold text-ink">{sub ?? strandName}</p>
             {context && <p className="text-sm text-ink-subtle">{context}</p>}
             <div
               role="img"
               aria-label={`${sub ?? strandName}: ${summary}`}
-              className="mt-2.5 flex h-3 overflow-hidden rounded-full bg-sunken"
+              className="mt-3 flex h-3.5 gap-0.5 overflow-hidden rounded-full bg-sunken"
             >
               {parts.map((p) =>
                 p.n > 0 ? (
@@ -149,11 +151,26 @@ export function ClassSummary({ data }: { data: HeatmapData }) {
                 ) : null,
               )}
             </div>
-            <dl className="mt-2.5 grid grid-cols-5 gap-1 text-center">
+            <dl className="mt-3 grid grid-cols-5 gap-1.5">
               {parts.map((p) => (
-                <div key={p.label}>
-                  <dt className="text-xs leading-tight text-ink-subtle">{p.label}</dt>
-                  <dd className="text-base font-semibold tabular-nums text-ink">{p.n}</dd>
+                <div
+                  key={p.label}
+                  className={`rounded-xl px-1 py-1.5 text-center ${p.n ? "bg-sunken" : ""}`}
+                >
+                  <dd className={`text-lg font-bold tabular-nums leading-tight ${p.n ? "text-ink" : "text-ink-subtle"}`}>
+                    {p.n}
+                  </dd>
+                  <dt className="mt-0.5 flex items-center justify-center gap-1 text-[11px] leading-tight text-ink-muted">
+                    <span
+                      aria-hidden
+                      className="size-1.5 shrink-0 rounded-full"
+                      style={{
+                        background: p.colour,
+                        backgroundImage: p.label === "No level yet" ? HATCH : undefined,
+                      }}
+                    />
+                    {p.label}
+                  </dt>
                 </div>
               ))}
             </dl>
@@ -176,8 +193,8 @@ export function Heatmap({
   );
 
   return (
-    <div className="-mx-4 overflow-x-auto px-4 md:mx-0 md:px-0">
-      <table className="w-full border-separate border-spacing-y-1 text-[15px]">
+    <div className="overflow-x-auto">
+      <table className="w-full border-separate border-spacing-y-1.5 text-[15px]">
         <caption className="sr-only">
           Level by learner and strand. Each cell gives the KICD level in words;
           cells without enough evidence are marked “no level yet”.
@@ -186,7 +203,7 @@ export function Heatmap({
           <tr>
             <th
               scope="col"
-              className="sticky left-0 z-10 bg-canvas py-2 pr-3 text-left text-sm font-medium text-ink-muted"
+              className="sticky left-0 z-10 bg-surface py-2 pr-3 text-left text-sm font-medium text-ink-muted"
             >
               Learner
             </th>
@@ -213,13 +230,14 @@ export function Heatmap({
             <tr key={learner.student_id}>
               <th
                 scope="row"
-                className="sticky left-0 z-10 bg-canvas py-0 pr-3 text-left font-normal whitespace-nowrap"
+                className="sticky left-0 z-10 bg-surface py-0 pr-3 text-left font-normal whitespace-nowrap"
               >
                 <Link
                   href={`/students/${learner.student_id}`}
-                  className="inline-flex min-h-12 items-center font-medium text-ink hover:underline"
+                  className="group inline-flex min-h-12 items-center gap-2.5 font-semibold text-ink"
                 >
-                  {learner.name}
+                  <LevelAvatar name={learner.name} tier={worstTier(learner)} size="sm" />
+                  <span className="group-hover:underline">{learner.name}</span>
                 </Link>
               </th>
 
@@ -241,7 +259,7 @@ export function Heatmap({
                     <Link
                       href={`/students/${learner.student_id}`}
                       title={cellTitle(cell, learner.name)}
-                      className="tier-cell flex min-h-12 flex-col justify-center rounded-r-md px-3"
+                      className="tier-cell flex min-h-12 flex-col justify-center rounded-xl px-3 transition-transform hover:-translate-y-0.5"
                       style={{
                         ["--tier" as string]: tierColour(cell.tier),
                         backgroundImage: none ? HATCH : undefined,
@@ -251,7 +269,7 @@ export function Heatmap({
                         {none ? "No level yet" : shortTier(cell.tier)}
                       </span>
                       {(none || provisional) && (
-                        <span className="text-xs leading-tight text-ink-subtle">
+                        <span className="text-xs leading-tight text-ink-muted">
                           {none
                             ? `${cell.answered} of ${data.minimum_responses} answers`
                             : `provisional · ${cell.answered} answers`}

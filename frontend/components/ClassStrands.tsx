@@ -16,7 +16,8 @@
 
 import { useState } from "react";
 
-import { Badge, Button, ButtonLink, Card, Note } from "@/components/ui";
+import { Icon } from "@/components/Icon";
+import { Badge, Button, ButtonLink, Card, IconTile, Note } from "@/components/ui";
 import { api, errorMessage } from "@/lib/api";
 import type { Strand } from "@/lib/types";
 
@@ -62,6 +63,7 @@ export function ClassStrands({
           What this class is assessed on
         </h2>
         <ButtonLink href={`/classrooms/${classId}/strands`} variant="secondary" size="sm">
+          <Icon name="plus" className="size-4" />
           Add a strand
         </ButtonLink>
       </div>
@@ -69,12 +71,15 @@ export function ClassStrands({
       <Note tone="error">{error}</Note>
 
       {strands.length === 0 ? (
-        <Card className="p-4">
-          <p className="text-[15px] text-ink">Nothing yet.</p>
+        <Card className="flex items-start gap-3 p-4">
+          <IconTile name="book" />
+          <div>
+          <p className="text-[15px] font-semibold text-ink">Nothing yet</p>
           <p className="mt-1 text-sm text-ink-muted">
             Add the sub-strands you are teaching, from the KICD curriculum for
             Grades 4–6. A quiz can then be given on each one.
           </p>
+          </div>
         </Card>
       ) : (
         <Card>
@@ -85,9 +90,10 @@ export function ClassStrands({
               const otherGrade = strand.grade && strand.grade !== classGrade;
               return (
                 <li key={strand.strand_id}>
-                  <div className="flex items-start gap-3 px-4 py-3">
+                  <div className="flex items-start gap-3 px-4 py-4">
+                    <IconTile name="book" className="mt-0.5 hidden sm:flex" />
                     <div className="min-w-0 flex-1">
-                      <p className="text-[15px] font-medium text-ink">{title}</p>
+                      <p className="text-[15px] font-semibold text-ink">{title}</p>
                       <p className="mt-0.5 text-sm text-ink-muted">
                         {[context, strand.learning_area].filter(Boolean).join(" · ")}
                       </p>
@@ -115,6 +121,7 @@ export function ClassStrands({
                         className="mt-3"
                       >
                         Questions
+                        <Icon name="chevronRight" className="size-4" />
                       </ButtonLink>
                     </div>
                     {!asking && (

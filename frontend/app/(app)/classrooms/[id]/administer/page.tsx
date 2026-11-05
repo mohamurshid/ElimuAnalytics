@@ -37,16 +37,34 @@
  * **Answers are held until the teacher ends the session.** One batch, one
  * idempotency key, so a submission that times out and is retried is
  * recognised as the same work rather than recorded twice.
+ *
+ * **...and survive losing the page** (29 October). Each answer is also kept
+ * on the device (lib/pending.ts) until the server confirms it, so a dropped
+ * connection, a reload or a dead battery no longer loses a class's work: the
+ * next visit offers to save it. Saving tries three times before giving up.
+ * The session itself - quiz, who has answered, the PIN - is kept for the tab
+ * (sessionStorage), so a reload, by a child or by accident, comes back in
+ * quiz mode instead of quietly leaving it.
  */
 
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
 import { Icon } from "@/components/Icon";
+import { PendingCard } from "@/components/PendingCard";
 import { type QuizLength, QuizLengthPicker } from "@/components/QuizLength";
 import { Button, Card, Field, Loading, Note, PageHeader, Select } from "@/components/ui";
 import { api, ApiError, errorMessage, login } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import {
+  clearPending,
+  describePending,
+  newBatchId,
+  type PendingBatch,
+  readPending,
+  savePending,
+  sendWithRetry,
+} from "@/lib/pending";
 import { initials } from "@/lib/people";
 import type {
   AnsweredPairs,
@@ -62,42 +80,73 @@ import type {
 type Phase = "setup" | "roster" | "answering" | "handback" | "locked";
 type Answer = { student_id: string; item_id: string; selected_option: number };
 
-function newBatchId(): string {
-  return typeof crypto !== "undefined" && "randomUUID" in crypto
-    ? crypto.randomUUID()
-    : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+/** The running session, kept for this tab only so a reload stays in quiz mode. */
+type SavedSession = {
+  quiz: Quiz;
+  strandId: string;
+  answered: string[];
+  done: string[];
+  answers: Answer[];
+  batchId: string;
+  pin: string;
+};
+
+const sessionKey = (classId: string) => `elimu.quizmode.${classId}`;
+
+function readSession(classId: string): SavedSession | null {
+  try {
+    const raw = sessionStorage.getItem(sessionKey(classId));
+    return raw ? (JSON.parse(raw) as SavedSession) : null;
+  } catch {
+    return null;
+  }
+}
+
+function forgetSession(classId: string) {
+  try {
+    sessionStorage.removeItem(sessionKey(classId));
+  } catch {
+    // Nothing kept.
+  }
 }
 
 export default function AdministerPage() {
   const { id: classId } = useParams<{ id: string }>();
   const router = useRouter();
   const { profile } = useAuth();
+  // Read once, on the first render: this page only renders in the browser,
+  // behind the sign-in guard, so storage is there to read.
+  const [restored] = useState(() => readSession(classId));
 
-  const [phase, setPhase] = useState<Phase>("setup");
+  const [phase, setPhase] = useState<Phase>(restored ? "roster" : "setup");
   const [classroom, setClassroom] = useState<Classroom | null>(null);
   const [strands, setStrands] = useState<Strand[]>([]);
-  const [strandId, setStrandId] = useState("");
+  const [strandId, setStrandId] = useState(restored?.strandId ?? "");
   const [length, setLength] = useState<QuizLength>(10);
   const [roll, setRoll] = useState<Student[]>([]);
-  const [quiz, setQuiz] = useState<Quiz | null>(null);
+  const [quiz, setQuiz] = useState<Quiz | null>(restored?.quiz ?? null);
 
   // Pairs that already have a response. A learner who answered an item in an
   // earlier session must not be asked it again: the response matrix holds one
   // cell per learner and item, so the server refuses a second answer - and
   // without this the child answers twelve questions and the whole batch is
   // rejected afterwards, which is the worst possible moment to find out.
-  const [answered, setAnswered] = useState<Set<string>>(new Set());
+  const [answered, setAnswered] = useState<Set<string>>(() => new Set(restored?.answered ?? []));
 
   const [learner, setLearner] = useState<Student | null>(null);
   const [queue, setQueue] = useState<QuizItem[]>([]);
   const [position, setPosition] = useState(0);
-  const [answers, setAnswers] = useState<Answer[]>([]);
-  const [done, setDone] = useState<Set<string>>(new Set());
-  const [batchId, setBatchId] = useState(newBatchId);
+  const [answers, setAnswers] = useState<Answer[]>(restored?.answers ?? []);
+  const [done, setDone] = useState<Set<string>>(() => new Set(restored?.done ?? []));
+  const [batchId, setBatchId] = useState(() => restored?.batchId ?? newBatchId());
+  // A batch from an earlier visit that never reached the server.
+  const [pending, setPending] = useState<PendingBatch<Answer> | null>(() =>
+    restored ? null : readPending<Answer>("device", classId, profile?.teacher_id),
+  );
 
   // The session PIN: chosen at the start, needed to leave. Never sent anywhere.
   const [pin, setPin] = useState("");
-  const [sessionPin, setSessionPin] = useState("");
+  const [sessionPin, setSessionPin] = useState(restored?.pin ?? "");
   const [attempt, setAttempt] = useState("");
   const [usePassword, setUsePassword] = useState(false);
   const [password, setPassword] = useState("");
@@ -108,6 +157,28 @@ export default function AdministerPage() {
   const [ready, setReady] = useState(false);
 
   const inSession = phase !== "setup";
+
+  /* --- keep the session for this tab ----------------------------------- */
+  useEffect(() => {
+    if (!inSession || !quiz) {
+      forgetSession(classId);
+      return;
+    }
+    try {
+      const saved: SavedSession = {
+        quiz,
+        strandId,
+        answered: [...answered],
+        done: [...done],
+        answers,
+        batchId,
+        pin: sessionPin,
+      };
+      sessionStorage.setItem(sessionKey(classId), JSON.stringify(saved));
+    } catch {
+      // Storage unavailable: the session lives in the page, as before.
+    }
+  }, [inSession, quiz, strandId, answered, done, answers, batchId, sessionPin, classId]);
 
   /* --- trap the back button ------------------------------------------- */
   useEffect(() => {
@@ -170,6 +241,10 @@ export default function AdministerPage() {
   /* --- session control -------------------------------------------------- */
   async function start(event: React.FormEvent) {
     event.preventDefault();
+    if (pending) {
+      setError("Save or discard the answers that weren’t saved before starting a new quiz.");
+      return;
+    }
     if (!/^\d{4}$/.test(pin)) {
       setError("Choose a 4-digit PIN. You’ll need it to leave quiz mode.");
       return;
@@ -231,14 +306,21 @@ export default function AdministerPage() {
   function answer(optionIndex: number) {
     if (!learner || queue.length === 0) return;
     const item = queue[position];
-    setAnswers((current) => [
-      ...current,
-      {
-        student_id: learner.student_id,
-        item_id: item.item_id,
-        selected_option: optionIndex,
-      },
-    ]);
+    const next = [
+      ...answers,
+      { student_id: learner.student_id, item_id: item.item_id, selected_option: optionIndex },
+    ];
+    setAnswers(next);
+    // On the device as well as in the page, until the server confirms it.
+    savePending<Answer>({
+      kind: "device",
+      teacherId: profile?.teacher_id ?? "",
+      classId,
+      strandId,
+      batchId,
+      responses: next,
+      learners: new Set(next.map((a) => a.student_id)).size,
+    });
     // Held locally AND marked as taken, so a second hand-over in the same
     // session cannot ask the same question twice.
     setAnswered((current) => new Set(current).add(`${learner.student_id}:${item.item_id}`));
@@ -260,12 +342,15 @@ export default function AdministerPage() {
     setBusy(true);
     setError(null);
     try {
-      const receipt = await api.post<AssessmentReceipt>("/api/assessments", {
-        client_batch_id: batchId,
-        class_id: classId,
-        strand_id: strandId,
-        responses: answers,
-      });
+      const receipt = await sendWithRetry(() =>
+        api.post<AssessmentReceipt>("/api/assessments", {
+          client_batch_id: batchId,
+          class_id: classId,
+          strand_id: strandId,
+          responses: answers,
+        }),
+      );
+      clearPending("device", classId);
       setNotice(
         `${receipt.detail} ${done.size} ${done.size === 1 ? "learner" : "learners"} ` +
           "answered. Use Record levels on the class page to update their levels.",
@@ -277,10 +362,51 @@ export default function AdministerPage() {
     } catch (e) {
       // The batch id is NOT regenerated: if this failed after the server
       // recorded it, resending the same id is what stops a second copy.
-      setError(errorMessage(e, "Could not submit — the answers are still held"));
+      setError(
+        errorMessage(e, "Could not save") +
+          " The answers are kept on this device - try again when the connection is back.",
+      );
     } finally {
       setBusy(false);
     }
+  }
+
+  /** Send a batch left from an earlier visit, under its original id. */
+  async function savePendingNow() {
+    if (!pending) return;
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const receipt = await sendWithRetry(() =>
+        api.post<AssessmentReceipt>("/api/assessments", {
+          client_batch_id: pending.batchId,
+          class_id: classId,
+          strand_id: pending.strandId,
+          responses: pending.responses,
+        }),
+      );
+      clearPending("device", classId);
+      setPending(null);
+      setNotice(
+        `${receipt.detail} Use Record levels on the class page to update their levels.`,
+      );
+    } catch (e) {
+      setError(
+        errorMessage(e, "Could not save") +
+          (e instanceof ApiError && e.status < 500
+            ? ""
+            : " They are still kept on this device."),
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function discardPending() {
+    clearPending("device", classId);
+    setPending(null);
+    setNotice("The unsaved answers were discarded.");
   }
 
   function backToQuiz() {
@@ -297,6 +423,7 @@ export default function AdministerPage() {
     setError(null);
     if (!usePassword) {
       if (attempt === sessionPin) {
+        forgetSession(classId);
         router.replace(`/classrooms/${classId}`);
       } else {
         setAttempt("");
@@ -309,6 +436,7 @@ export default function AdministerPage() {
     try {
       await login(profile.email, password);
       setPassword("");
+      forgetSession(classId);
       router.replace(`/classrooms/${classId}`);
     } catch {
       setPassword("");
@@ -338,6 +466,17 @@ export default function AdministerPage() {
           <Note tone="error">{error}</Note>
           <Note tone="ok">{notice}</Note>
         </div>
+
+        {pending && (
+          <div className="mt-4">
+            <PendingCard
+              description={describePending(pending, "answers")}
+              busy={busy}
+              onSave={savePendingNow}
+              onDiscard={discardPending}
+            />
+          </div>
+        )}
 
         {!ready && <Loading what="the class" />}
 
@@ -393,7 +532,11 @@ export default function AdministerPage() {
                 onChange={(e) => setPin(e.target.value.replace(/\D/g, "").slice(0, 4))}
               />
 
-              <Button type="submit" disabled={busy || !strandId} className="w-full sm:w-auto">
+              <Button
+                type="submit"
+                disabled={busy || !strandId || pending !== null}
+                className="w-full sm:w-auto"
+              >
                 <Icon name="phone" className="size-5" />
                 {busy ? "Starting…" : "Start quiz"}
               </Button>

@@ -262,6 +262,15 @@ export async function downloadFile(
 /** Human-readable text for anything thrown by the client. */
 export function errorMessage(error: unknown, fallback: string): string {
   if (error instanceof ApiError) return error.message;
+  // fetch() rejecting means the request never got an answer. Each browser
+  // words it differently ("Failed to fetch", "Load failed", "NetworkError
+  // ..."), and none of them says what happened in a teacher's terms.
+  if (
+    error instanceof TypeError &&
+    /failed to fetch|load failed|networkerror|network request failed/i.test(error.message)
+  ) {
+    return "No connection to the server.";
+  }
   if (error instanceof Error && error.message) return error.message;
   return fallback;
 }

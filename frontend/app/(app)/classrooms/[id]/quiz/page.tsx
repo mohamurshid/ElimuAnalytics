@@ -28,7 +28,10 @@
  * landed.
  *
  * **Nothing is saved until Submit.** The grid is local state. A half-marked
- * class is not a half-recorded assessment.
+ * class is not a half-recorded assessment. It is also kept on the device as
+ * it is marked (29 October, lib/pending.ts), so a reload or a dropped
+ * connection does not lose it: coming back to the same quiz restores the
+ * marks, and marks for another quiz are offered to save or discard.
  *
  * **One learner at a time** (24 October). The learners-by-questions grid
  * needed sideways scrolling and 32-pixel cells on a phone, which is where
@@ -47,6 +50,7 @@ import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
 import { Icon } from "@/components/Icon";
+import { PendingCard } from "@/components/PendingCard";
 import { type QuizLength, QuizLengthPicker } from "@/components/QuizLength";
 import {
   Badge,
@@ -61,6 +65,16 @@ import {
   Select,
 } from "@/components/ui";
 import { api, ApiError, errorMessage } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
+import {
+  clearPending,
+  describePending,
+  newBatchId,
+  type PendingBatch,
+  readPending,
+  savePending,
+  sendWithRetry,
+} from "@/lib/pending";
 import { initials } from "@/lib/people";
 import type {
   AnsweredPairs,
@@ -78,16 +92,30 @@ type Grid = Record<string, Mark>; // "studentId:itemId" -> mark
 
 const key = (studentId: string, itemId: string) => `${studentId}:${itemId}`;
 
-function newBatchId(): string {
-  // The device generates it, not the server: only the device can tell a retry
-  // from a genuine second submission of identical answers.
-  return typeof crypto !== "undefined" && "randomUUID" in crypto
-    ? crypto.randomUUID()
-    : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+type PaperResponse = { student_id: string; item_id: string; correct: boolean };
+
+function toResponses(grid: Grid): PaperResponse[] {
+  return Object.entries(grid).map(([k, mark]) => {
+    const [student_id, item_id] = k.split(":");
+    return { student_id, item_id, correct: mark === "correct" };
+  });
+}
+
+function toGrid(responses: PaperResponse[]): Grid {
+  return Object.fromEntries(
+    responses.map((r) => [key(r.student_id, r.item_id), r.correct ? "correct" : "wrong"]),
+  ) as Grid;
 }
 
 export default function QuizPage() {
   const { id: classId } = useParams<{ id: string }>();
+  const { profile } = useAuth();
+  const teacherId = profile?.teacher_id;
+  // Marks kept on this device from an earlier visit. Read once: this page
+  // only renders in the browser, behind the sign-in guard.
+  const [pending, setPending] = useState<PendingBatch<PaperResponse> | null>(() =>
+    readPending<PaperResponse>("paper", classId, profile?.teacher_id),
+  );
 
   const [strands, setStrands] = useState<Strand[]>([]);
   const [strandId, setStrandId] = useState<string>("");
@@ -135,7 +163,13 @@ export default function QuizPage() {
         const usable = allStrands.filter((s) => s.active_items > 0);
         setStrands(allStrands);
         setLearners(roll);
-        setStrandId((current) => current || usable[0]?.strand_id || "");
+        // Unsaved marks from an earlier visit: open their strand, so the
+        // quiz they belong to opens with them restored.
+        const kept = readPending<PaperResponse>("paper", classId, teacherId);
+        const keptStrand = kept && usable.find((s) => s.strand_id === kept.strandId);
+        setStrandId(
+          (current) => current || keptStrand?.strand_id || usable[0]?.strand_id || "",
+        );
         setError(null);
         setReady(true);
       } catch (e) {
@@ -151,7 +185,7 @@ export default function QuizPage() {
     return () => {
       cancelled = true;
     };
-  }, [fetchContext, classId]);
+  }, [fetchContext, classId, teacherId]);
 
   /* --- the strand's paper quizzes and what is already answered -------- */
   const fetchStrand = useCallback(
@@ -173,7 +207,10 @@ export default function QuizPage() {
         const [recent, answered] = await fetchStrand(strandId);
         if (cancelled) return;
         setQuizzes(recent);
-        setQuizId(recent[0]?.quiz_id ?? "");
+        // Marking left unsaved on this quiz: open it, so it can carry on.
+        const kept = readPending<PaperResponse>("paper", classId, teacherId);
+        const resume = kept && recent.find((q) => q.quiz_id === kept.quizId);
+        setQuizId(resume ? resume.quiz_id : (recent[0]?.quiz_id ?? ""));
         if (recent.length === 0) setItems([]);
         setLocked(new Set(answered.answered));
         setGrid({});
@@ -187,7 +224,7 @@ export default function QuizPage() {
     return () => {
       cancelled = true;
     };
-  }, [strandId, fetchStrand]);
+  }, [strandId, fetchStrand, classId, teacherId]);
 
   /* --- the chosen quiz's questions are the grid's columns --------------- */
   useEffect(() => {
@@ -200,13 +237,26 @@ export default function QuizPage() {
         setItems(quiz.items);
         setNumbers(quiz.numbers);
         setWithdrawn(quiz.withdrawn);
-        setGrid({});
+        // Back on the quiz that has unsaved marks: put them back, under the
+        // batch id they were made with, so a save that had landed is not
+        // recorded twice.
+        // Read again here, not from state: marks made on the previous quiz
+        // were kept on the device as they were made, and must still be
+        // offered - not lost by switching quiz.
+        const kept = readPending<PaperResponse>("paper", classId, teacherId);
+        setPending(kept);
+        if (kept && kept.quizId === quiz.quiz_id) {
+          setGrid(toGrid(kept.responses));
+          setBatchId(kept.batchId);
+        } else {
+          setGrid({});
+        }
       })
       .catch((e) => !cancelled && setError(errorMessage(e, "Could not load the quiz")));
     return () => {
       cancelled = true;
     };
-  }, [quizId]);
+  }, [quizId, classId, teacherId]);
 
   async function makeQuiz() {
     setBusy(true);
@@ -229,30 +279,49 @@ export default function QuizPage() {
   }
 
   /* --- marking ---------------------------------------------------------- */
+  /** Keep the grid on the device as well, until the server has it. */
+  function keep(next: Grid) {
+    // One batch is kept per class. Marks kept from another quiz are saved or
+    // discarded first, never silently replaced by these.
+    if (pending && pending.quizId !== quizId) {
+      setError("Save or discard the marks kept from the other quiz first.");
+      return;
+    }
+    setGrid(next);
+    savePending<PaperResponse>({
+      kind: "paper",
+      teacherId: teacherId ?? "",
+      classId,
+      strandId,
+      quizId,
+      batchId,
+      responses: toResponses(next),
+      learners: new Set(Object.keys(next).map((k) => k.split(":")[0])).size,
+    });
+    // This quiz's marks are now the ones kept; an older batch is replaced.
+    if (pending) setPending(null);
+  }
+
   /** Right, wrong, or null for blank (not attempted). */
   function setMark(studentId: string, itemId: string, mark: Mark | null) {
     const k = key(studentId, itemId);
     if (locked.has(k)) return;
-    setGrid((g) => {
-      const next = { ...g };
-      if (mark === null) delete next[k];
-      else next[k] = mark;
-      return next;
-    });
+    const next = { ...grid };
+    if (mark === null) delete next[k];
+    else next[k] = mark;
+    keep(next);
   }
 
   /** Mark every open question for one learner; null clears them. */
   function markRow(studentId: string, mark: Mark | null) {
-    setGrid((g) => {
-      const next = { ...g };
-      for (const item of items) {
-        const k = key(studentId, item.item_id);
-        if (locked.has(k)) continue;
-        if (mark === null) delete next[k];
-        else next[k] = mark;
-      }
-      return next;
-    });
+    const next = { ...grid };
+    for (const item of items) {
+      const k = key(studentId, item.item_id);
+      if (locked.has(k)) continue;
+      if (mark === null) delete next[k];
+      else next[k] = mark;
+    }
+    keep(next);
   }
 
   const marked = Object.keys(grid).length;
@@ -263,15 +332,15 @@ export default function QuizPage() {
     setError(null);
     setNotice(null);
     try {
-      const receipt = await api.post<AssessmentReceipt>("/api/assessments", {
-        client_batch_id: batchId,
-        class_id: classId,
-        strand_id: strandId,
-        responses: Object.entries(grid).map(([k, mark]) => {
-          const [student_id, item_id] = k.split(":");
-          return { student_id, item_id, correct: mark === "correct" };
+      const receipt = await sendWithRetry(() =>
+        api.post<AssessmentReceipt>("/api/assessments", {
+          client_batch_id: batchId,
+          class_id: classId,
+          strand_id: strandId,
+          responses: toResponses(grid),
         }),
-      });
+      );
+      clearPending("paper", classId);
       setNotice(
         receipt.duplicate
           ? `${receipt.detail} (${receipt.responses_recorded} responses)`
@@ -290,11 +359,55 @@ export default function QuizPage() {
       // The identifier is deliberately NOT regenerated here: if this failed
       // after the server recorded it, resending the same id is recognised as
       // the same batch rather than duplicating the work.
-      setError(errorMessage(e, "Could not submit"));
+      setError(
+        errorMessage(e, "Could not submit") +
+          " The marks are kept on this device - submit again when the connection is back.",
+      );
     } finally {
       setBusy(false);
     }
   }
+
+  /** Marks kept from another quiz: sent as they were, under their own id. */
+  async function savePendingNow() {
+    if (!pending) return;
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const receipt = await sendWithRetry(() =>
+        api.post<AssessmentReceipt>("/api/assessments", {
+          client_batch_id: pending.batchId,
+          class_id: classId,
+          strand_id: pending.strandId,
+          responses: pending.responses,
+        }),
+      );
+      clearPending("paper", classId);
+      setPending(null);
+      setNotice(`${receipt.detail} Use Record levels on the class page to update learners’ levels.`);
+      if (strandId === pending.strandId) {
+        const answered = await api.get<AnsweredPairs>(
+          `/api/assessments/answered/${classId}/${strandId}`,
+        );
+        setLocked(new Set(answered.answered));
+      }
+    } catch (e) {
+      setError(errorMessage(e, "Could not save the kept marks"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function discardPending() {
+    clearPending("paper", classId);
+    setPending(null);
+    setNotice("The unsaved marks were discarded.");
+  }
+
+  // Shown only for marks that are not on screen: the quiz open now already
+  // displays its own restored marks.
+  const pendingElsewhere = pending && pending.quizId !== quizId ? pending : null;
 
   const title = classroom
     ? `${classroom.grade}${classroom.name ? ` ${classroom.name}` : ""}`
@@ -329,6 +442,14 @@ export default function QuizPage() {
       <div className="space-y-3">
         <Note tone="error">{error}</Note>
         <Note tone="ok">{notice}</Note>
+        {pendingElsewhere && (
+          <PendingCard
+            description={describePending(pendingElsewhere, "marks, on another quiz,")}
+            busy={busy}
+            onSave={savePendingNow}
+            onDiscard={discardPending}
+          />
+        )}
       </div>
 
       {!ready && <Loading what="the class" />}

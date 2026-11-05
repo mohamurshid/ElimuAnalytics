@@ -13,6 +13,8 @@ equivalent; it is exercised in Phase 5 against the real database.
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
+
 import numpy as np
 import pytest
 from app.models import (
@@ -146,6 +148,11 @@ def test_minimum_responses_rule_survives_the_database(session):
     assert result["flaggable"] is False
 
 
+# A time after the first recording, so the order of two recordings never
+# depends on both landing in the same clock second.
+LATER = datetime.now(timezone.utc) + timedelta(days=1)
+
+
 def test_consecutive_flagging_needs_two_assessments(session):
     """The design flags after two consecutive below-threshold assessments.
     The Phase 1 skeleton checked one."""
@@ -159,8 +166,33 @@ def test_consecutive_flagging_needs_two_assessments(session):
     assert consecutive_low_assessments(session, sid, strand) == 1
 
     session.add(AbilityScore(student_id=sid, strand_id=strand, theta=-1.2,
-                             items_answered=12))
+                             items_answered=17,  # five more answers since
+                             assessed_at=LATER))
     session.commit()
+    assert consecutive_low_assessments(session, sid, strand) == 2
+
+
+def test_recording_twice_without_new_answers_is_one_assessment(session):
+    """Pressing Record levels twice with nothing answered in between must not
+    make two assessments out of one (5 November)."""
+    sid = session.students[0].student_id
+    strand = session.strand_id
+    for _ in range(3):
+        session.add(AbilityScore(student_id=sid, strand_id=strand, theta=-1.5,
+                                 items_answered=12))
+        session.commit()
+    assert consecutive_low_assessments(session, sid, strand) == 1
+
+
+def test_a_repeat_recording_does_not_break_a_run(session):
+    """Low, then low on new answers, then the same recorded again: still two."""
+    sid = session.students[0].student_id
+    strand = session.strand_id
+    for day, (theta, answered) in enumerate([(-1.4, 12), (-1.1, 17), (-1.1, 17)]):
+        session.add(AbilityScore(student_id=sid, strand_id=strand, theta=theta,
+                                 items_answered=answered,
+                                 assessed_at=LATER + timedelta(days=day)))
+        session.commit()
     assert consecutive_low_assessments(session, sid, strand) == 2
 
 

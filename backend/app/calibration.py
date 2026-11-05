@@ -152,7 +152,7 @@ def assess_strand(
                 AbilityScore.student_id == student_id,
                 AbilityScore.strand_id == strand_id,
             )
-            .order_by(AbilityScore.assessed_at.desc())
+            .order_by(AbilityScore.assessed_at.desc(), AbilityScore.items_answered.desc())
         ).first()
         session.add(
             GapFlag(

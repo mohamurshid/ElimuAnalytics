@@ -358,8 +358,11 @@ def test_the_queue_is_empty_before_two_assessments(client, head, session):  # no
 
 
 def test_the_queue_names_the_learner_and_strand_after_two(client, head, session):  # noqa: F811
+    from .test_calibration import answer_a_new_question
+
     strand_id = client.get("/api/strands", headers=auth(head)).json()[0]["strand_id"]
     client.post(f"/api/strands/{strand_id}/assess", headers=auth(head))
+    answer_a_new_question(session)  # a second quiz between the two recordings
     client.post(f"/api/strands/{strand_id}/assess", headers=auth(head))
 
     rows = client.get("/api/flags", headers=auth(head)).json()

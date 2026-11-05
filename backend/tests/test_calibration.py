@@ -17,7 +17,7 @@ from app.calibration import (
     open_flags,
 )
 from app.irt import MAX_ITEMS_PER_CALIBRATION
-from app.models import AbilityScore, GapFlag, Item
+from app.models import AbilityScore, GapFlag, Item, Response
 from sqlalchemy import select
 
 from .test_repository import session  # noqa: F401 - pytest fixture
@@ -75,8 +75,25 @@ def test_one_low_assessment_does_not_flag(session):  # noqa: F811
     assert open_flags(session) == []
 
 
+def answer_a_new_question(session, correct: bool = False) -> None:  # noqa: F811
+    """A second quiz: one new question, answered by every learner who has
+    enough evidence to be assessed, so the next recording is new evidence."""
+    item = Item(question_text=f"New question {len(session.scalars(select(Item)).all())}",
+                options=["a", "b", "c", "d"], correct_option=0, strand_id=session.strand_id)
+    session.add(item)
+    session.flush()
+    otieno = session.students[2].student_id
+    session.add_all(
+        Response(student_id=st.student_id, item_id=item.item_id, correctness=correct,
+                 selected_option=0 if correct else 1)
+        for st in session.students if st.student_id != otieno
+    )
+    session.commit()
+
+
 def test_two_consecutive_assessments_raise_a_flag(session):  # noqa: F811
     assess_strand(session, session.strand_id)
+    answer_a_new_question(session)
     result = assess_strand(session, session.strand_id)
 
     assert CONSECUTIVE_FOR_FLAG == 2
@@ -87,10 +104,21 @@ def test_two_consecutive_assessments_raise_a_flag(session):  # noqa: F811
     assert any(f.student_id == chebet for f in flags)
 
 
+def test_recording_twice_without_new_answers_raises_no_flag(session):  # noqa: F811
+    """The same answers recorded twice are one assessment (5 November)."""
+    assess_strand(session, session.strand_id)
+    result = assess_strand(session, session.strand_id)
+    assert result["new_flags"] == 0
+    assert open_flags(session) == []
+
+
 def test_flags_are_not_duplicated_on_reassessment(session):  # noqa: F811
     assess_strand(session, session.strand_id)
+    answer_a_new_question(session)
     assess_strand(session, session.strand_id)
     first = len(open_flags(session))
+    assert first > 0
+    answer_a_new_question(session)
     assess_strand(session, session.strand_id)
     assert len(open_flags(session)) == first
 

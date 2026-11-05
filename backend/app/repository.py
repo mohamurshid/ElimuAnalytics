@@ -205,7 +205,8 @@ def consecutive_low_assessments(
     """How many of the most recent ability estimates fall below threshold.
 
     The design flags a learner only after TWO consecutive below-threshold
-    assessments; the Phase 1 skeleton checked one. Estimates that did not meet
+    assessments; the Phase 1 skeleton checked one. Two recordings with no new
+    answers between them are one assessment, not two. Estimates that did not meet
     the minimum-responses rule are ignored rather than counted, so a learner
     cannot be flagged on the strength of a noisy estimate.
     """
@@ -216,17 +217,31 @@ def consecutive_low_assessments(
                 AbilityScore.student_id == student_id,
                 AbilityScore.strand_id == strand_id,
             )
-            .order_by(AbilityScore.assessed_at.desc())
+            # Newest first. Two recordings can share a timestamp (SQLite keeps
+            # whole seconds), and answer counts only grow, so the larger count
+            # is the later recording when the times tie.
+            .order_by(AbilityScore.assessed_at.desc(), AbilityScore.items_answered.desc())
         )
     )
     from .irt import CONFIDENT_RESPONSES
 
+    # A recording counts as a new assessment only if the learner had answered
+    # more by then than at the one before it (5 November). "Record levels"
+    # pressed twice with no answers in between used to count twice, so a
+    # learner could be flagged on one assessment's evidence read two times.
+    # Answer counts only grow while questions stay in the bank, so an equal
+    # count is the same evidence; a recording on the same evidence as one
+    # already counted is passed over, not treated as a break in the run.
     run = 0
+    counted_at: int | None = None  # items_answered of the last counted recording
     for s in scores:
         if s.items_answered < CONFIDENT_RESPONSES:
             continue
+        if counted_at is not None and s.items_answered >= counted_at:
+            continue  # no new answers between this recording and the newer one
         if s.theta < threshold:
             run += 1
+            counted_at = s.items_answered
         else:
             break
     return run

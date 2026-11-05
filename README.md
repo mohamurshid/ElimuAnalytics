@@ -39,8 +39,8 @@ every push. Evidence of testing and evaluation: **`docs/TEST_RECORD.md`**.
 
 ## Run it
 
-Windows `cmd`, from the repository root. Requires Python 3.12, Node 20+ and
-Docker Desktop.
+Windows `cmd`, from the repository root. Tested with Python 3.10 (CI also
+runs 3.12), Node.js 22 and Docker Desktop.
 
 ### Once
 
@@ -99,6 +99,8 @@ Google** if the head teacher added their Google email.
 |---|---|
 | `tasks ci` | Lint + the backend test suite - exactly what GitHub Actions runs |
 | `tasks webci` | Frontend lint, type check and production build (stop `tasks web` first) |
+| `tasks newschool` | Create a school and its first head teacher; prints a one-time setup code |
+| `tasks tunnel` | Open the `PUBLIC_URL` ngrok address to the frontend for phones (runbook section 8) |
 | `tasks gen` | Question-generation measurement: plan only; `--go` calls the API (~$0.20) |
 | `tasks test`, `tasks lint`, `tasks fix` | Parts of the above |
 | `tasks check`, `tasks query` | Retrieval checks against the loaded corpus |

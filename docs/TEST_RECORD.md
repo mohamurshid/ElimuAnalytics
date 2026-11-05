@@ -17,7 +17,7 @@ Every correction points at the commit that made it, so it can be inspected.
 
 ## 1. Automated tests
 
-**477 backend tests** (pytest), plus frontend lint, type check and a
+**505 backend tests** (pytest), plus frontend lint, type check and a
 production build. Run locally with `tasks ci` (backend) and `tasks webci`
 (frontend); GitHub Actions runs CI on every push. All pass at the time of
 writing.
@@ -35,21 +35,22 @@ stand-ins, so the suite is free, offline and repeatable.
 | `test_generation.py` | 28 | AI question writing: drafts only, every server check, near-copies, option shuffle, daily cap, failures |
 | `test_grounding.py` | 25 | The grounding checker: verified quotes, fabricated citations, Kiswahili |
 | `test_assessments.py` | 24 | Answer submission is idempotent; unknown learners, drafts and withdrawn items refused |
-| `test_item_status.py` | 24 | Only approved questions reach a learner's device; no key or mark scheme in what the device receives; review, report, retire, versions |
+| `test_item_status.py` | 30 | Only approved questions reach a learner's device; no key or mark scheme in what the device receives; review, report, retire, versions |
 | `test_catalogue.py` | 22 | Curriculum catalogue built from the real corpus: 448 rows, 427 sub-strands, name cleaning pinned on real text |
 | `test_diagnostics.py` | 22 | Heatmap calibrates at most once per strand and not at all once the strand is calibrated, with the same abilities either way; an unanswered question breaks nothing; three states for a cell; the Overview's reported count |
 | `test_auth_items.py` | 21 | Passwords hashed, roles, question bank permissions; a teacher's own question with optional misconceptions |
 | `test_accounts.py` | 20 | Setup codes (single use, expiry, throttling, one answer for every wrong case); sessions end at once; a school keeps a head teacher; a Google-only teacher sets a first password |
-| `test_google_auth.py` | 17 | Google sign-in: staff list is the gate, linking, state, nonce, each ID-token claim, PKCE, cancellation |
+| `test_google_auth.py` | 23 | Google sign-in: staff list is the gate, linking, state, nonce, each ID-token claim, PKCE, cancellation; a sign-in returns to the configured address it started on (laptop or tunnel), never another |
 | `test_quizzes.py` | 16 | Quiz selection (spread across difficulty, least-answered first, deterministic), saved quiz sets, numbering after withdrawal |
 | `test_refresh.py` | 16 | Rotating refresh tokens, reuse detection, cross-site refusal |
 | `test_class_strands.py` | 14 | What a class is assessed on; strands shared across schools; removing keeps every answer |
 | `test_export.py` | 14 | PDF export: text extracted and checked, glyph handling |
-| `test_repository.py` | 14 | Response matrix rules from Phase 0 (items x students, 0/1, missing not NaN) |
+| `test_new_school.py` | 13 | `tasks newschool`: school and head teacher created with no password and a hashed one-time code that opens the account; the new school sees only its own staff; mistakes and repeats change nothing |
+| `test_repository.py` | 16 | Response matrix rules from Phase 0 (items x students, 0/1, missing not NaN); two recordings on the same answers are one assessment |
 | `test_retrieval.py` | 10 | Retrieval pre-filter and floor |
 | `test_login_throttle.py` | 9 | Sign-in throttling by account and address |
 | `test_irt.py` | 9 | 2-PL estimation and KICD tier cut-offs |
-| `test_calibration.py` | 8 | Strand calibration and flags after two consecutive low results |
+| `test_calibration.py` | 9 | Strand calibration and flags after two consecutive low results, with new answers between them |
 
 ---
 
@@ -92,8 +93,14 @@ stand-ins, so the suite is free, offline and repeatable.
 | F33 | Screen-reader names on the write-a-question screen | Every field named | The browser tool's accessibility tree showed the optional note boxes without a name. They sit inside a label, which screen readers do read, so this was likely the tool rather than the page | Explicit names added so it does not depend on that | 841b830 |
 | F34 | Filler on the correct option (confirmation run, 25 October, same 34 sub-strands and seed, both settings) | No question lost to a note on the correct option that only says it is correct | Before: 31 questions dropped for a note on the correct option, 23 of them filler ("This is the correct answer, so no misconception applies", "Correct: ...", "Hakuna maelezo ... ndilo jibu sahihi"). After: 0 filler; 5 still dropped (4 low, 1 medium), each a note describing a false belief, which the check drops by design | Prompt says the field must be exactly empty and the explanation goes in the rationale; check unchanged. Pass rate 84.1% -> 92.9% at low effort, 91.5% -> 95.9% at medium | 1fee06d |
 | F35 | Near-copy threshold (50 hand-labelled pairs, 25 October) | Flags a pair only when it is the same question | At the first guess of 0.90, 9 of 19 flagged pairs were different questions (precision 53%) | Raised to 0.95: 9 of 11 flagged are the same (82%), 9 of 14 duplicates caught; the rest reach teacher review. Test that a 0.93 pair is kept | 487b387 |
-| F36 | Google sign-in button (25 October) | Follows Google's branding guidelines | Text-only button in the app's colours | Google's standard-colour G (copied unchanged from the button code Google publishes) and its light / dark button colours. Checked live: icon loads at 20 px, 44 px button, colours as specified | (next commit) |
-| F37 | Initials on the profile and top bar (found live) | Letters only | "Muhammad (second)" showed as "M(" | First letter of each word: "MS" | (next commit) |
+| F36 | Google sign-in button (25 October) | Follows Google's branding guidelines | Text-only button in the app's colours | Google's standard-colour G (copied unchanged from the button code Google publishes) and its light / dark button colours. Checked live: icon loads at 20 px, 44 px button, colours as specified | 777160a |
+| F37 | Initials on the profile and top bar (found live) | Letters only | "Muhammad (second)" showed as "M(" | First letter of each word: "MS" | 777160a |
+| F38 | Write questions with AI (found live, 29 October) | One tap starts one run; the page shows it being written | "Questions for this strand are already being written" beside an idle button. The run had started: the button locked only after the server answered, so a second tap in that gap sent a second request, refused with a 409 | Button locks on the tap; a 409 for a run already under way is followed and shown as writing. Checked by faking the server's replies: three quick taps sent one request, the 409 became "Writing...", then the outcome, no error | a51b6b4 |
+| F39 | Duplicate-option check (found in the same run, Grade 5 English word stress) | Options that read differently to a learner are kept | 2 of 5 generated questions dropped as "two options are the same": "con-FLICT" and "CON-flict" compared case-insensitively. A teacher could not have saved such a question either | A capital at the start of a word is ignored ("Copper" / "copper" still one option twice); capitals inside a word count. Same rule in the server check and the question editor; 6 new tests | a51b6b4 |
+| F40 | Support list rule (found by code review, 5 November) | A learner is flagged after two low assessments with new answers between them | Pressing Record levels twice with no new answers counted as two assessments, so a learner could be flagged on one assessment's evidence. Three tests had encoded the fault | A recording counts only if the learner answered more since the last counted one; ties in time go to the larger answer count. Checked live: assessment 1 on 12 answers, 5 new questions marked for 40 learners (204 responses), assessment 2 flagged 19 learners | (next commit) |
+| F41 | Saving answers from a phone on the laptop's network address (found in code review, 29 October) | Every save accepted | `crypto.randomUUID` exists only on secure origins; the fallback batch id was not a UUID, so the server would have refused every save made over plain http | Version 4 UUID from `crypto.getRandomValues`, which works on any origin | (next commit) |
+| F42 | Quiz answers after a dropped connection (tested 29 October by blocking the save request) | No answers lost | Both quiz screens held answers only in the page; a dropped connection, reload or flat battery lost them. A reload in a device quiz also left quiz mode | Answers kept on the device until the server confirms; three attempts per save; "Not saved yet" card to save or discard; resent under the original batch id (a resend was answered "already recorded, nothing changed"); a reload stays in quiz mode with the PIN | (next commit) |
+| F43 | Restoring unsaved paper marks (found live, 29 October) | Marks reopen where they were made | The page reopened on the first strand, not the one with unsaved marks; a dropped connection showed the browser's "Failed to fetch" | Opens the strand with kept marks; "No connection to the server." on every page | (next commit) |
 
 ---
 
@@ -196,4 +203,4 @@ from 50 labelled pairs (`tasks gen --score 20261021_095316`).
 | Grade 2 Kiswahili and Grade 6 English absent from the corpus | Corpus gaps; listed as unavailable in the catalogue |
 | Kiswahili vague-phrase list unvalidated | Needs a Kiswahili speaker |
 | Model exceeds the advisory word limit (265 vs 200 before the limit was raised to 250) | Limit advisory; recorded |
-| Quiz answers held in memory until submitted | A dropped connection at submission loses them; local draft + retry planned |
+| The Support list says "below expectation", but the rule flags any ability below 0, which includes Approaches expectation (11 of 19 flagged on 5 November) | Wording or threshold to be decided |

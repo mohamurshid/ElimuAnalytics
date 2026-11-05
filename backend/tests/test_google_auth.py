@@ -35,10 +35,11 @@ def google(monkeypatch):
     monkeypatch.setenv("GOOGLE_CLIENT_SECRET", "test-secret")
     reply: dict = {"claims": {}, "fail": False}
 
-    def exchange(code, verifier):
+    def exchange(code, verifier, redirect=None):
         if reply["fail"]:
             raise RuntimeError("google said no")
         reply["verifier"] = verifier
+        reply["redirect"] = redirect
         return {"id_token": jwt.encode(reply["claims"], "irrelevant", algorithm="HS256")}
 
     monkeypatch.setattr(google_auth, "exchange_code", exchange)
@@ -197,3 +198,54 @@ def test_the_pkce_verifier_sent_to_google_matches_the_challenge(client, session,
                follow_redirects=False)
     digest = hashlib.sha256(google["verifier"].encode()).digest()
     assert base64.urlsafe_b64encode(digest).rstrip(b"=").decode() == q["code_challenge"]
+
+
+# --- two addresses: the laptop and the tunnel (29 October) ----------------
+TUNNEL = "https://elimu-uat.ngrok-free.app"
+
+
+@pytest.fixture
+def tunnel(monkeypatch):
+    """The laptop on its defaults, plus a tunnel address."""
+    monkeypatch.delenv("APP_URL", raising=False)
+    monkeypatch.delenv("GOOGLE_REDIRECT_URI", raising=False)
+    monkeypatch.setenv("PUBLIC_URL", TUNNEL)
+
+
+def start_from(client, host: str):
+    r = client.get("/api/auth/google/start", follow_redirects=False,
+                   headers={"x-forwarded-host": host})
+    query = parse_qs(urlparse(r.headers["location"]).query)
+    return {k: v[0] for k, v in query.items()}
+
+
+def test_a_sign_in_from_the_tunnel_returns_to_the_tunnel(
+    client, session, google, tunnel  # noqa: F811
+):
+    teacher(session)
+    q = start_from(client, "elimu-uat.ngrok-free.app")
+    assert q["redirect_uri"] == f"{TUNNEL}/api/auth/google/callback"
+    google["claims"] = claims(q["nonce"])
+    r = client.get("/api/auth/google/callback", params={"code": "c", "state": q["state"]},
+                   headers={"x-forwarded-host": "elimu-uat.ngrok-free.app"},
+                   follow_redirects=False)
+    assert r.headers["location"] == f"{TUNNEL}/"
+    # The code is redeemed with the same address it was issued for.
+    assert google["redirect"] == f"{TUNNEL}/api/auth/google/callback"
+
+
+def test_the_laptop_address_is_unchanged_with_a_tunnel_configured(client, google, tunnel):
+    q = start_from(client, "localhost:3000")
+    assert q["redirect_uri"] == "http://localhost:3000/api/auth/google/callback"
+
+
+@pytest.mark.parametrize("host", ["evil.example", "elimu-uat.ngrok-free.app.evil.example", ""])
+def test_an_address_that_is_not_configured_is_never_used(client, google, tunnel, host):
+    q = start_from(client, host)
+    assert q["redirect_uri"] == "http://localhost:3000/api/auth/google/callback"
+
+
+def test_without_a_tunnel_configured_its_host_is_ignored(client, google, tunnel, monkeypatch):
+    monkeypatch.delenv("PUBLIC_URL")
+    q = start_from(client, "elimu-uat.ngrok-free.app")
+    assert q["redirect_uri"] == "http://localhost:3000/api/auth/google/callback"

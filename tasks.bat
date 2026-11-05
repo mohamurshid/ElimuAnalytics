@@ -5,12 +5,14 @@ REM   tasks test    run the test suite
 REM   tasks lint    run ruff
 REM   tasks fix     run ruff with autofix
 REM   tasks seed    rebuild the schema and demonstration data (--reset to drop first)
+REM   tasks newschool  create a school and its first head teacher (asks, or --school --type --head-name --head-email)
 REM   tasks extract rebuild the curriculum corpus JSON from the KICD PDFs
 REM   tasks ingest  load the KICD curriculum corpus into curriculum_chunk
 REM   tasks check   verify pgvector retrieval against numpy on the stored vectors
 REM   tasks query   retrieve against the corpus: tasks query "text" "Grade 5" "Science and Technology"
 REM   tasks run     start the backend development server
 REM   tasks web     start the Next.js frontend (http://localhost:3000)
+REM   tasks tunnel  open the PUBLIC_URL ngrok address to the frontend, for phones (UAT)
 REM   tasks webci   frontend lint, typecheck and build
 REM   tasks ci      everything CI runs, locally, before you push
 REM   tasks gen     measure question generation (plan only; add --go to call the API)
@@ -47,6 +49,19 @@ goto end
 call .venv\Scripts\activate
 cd backend
 python -m app.seed %2 %3
+goto end
+
+:newschool
+call .venv\Scripts\activate
+cd backend
+set "ARGS="
+:newschool_args
+shift
+if "%~1"=="" goto newschool_run
+set ARGS=%ARGS% "%~1"
+goto newschool_args
+:newschool_run
+python -m app.new_school %ARGS%
 goto end
 
 :extract
@@ -88,6 +103,20 @@ cd frontend
 npm run dev
 goto end
 
+:tunnel
+if "%PUBLIC_URL%"=="" (
+  echo PUBLIC_URL is not set. Run once:  setx PUBLIC_URL https://your-name.ngrok-free.app
+  echo then open a new terminal. See docs\RUNBOOK.md, "Phones during UAT".
+  exit /b 1
+)
+where ngrok >nul 2>nul || (
+  echo ngrok is not installed or not on PATH. See docs\RUNBOOK.md, "Phones during UAT".
+  exit /b 1
+)
+echo Phones open %PUBLIC_URL%  - keep this window open; Ctrl+C closes the address.
+ngrok http --url=%PUBLIC_URL% 3000
+goto end
+
 :webci
 cd frontend
 call npm run lint || goto fail
@@ -111,7 +140,7 @@ echo CI checks FAILED. Fix before pushing.
 exit /b 1
 
 :help
-echo Usage: tasks [setup^|test^|lint^|fix^|seed^|extract^|ingest^|check^|query^|gen^|run^|web^|webci^|ci]
+echo Usage: tasks [setup^|test^|lint^|fix^|seed^|newschool^|extract^|ingest^|check^|query^|gen^|run^|web^|tunnel^|webci^|ci]
 goto end
 
 :end

@@ -269,3 +269,80 @@ If that reappears and does not clear, the permanent fix is a `.gitattributes`
 file pinning the repository to LF. It is not committed yet, deliberately:
 adding one triggers a one-time renormalisation that rewrites every file, which
 is not something to do casually mid-project.
+
+---
+
+## 7. A new school
+
+There is no open sign-up: a head teacher's staff list is the gate for every
+account. The first head teacher of a new school is created from the server:
+
+```cmd
+tasks newschool
+```
+
+It asks for the school's name, public or private, and the head teacher's name
+and email, then prints a one-time **setup code** (shown once, valid 7 days).
+Give the code to the head teacher; they open the app, choose **Set up your
+account**, and enter their email, the code and a password of their own - or
+sign in with Google using that email. From there they add their own teachers
+and classes on the Teachers and Classes pages.
+
+Everything can be given at once instead:
+
+```cmd
+tasks newschool --school "Kilimani Primary" --type public --head-name "Wanjiru Kamau" --head-email wanjiru@kilimani.ac.ke
+```
+
+It refuses an email that already has an account and a school name that
+already exists, so running it twice by mistake does not make a second school.
+It creates the tables if the database is empty, so a fresh server needs
+`docker compose up -d` first and nothing else.
+
+---
+
+## 8. Phones during UAT
+
+Teachers' phones reach the laptop through an **ngrok** tunnel: a fixed public
+`https` address that forwards to the frontend while the laptop runs it. The
+frontend already proxies `/api` to the backend, so one address carries both.
+
+### Once
+
+1. Sign up at <https://ngrok.com> (free), install ngrok for Windows, and run
+   the `ngrok config add-authtoken ...` command shown on the dashboard.
+2. On the dashboard, **Domains**: claim the free static domain, e.g.
+   `elimu-uat.ngrok-free.app`.
+3. Tell the app its address (a new terminal afterwards, as with the Google
+   variables):
+
+   ```cmd
+   setx PUBLIC_URL https://elimu-uat.ngrok-free.app
+   ```
+
+4. Google Cloud console > APIs & Services > Credentials > the OAuth client:
+   under **Authorised redirect URIs** add
+   `https://elimu-uat.ngrok-free.app/api/auth/google/callback`, and under
+   **Authorised JavaScript origins** add `https://elimu-uat.ngrok-free.app`.
+   Keep the `localhost` entries. While the consent screen is in **Testing**,
+   each teacher who signs in with Google must be listed as a test user.
+
+### Each session
+
+Three windows, in this order:
+
+```cmd
+tasks run
+tasks web
+tasks tunnel
+```
+
+Phones open the `PUBLIC_URL` address. The free tier shows ngrok's "You are
+about to visit" page once per phone; tap **Visit Site**. The laptop keeps
+working on `http://localhost:3000` at the same time - a Google sign-in returns
+to whichever address it started from.
+
+Closing the `tasks tunnel` window closes the address; nothing is reachable
+from outside after that. Answers given on a phone are kept on the phone until
+saved, so a dropped connection loses nothing: the next visit to the quiz page
+offers **Save them now**.

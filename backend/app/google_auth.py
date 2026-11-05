@@ -44,7 +44,18 @@ CONFIGURATION (environment variables, never files)
                         cookie is first-party to the app
   APP_URL               where to send the teacher afterwards, default
                         http://localhost:3000
+  PUBLIC_URL            optional second address for the same app, e.g. the
+                        tunnel teachers' phones use during UAT (29 October)
 Without the first two, the button is not shown and /start says so.
+
+TWO ADDRESSES (29 October)
+The laptop is reached as localhost and, by phones, through a tunnel. A
+sign-in must come back to the address it started from - the cookies belong
+to that address - so /start picks whichever configured address the request
+came in on, and the callback uses that same one. Only configured addresses
+are ever used: a request naming any other host gets APP_URL, so a forged
+Host header cannot send a teacher, or Google's code, anywhere else. Each
+address's /api/auth/google/callback must be registered in Google Cloud.
 """
 
 from __future__ import annotations
@@ -55,7 +66,7 @@ import hmac
 import os
 import secrets
 import time
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlparse
 
 import httpx
 import jwt
@@ -97,6 +108,36 @@ def app_url() -> str:
     return os.environ.get("APP_URL", "http://localhost:3000").rstrip("/")
 
 
+def public_url() -> str:
+    return os.environ.get("PUBLIC_URL", "").rstrip("/")
+
+
+def allowed_origins() -> list[str]:
+    return [o for o in (app_url(), public_url()) if o]
+
+
+def origin_for(request: Request) -> str:
+    """The configured address this request came in on, else APP_URL.
+
+    Through the frontend's /api proxy the browser's host arrives as
+    X-Forwarded-Host (proxies append, so the first entry is the browser's);
+    directly, as Host. Matched against configured addresses only."""
+    forwarded = request.headers.get("x-forwarded-host", "").split(",")[0].strip()
+    for host in (forwarded, request.headers.get("host", "")):
+        for origin in allowed_origins():
+            if host and urlparse(origin).netloc.lower() == host.lower():
+                return origin
+    return app_url()
+
+
+def callback_for(origin: str) -> str:
+    """Where Google returns to. APP_URL keeps GOOGLE_REDIRECT_URI, so an
+    existing setup is unchanged; another address uses its own callback."""
+    if origin == app_url():
+        return redirect_uri()
+    return f"{origin}/api/auth/google/callback"
+
+
 def configured() -> bool:
     return bool(client_id() and client_secret())
 
@@ -105,16 +146,17 @@ def _b64url(data: bytes) -> str:
     return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
 
 
-def _back_to_app(reason: str | None = None) -> RedirectResponse:
+def _back_to_app(reason: str | None = None, origin: str | None = None) -> RedirectResponse:
     """Return to the app - to sign-in with a reason, or home on success.
     The flow cookie is spent either way."""
-    target = f"{app_url()}/login?google={reason}" if reason else f"{app_url()}/"
+    base = origin if origin in allowed_origins() else app_url()
+    target = f"{base}/login?google={reason}" if reason else f"{base}/"
     response = RedirectResponse(target, status_code=302)
     response.delete_cookie(FLOW_COOKIE, path=FLOW_COOKIE_PATH)
     return response
 
 
-def exchange_code(code: str, verifier: str) -> dict:
+def exchange_code(code: str, verifier: str, redirect: str | None = None) -> dict:
     """Redeem the code at Google's token endpoint. Its own function so the
     tests can stand in for Google."""
     reply = httpx.post(
@@ -123,7 +165,8 @@ def exchange_code(code: str, verifier: str) -> dict:
             "code": code,
             "client_id": client_id(),
             "client_secret": client_secret(),
-            "redirect_uri": redirect_uri(),
+            # Must be the one the browser was sent to Google with.
+            "redirect_uri": redirect or redirect_uri(),
             "grant_type": "authorization_code",
             "code_verifier": verifier,
         },
@@ -180,15 +223,16 @@ def providers() -> dict:
 
 
 @router.get("/google/start")
-def google_start() -> RedirectResponse:
+def google_start(request: Request) -> RedirectResponse:
+    origin = origin_for(request)
     if not configured():
-        return _back_to_app("not_configured")
+        return _back_to_app("not_configured", origin)
     state = secrets.token_urlsafe(24)
     verifier = secrets.token_urlsafe(48)
     nonce = secrets.token_urlsafe(24)
     query = urlencode({
         "client_id": client_id(),
-        "redirect_uri": redirect_uri(),
+        "redirect_uri": callback_for(origin),
         "response_type": "code",
         "scope": "openid email profile",
         "state": state,
@@ -199,7 +243,7 @@ def google_start() -> RedirectResponse:
     })
     response = RedirectResponse(f"{AUTHORIZE_URL}?{query}", status_code=302)
     flow = jwt.encode(
-        {"state": state, "verifier": verifier, "nonce": nonce,
+        {"state": state, "verifier": verifier, "nonce": nonce, "origin": origin,
          "exp": int(time.time()) + FLOW_TTL_SECONDS},
         secret(), algorithm=ALGORITHM,
     )
@@ -217,38 +261,42 @@ def google_callback(
     error: str | None = None,
     session: Session = Depends(get_session),
 ) -> RedirectResponse:
+    here = origin_for(request)
     if error:
-        return _back_to_app("cancelled")
+        return _back_to_app("cancelled", here)
     try:
         flow = jwt.decode(request.cookies.get(FLOW_COOKIE, ""), secret(),
                           algorithms=[ALGORITHM])
     except jwt.PyJWTError:
-        return _back_to_app("expired")
+        return _back_to_app("expired", here)
+    # Signed by this server at /start, so it is the address the flow began on;
+    # checked against the configured ones anyway in case the setting changed.
+    origin = flow.get("origin") if flow.get("origin") in allowed_origins() else app_url()
     if not state or not code or not hmac.compare_digest(state, flow["state"]):
-        return _back_to_app("state")
+        return _back_to_app("state", origin)
 
     try:
-        tokens = exchange_code(code, flow["verifier"])
+        tokens = exchange_code(code, flow["verifier"], callback_for(origin))
         claims = jwt.decode(tokens["id_token"], options={"verify_signature": False})
     except Exception as exc:  # Google refused, or answered with something unusable
         print(f"google sign-in failed: {type(exc).__name__}: {exc}")
-        return _back_to_app("google_error")
+        return _back_to_app("google_error", origin)
     if claim_problem(claims, flow["nonce"]) is not None:
-        return _back_to_app("invalid")
+        return _back_to_app("invalid", origin)
 
     teacher, reason = find_teacher(session, claims)
     if teacher is None:
         session.rollback()
-        return _back_to_app(reason)
+        return _back_to_app(reason, origin)
     if not teacher.is_active:
         session.rollback()
-        return _back_to_app("deactivated")
+        return _back_to_app("deactivated", origin)
     # Google has just proved this email belongs to them, so an unused setup
     # code is no longer needed.
     teacher.setup_code_hash = None
     teacher.setup_code_expires_at = None
     session.commit()
 
-    response = _back_to_app()
+    response = _back_to_app(None, origin)
     _issue_refresh(session, response, teacher, family_id=None)
     return response

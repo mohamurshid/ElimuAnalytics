@@ -17,7 +17,7 @@ Every correction points at the commit that made it, so it can be inspected.
 
 ## 1. Automated tests
 
-**505 backend tests** (pytest), plus frontend lint, type check and a
+**534 backend tests** (pytest), plus frontend lint, type check and a
 production build. Run locally with `tasks ci` (backend) and `tasks webci`
 (frontend); GitHub Actions runs CI on every push. All pass at the time of
 writing.
@@ -29,6 +29,7 @@ stand-ins, so the suite is free, offline and repeatable.
 | Suite | Tests | What it holds the system to |
 |---|---:|---|
 | `test_reporting.py` | 53 | Report generation end to end: pending row, background fill, failures written on the row, stale rows, strand grade used for retrieval |
+| `test_observations.py` | 29 | Observed tasks on the KICD rubric: rubric rows load once and refresh in place without touching recorded levels; indicators offered for the strand's grade and learning area, best match first, plus the school's own; levels saved idempotently and all or nothing; school scoping; two observed tasks short of Meets add a learner to Support and a corrected level removes them; the report prompt carries levels without inviting a quotation |
 | `test_reports.py` | 44 | The report prompt: verbatim-citation rule, no gendered pronouns, evidence thresholds, word limit, failure pattern |
 | `test_classrooms.py` | 36 | Classes and learners, school scoping, withdraw-not-delete, grade must be exactly "Grade 1"-"Grade 6" |
 | `test_curriculum.py` | 31 | Corpus normalisation (PDF glyph repair), curriculum-head cut |
@@ -101,6 +102,7 @@ stand-ins, so the suite is free, offline and repeatable.
 | F41 | Saving answers from a phone on the laptop's network address (found in code review, 29 October) | Every save accepted | `crypto.randomUUID` exists only on secure origins; the fallback batch id was not a UUID, so the server would have refused every save made over plain http | Version 4 UUID from `crypto.getRandomValues`, which works on any origin | 9fc842e |
 | F42 | Quiz answers after a dropped connection (tested 29 October by blocking the save request) | No answers lost | Both quiz screens held answers only in the page; a dropped connection, reload or flat battery lost them. A reload in a device quiz also left quiz mode | Answers kept on the device until the server confirms; three attempts per save; "Not saved yet" card to save or discard; resent under the original batch id (a resend was answered "already recorded, nothing changed"); a reload stays in quiz mode with the PIN | 9fc842e |
 | F43 | Restoring unsaved paper marks (found live, 29 October) | Marks reopen where they were made | The page reopened on the first strand, not the one with unsaved marks; a dropped connection showed the browser's "Failed to fetch" | Opens the strand with kept marks; "No connection to the server." on every page | 9fc842e |
+| F44 | Evidence other than questions (supervisor feedback, 16 November) | The KICD designs assess by observation, projects and presentations as well as written tests | Every level in the system came from answered questions; the 924 KICD rubric rows in the corpus were never read, and about a third of the Grade 4-6 indicators cannot be answered by choosing an option | Observed tasks judged against the KICD rubric (four levels, teacher's note), kept apart from the ability estimate; two tasks short of Meets add a learner to Support as its own source; levels and notes reach the report prompt. Checked live on PostgreSQL: rubric loaded (924 rows), a Heat Transfer task made from its two KICD indicators, a learner given Meets and Approaches and saved, shown on the class page as one learner at Meets and on the learner's page; a Grade 5 English sub-strand correctly offered no KICD rubric | 207beac |
 
 ---
 

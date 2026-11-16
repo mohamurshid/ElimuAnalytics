@@ -196,6 +196,25 @@ from 50 labelled pairs (`tasks gen --score 20261021_095316`).
 
 ---
 
+**Psychometric validation** (16 November, `spike/psychometric_validation.py`, run 20261116_062604, `tasks psy`): the acceptance criteria of Section 3.2.4, on the 3,000-learner Riiid sample, with the production `calibrate` and `estimate_abilities`.
+
+| Criterion | Target | Data | Result |
+|---|---|---|---|
+| Model fit, RMSEA2 from M2 | below 0.06 | 26 questions answered by all of 1,135 learners (densest block) | **0.028** (M2 557.7 on 299 df). Self-check, 50 data sets simulated from the fitted model: mean M2 305.4 vs 299 df, p < 0.05 in 4% |
+| Item fit, infit and outfit | 0.7-1.3 | 900 questions, 3 batches of 300, 2,400 calibration learners | 97.4% in range; **170 (19%) with discrimination below 0.3** |
+| Criterion validity, F1 for a correct answer | 0.75 or above | 20,781 later answers of 600 held-out learners (56.5% correct) | **0.721** - not met |
+
+| Predicting later answers | F1 correct | F1 incorrect | Macro F1 | AUC |
+|---|---|---|---|---|
+| 2-PL ability model | 0.721 | 0.592 | 0.657 | 0.723 |
+| Always correct | 0.722 | 0.000 | 0.361 | 0.500 |
+| Difficulty only | 0.714 | 0.564 | 0.639 | 0.700 |
+| Learner's earlier proportion only | 0.672 | 0.439 | 0.556 | 0.594 |
+
+F1 on "correct" cannot tell the model from always guessing correct at this base rate; AUC and macro F1 show a small gain over difficulty alone. Ability from earlier answers vs proportion correct on later answers: Pearson 0.395 (821 learner-batch pairs). Without the questions below 0.3 discrimination: F1 0.724, AUC 0.726.
+
+---
+
 ## 4. Found by testing, not yet corrected
 
 | Issue | Status |
@@ -204,3 +223,4 @@ from 50 labelled pairs (`tasks gen --score 20261021_095316`).
 | Kiswahili vague-phrase list unvalidated | Needs a Kiswahili speaker |
 | Model exceeds the advisory word limit (265 vs 200 before the limit was raised to 250) | Limit advisory; recorded |
 | The Support list says "below expectation", but the rule flags any ability below 0, which includes Approaches expectation (11 of 19 flagged on 5 November) | Wording or threshold to be decided |
+| Questions with discrimination below 0.3 are not excluded from the active bank, as Section 3.2.3 specifies (170 of 900 Riiid questions, 16 November) | Flag after each recalibration and send to teacher review |

@@ -16,6 +16,7 @@ REM   tasks tunnel  open the PUBLIC_URL ngrok address to the frontend, for phone
 REM   tasks webci   frontend lint, typecheck and build
 REM   tasks ci      everything CI runs, locally, before you push
 REM   tasks gen     measure question generation (plan only; add --go to call the API)
+REM   tasks psy     measure model fit (RMSEA), item fit and criterion validity (F1) on the Riiid sample
 
 setlocal
 if "%1"=="" goto help
@@ -90,6 +91,13 @@ goto end
 :gen
 call .venv\Scripts\activate
 python spike\generation_at_scale.py %2 %3 %4
+goto end
+
+:psy
+call .venv\Scripts\activate
+set "PSYDATA=%~2"
+if "%PSYDATA%"=="" set "PSYDATA=data\riiid_sample_by_users.csv"
+python spike\psychometric_validation.py --data "%PSYDATA%" %3 %4 %5 %6
 goto end
 
 :run

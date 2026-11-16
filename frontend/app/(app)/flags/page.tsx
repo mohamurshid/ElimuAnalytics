@@ -10,6 +10,11 @@
  * in the code; on the screen a teacher needs the plain version and a next
  * step.
  *
+ * Two kinds of evidence put a learner here (16 November): two low recorded
+ * quiz levels, or falling short of Meets on two observed tasks in a row.
+ * Each row says which, because a teacher acts differently on "got the
+ * questions wrong" and "could not do it when watched".
+ *
  * The empty state matters more than the list. Nobody is flagged until a class
  * has had two assessments, so every teacher's first sight of the app is this
  * page with nothing in it - which is why it points at the classes rather than
@@ -21,7 +26,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { Icon } from "@/components/Icon";
 import { LevelAvatar, LevelChip } from "@/components/Level";
-import { ButtonLink, Card, Empty, Loading, Note, PageHeader } from "@/components/ui";
+import { Badge, ButtonLink, Card, Empty, Loading, Note, PageHeader } from "@/components/ui";
 import { api, errorMessage } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { greeting } from "@/lib/people";
@@ -75,7 +80,7 @@ export default function FlagsPage() {
       <PageHeader
         eyebrow={firstName ? `${greeting()}, ${firstName}` : greeting()}
         title="Learners to support"
-        description="Learners who were below expectation in two assessments in a row. One weak result on its own isn’t enough to appear here."
+        description="Learners below expectation twice in a row on the same sub-strand, in quizzes or in tasks you observed. One weak result on its own isn’t enough to appear here."
       />
 
       <Note tone="error">{error}</Note>
@@ -93,8 +98,8 @@ export default function FlagsPage() {
             </ButtonLink>
           }
         >
-          Give a class a quiz, then record their levels. A learner appears here
-          after two low results in a row on the same strand.
+          Give a class a quiz and record their levels, or observe a task. A
+          learner appears here after two low results in a row on the same strand.
         </Empty>
       )}
 
@@ -125,7 +130,12 @@ export default function FlagsPage() {
         <>
           <dl className="mb-5 grid grid-cols-3 gap-3">
             {[
-              { label: "Need support", n: rows.length, tone: "bg-brand-fill text-brand-strong" },
+              {
+                label: "Need support",
+                // Learners, not rows: one learner can be here from both kinds of evidence.
+                n: new Set(rows.map((r) => r.student_id)).size,
+                tone: "bg-brand-fill text-brand-strong",
+              },
               { label: "Below", n: below, tone: "bg-sunken text-ink" },
               { label: "Approaches", n: approaches, tone: "bg-sunken text-ink" },
             ].map((stat) => (
@@ -158,7 +168,13 @@ export default function FlagsPage() {
                       </span>
                       <span className="mt-1.5 flex items-center gap-2">
                         <LevelChip tier={flag.severity} size="sm" />
-                        {flag.flagged_at && (
+                        <Badge>{flag.source === "observation" ? "Observed tasks" : "Quizzes"}</Badge>
+                        {flag.source === "observation" && flag.tasks.length > 0 && (
+                          <span className="hidden truncate text-xs text-ink-subtle sm:inline">
+                            {flag.tasks.join(", then ")}
+                          </span>
+                        )}
+                        {flag.source !== "observation" && flag.flagged_at && (
                           <span className="text-xs text-ink-subtle">since {flaggedOn(flag.flagged_at)}</span>
                         )}
                       </span>

@@ -1,7 +1,8 @@
 /**
  * Answers not yet saved, kept on this device (29 October).
  *
- * Both quiz screens hold a class's work in the page until the teacher saves
+ * Both quiz screens (and, since 16 November, the observation grid) hold a
+ * class's work in the page until the teacher saves
  * it: a device quiz until the session ends, paper marks until Submit. A
  * dropped connection at that moment, a reload, or a phone that dies took all
  * of it with them. Now every answer is also written here as it is given, and
@@ -24,7 +25,7 @@
 
 import { ApiError } from "@/lib/api";
 
-export type PendingKind = "device" | "paper";
+export type PendingKind = "device" | "paper" | "observe";
 
 export type PendingBatch<R> = {
   v: 1;
@@ -34,6 +35,8 @@ export type PendingBatch<R> = {
   strandId: string;
   /** Paper only: the quiz whose grid this is, so marking can carry on. */
   quizId?: string;
+  /** Observe only: the observed task these levels belong to. */
+  taskId?: string;
   batchId: string;
   responses: R[];
   /** Learners with at least one answer, for the sentence shown. */

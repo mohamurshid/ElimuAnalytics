@@ -6,6 +6,11 @@ RESPONSE, ABILITY_SCORE, GAP_FLAG, REPORT, CURRICULUM_CHUNK - plus
 ASSESSMENT_BATCH, which the diagram does not contain and offline submission
 requires (see its docstring).
 
+Three more hold observed evidence, added after supervisor feedback that the
+system measured only question answering: RUBRIC_INDICATOR, OBSERVATION_TASK
+and RUBRIC_SCORE. They sit beside the response matrix, not inside it (see
+the note above RubricIndicator).
+
 Two design points carried over from Phase 0 rather than re-decided here:
 
   * RESPONSE.correctness is stored as a boolean because that is the domain
@@ -728,4 +733,127 @@ class CurriculumChunk(Base):
     # Unit vectors, so cosine distance and a dot product agree.
     embedding: Mapped[list[float] | None] = mapped_column(
         Vector(EMBEDDING_DIM), nullable=True
+    )
+
+
+# ---------------------------------------------------------------------------
+# Observed evidence: the KICD rubric, used as the KICD designs intend.
+#
+# Added 16 November after supervisor feedback that the system measured only
+# question answering. The KICD designs assess most indicators by observation,
+# projects, oral questions and portfolios as well as written tests, and about
+# a third of the Grade 4-6 indicators in the corpus ("Ability to demonstrate
+# ...", "... carry out ...") cannot be answered by choosing an option at all.
+#
+# These tables sit BESIDE the response matrix, never inside it. An observed
+# rubric level is a teacher's judgement on a four-point scale; an IRT estimate
+# is a model of right and wrong answers. Mixing the two into one theta would
+# make both unreadable, so each is shown and counted as its own kind of
+# evidence.
+# ---------------------------------------------------------------------------
+class RubricIndicator(Base):
+    """One assessment indicator with its four KICD level descriptors.
+
+    Two sources. "kicd" rows are loaded from the rubric tables of the KICD
+    curriculum designs by `python -m app.ingest_rubrics`, keyed on their
+    position in the harvested file so a reload updates rather than duplicates.
+    "teacher" rows are written by a teacher for a sub-strand the designs give
+    no rubric for: the Grade 4-6 designs for the four assessed learning areas
+    carry 176 rubric rows between them, so most sub-strands have none.
+    """
+
+    __tablename__ = "rubric_indicator"
+
+    indicator_id: Mapped[uuid.UUID] = _pk()
+    # "kicd" or "teacher".
+    source: Mapped[str] = mapped_column(String(10), nullable=False)
+    # Index in the harvested `rubrics` list - the same provenance rule as
+    # curriculum_chunk.source_row, because the harvested ids repeat.
+    source_row: Mapped[int | None] = mapped_column(Integer, nullable=True, unique=True)
+    grade: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    learning_area: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    indicator: Mapped[str] = mapped_column(Text, nullable=False)
+    exceeds: Mapped[str | None] = mapped_column(Text, nullable=True)
+    meets: Mapped[str | None] = mapped_column(Text, nullable=True)
+    approaches: Mapped[str | None] = mapped_column(Text, nullable=True)
+    below: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # A teacher's indicator belongs to one sub-strand at one school, so it is
+    # offered there and nowhere else. Both are NULL for KICD rows.
+    strand_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("strand.strand_id", ondelete="CASCADE"), nullable=True
+    )
+    school_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("school.school_id", ondelete="CASCADE"), nullable=True
+    )
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("teacher.teacher_id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class ObservationTask(Base):
+    """Something the class did that a teacher watched and judged.
+
+    An observation, a project or a presentation on one sub-strand, judged
+    against one to five indicators. The indicators are fixed when the task is
+    made, as a quiz's questions are, so every learner is judged against the
+    same thing.
+    """
+
+    __tablename__ = "observation_task"
+
+    task_id: Mapped[uuid.UUID] = _pk()
+    class_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("classroom.class_id", ondelete="CASCADE"), nullable=False
+    )
+    strand_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("strand.strand_id", ondelete="CASCADE"), nullable=False
+    )
+    # observation | project | presentation
+    kind: Mapped[str] = mapped_column(String(20), nullable=False)
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    # Indicator ids in the order the teacher chose them.
+    indicator_ids: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("teacher.teacher_id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class RubricScore(Base):
+    """One learner's level on one indicator in one task.
+
+    `level` is the KICD four-point scale as KNEC codes it: 4 Exceeds, 3 Meets,
+    2 Approaches, 1 Below expectation. Unique per task, learner and
+    indicator, so saving the grid again replaces a level rather than adding a
+    second one - the save is idempotent, which is what lets it be retried.
+    """
+
+    __tablename__ = "rubric_score"
+    __table_args__ = (UniqueConstraint("task_id", "student_id", "indicator_id"),)
+
+    score_id: Mapped[uuid.UUID] = _pk()
+    task_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("observation_task.task_id", ondelete="CASCADE"), nullable=False
+    )
+    student_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("student.student_id", ondelete="CASCADE"), nullable=False
+    )
+    indicator_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("rubric_indicator.indicator_id", ondelete="CASCADE"), nullable=False
+    )
+    level: Mapped[int] = mapped_column(Integer, nullable=False)
+    # What the teacher saw, in their words. Optional, and passed to the report
+    # as the teacher's note, never as curriculum text.
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    recorded_by: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("teacher.teacher_id", ondelete="SET NULL"), nullable=True
+    )
+    recorded_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(),
+        nullable=False,
     )

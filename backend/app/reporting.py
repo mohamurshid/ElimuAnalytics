@@ -88,6 +88,7 @@ from .auth import current_teacher
 from .db import get_session, get_session_factory
 from .irt import ResponseMatrixError
 from .models import Report, Strand, Student, Teacher
+from .observations import learner_observations
 from .reports import LearnerFacts, build_prompt, generate
 from .retrieval import retrieve
 
@@ -447,6 +448,7 @@ def _generate_into(
     flags = repo.consecutive_low_assessments(
         session, student.student_id, strand.strand_id
     )
+    observed = learner_observations(session, student.student_id, strand.strand_id)
     strand_name, sub_strand = split_strand_name(strand.name)
 
     facts = LearnerFacts(
@@ -481,7 +483,8 @@ def _generate_into(
             language: pool.submit(
                 generate,
                 build_prompt(
-                    facts, chunk_texts, language=language, failure_pattern=pattern
+                    facts, chunk_texts, language=language, failure_pattern=pattern,
+                    observations=observed,
                 ),
             )
             for language in languages

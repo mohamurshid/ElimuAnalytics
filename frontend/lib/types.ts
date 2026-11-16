@@ -130,6 +130,10 @@ export type Flag = {
   strand: string;
   severity: string;
   flagged_at: string | null;
+  /** Which evidence put the learner here: quiz levels, or observed tasks. */
+  source: "quiz" | "observation";
+  /** For an observation entry, the two tasks behind it. */
+  tasks: string[];
 };
 
 /**
@@ -347,3 +351,69 @@ export type StaffMember = {
 
 /** Returned once, when a code is made; only its hash is stored. */
 export type StaffWithCode = StaffMember & { setup_code: string };
+
+/* --- observed tasks, judged against the KICD rubric ---------------------- */
+
+export type TaskKind = "observation" | "project" | "presentation";
+
+/** One indicator and its four KICD level descriptors (any may be missing). */
+export type Indicator = {
+  indicator_id: string;
+  indicator: string;
+  exceeds: string | null;
+  meets: string | null;
+  approaches: string | null;
+  below: string | null;
+  source: "kicd" | "teacher";
+  /** Shares words with the sub-strand's name; listed first. */
+  suggested: boolean;
+};
+
+/** A level on the KICD scale as KNEC codes it: 4 Exceeds ... 1 Below. */
+export type RubricLevel = 1 | 2 | 3 | 4;
+
+export type RubricScore = {
+  student_id: string;
+  indicator_id: string;
+  level: RubricLevel;
+  note: string | null;
+};
+
+export type ObservationTask = {
+  task_id: string;
+  class_id: string;
+  strand_id: string;
+  strand: string;
+  kind: TaskKind;
+  title: string;
+  created_at: string | null;
+  indicators: Indicator[];
+  learners: { student_id: string; name: string }[];
+  scores: RubricScore[];
+};
+
+export type ObservationSummary = {
+  task_id: string;
+  strand_id: string;
+  strand: string;
+  kind: TaskKind;
+  title: string;
+  created_at: string | null;
+  indicators: number;
+  learners_observed: number;
+  /** Learners at each KICD level on this task, by the mean of their levels. */
+  levels: Record<string, number>;
+};
+
+export type LearnerObservation = {
+  task_id: string;
+  title: string;
+  kind: TaskKind;
+  strand_id: string;
+  strand: string;
+  observed_at: string | null;
+  indicator: string;
+  level: RubricLevel;
+  tier: string;
+  note: string | null;
+};

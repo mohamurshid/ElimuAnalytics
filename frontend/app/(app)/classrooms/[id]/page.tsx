@@ -19,6 +19,11 @@
  *     flag needs two consecutive low records - so it stays prominent enough
  *     to find, just not the thing pressed by mistake.
  *   - Managing learners, which is the roll.
+ *   - Observing a task (16 November): an observation, project or
+ *     presentation judged against the KICD rubric rather than marked right
+ *     or wrong. Its own tile, because it is its own kind of evidence, and
+ *     its tasks are listed below the heatmap rather than folded into it - a
+ *     rubric level and an estimate from answers are not the same measure.
  *
  * Below the actions, what the class is assessed on: the sub-strands picked
  * from the curriculum catalogue. Recording levels and recalibrating skip a
@@ -33,6 +38,7 @@ import { useCallback, useEffect, useState } from "react";
 import { ClassStrands } from "@/components/ClassStrands";
 import { ClassSummary, Heatmap, Legend } from "@/components/Heatmap";
 import { Icon, type IconName } from "@/components/Icon";
+import { ObservedTasks } from "@/components/ObservedTasks";
 import { ButtonLink, Card, Empty, Loading, Note, PageHeader, Segmented } from "@/components/ui";
 import { api, ApiError, errorMessage } from "@/lib/api";
 import { HOME } from "@/lib/routes";
@@ -243,7 +249,7 @@ export default function ClassPage() {
         <div className="space-y-6">
           <section aria-labelledby="actions-heading">
             <h2 id="actions-heading" className="sr-only">Actions</h2>
-            <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+            <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
               <ActionTile
                 href={`/classrooms/${classId}/administer`}
                 icon="phone"
@@ -256,6 +262,12 @@ export default function ClassPage() {
                 icon="paper"
                 title="Mark a paper quiz"
                 body="Print, then mark each learner"
+              />
+              <ActionTile
+                href={`/classrooms/${classId}/observe`}
+                icon="eye"
+                title="Observe a task"
+                body="A project or activity, judged on the KICD rubric"
               />
               <ActionTile
                 icon="save"
@@ -322,13 +334,15 @@ export default function ClassPage() {
               </p>
             </section>
           )}
+
+          <ObservedTasks classId={classId} />
         </div>
       )}
     </>
   );
 }
 
-/** One of the class's four jobs: an icon, a name and one line on what it does. */
+/** One of the class's jobs: an icon, a name and one line on what it does. */
 function ActionTile({
   icon,
   title,

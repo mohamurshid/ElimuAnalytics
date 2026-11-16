@@ -20,6 +20,9 @@ from girth import INVALID_RESPONSE
 from sqlalchemy.orm import Session
 
 from .db import ensure_extensions, get_engine, get_session_factory
+from .ingest_rubrics import DEFAULT_PATH as RUBRICS_PATH
+from .ingest_rubrics import ingest as ingest_rubrics
+from .ingest_rubrics import load_rubrics
 from .models import (
     Base,
     Classroom,
@@ -232,6 +235,11 @@ def main() -> None:
 
     with get_session_factory()() as session:
         seed(session)
+        # The rubric indicators too, so a reset database can still record an
+        # observed task. Skipped quietly where the corpus has not been built.
+        if RUBRICS_PATH.exists():
+            loaded = ingest_rubrics(session, load_rubrics(RUBRICS_PATH))
+            print(f"rubric indicators: {loaded['added']} added, {loaded['updated']} refreshed")
 
 
 if __name__ == "__main__":

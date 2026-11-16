@@ -206,7 +206,10 @@ export default function OverviewPage() {
 
   const isHead = profile ? profile.role !== "teacher" : false;
   const strandList = strands && "data" in strands ? strands.data : [];
-  const supportCount = flags && "data" in flags ? flags.data.length : null;
+  // Learners, not rows: one learner can be on the list from a quiz and from
+  // observed tasks, and is still one learner to look at.
+  const supportCount =
+    flags && "data" in flags ? new Set(flags.data.map((f) => f.student_id)).size : null;
   const classList = classes && "data" in classes ? classes.data.filter((c) => c.is_active) : null;
   const firstName = profile?.name?.split(" ")[0];
 

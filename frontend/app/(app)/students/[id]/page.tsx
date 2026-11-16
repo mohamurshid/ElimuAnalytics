@@ -49,6 +49,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Legend } from "@/components/Heatmap";
 import { Icon } from "@/components/Icon";
 import { LevelAvatar, LevelChip } from "@/components/Level";
+import { ObservedLevels } from "@/components/ObservedLevels";
 import { Badge, Button, Card, Empty, Loading, Note, PageHeader } from "@/components/ui";
 import { api, ApiError, downloadFile, errorMessage } from "@/lib/api";
 import type { LearnerDiagnostics, Report } from "@/lib/types";
@@ -580,6 +581,8 @@ export default function LearnerPage() {
           </ul>
         </>
       )}
+
+      {data && <ObservedLevels studentId={data.student_id} />}
 
       {reports !== null && reports.length === 0 && data && (
         <p className="mt-6 flex gap-2 text-sm text-ink-subtle">

@@ -34,6 +34,7 @@ from .db import get_session
 from .irt import CONFIDENT_RESPONSES, MIN_RESPONSES, diagnose_all
 from .item_status import DRAFT, MEASURED, REPORTED
 from .models import Classroom, GapFlag, Item, Strand, Student, Teacher
+from .observations import observation_flags
 
 router = APIRouter(prefix="/api", tags=["diagnostics"])
 
@@ -281,6 +282,12 @@ class FlagOut(BaseModel):
     strand: str
     severity: str
     flagged_at: str | None
+    # Which kind of evidence put the learner here: "quiz" (two low recorded
+    # levels from answers) or "observation" (short of Meets on two observed
+    # tasks). The two are separate signals and a learner can have both.
+    source: str = "quiz"
+    # For an observation entry, the two tasks behind it.
+    tasks: list[str] = []
 
 
 @router.get("/flags", response_model=list[FlagOut])
@@ -290,6 +297,9 @@ def flags(
     teacher: Teacher = Depends(current_teacher),
 ) -> list[FlagOut]:
     """The intervention queue, for the caller's school only.
+
+    Quiz flags first, as stored, then learners short of Meets on their last
+    two observed tasks on a sub-strand, computed now (see observations.py).
 
     This endpoint previously returned every open flag in the database. With
     one school that was invisible; with two it is a disclosure of other
@@ -311,6 +321,24 @@ def flags(
                 strand=strand.name if strand else str(f.strand_id),
                 severity=f.severity,
                 flagged_at=f.flagged_at.isoformat() if f.flagged_at else None,
+            )
+        )
+    # Already limited to the caller's school by the query itself.
+    for o in observation_flags(session, teacher.school_id, strand_id):
+        student = session.get(Student, o["student_id"])
+        strand = session.get(Strand, o["strand_id"])
+        out.append(
+            FlagOut(
+                flag_id=f"observation:{o['student_id']}:{o['strand_id']}",
+                student_id=str(o["student_id"]),
+                learner=student.name if student else "",
+                class_id=str(student.class_id if student else o["class_id"]),
+                strand_id=str(o["strand_id"]),
+                strand=strand.name if strand else str(o["strand_id"]),
+                severity=o["severity"],
+                flagged_at=o["flagged_at"].isoformat() if o["flagged_at"] else None,
+                source="observation",
+                tasks=o["tasks"],
             )
         )
     return out

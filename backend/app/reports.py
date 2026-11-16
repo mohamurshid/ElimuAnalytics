@@ -203,6 +203,41 @@ def failure_block(pattern: dict | None) -> str:
     return "\n".join(lines)
 
 
+def observation_block(observations: list[dict] | None) -> str:
+    """Levels the teacher gave from watching the learner, not from answers.
+
+    Returns "" when there are none, so a report for a learner never observed
+    gets exactly the prompt it got before observation existed - and the
+    earlier report measurements still describe it.
+
+    The indicator wording is the KICD rubric's or the teacher's, and it is
+    NOT in the curriculum context the grounding check compares quotations
+    against. So the block says plainly not to quote it: a quoted indicator
+    would be scored as a fabricated citation and refuse the whole report.
+    """
+    if not observations:
+        return ""
+    lines = [
+        "",
+        "CLASSROOM OBSERVATIONS (levels the teacher gave from watching the learner "
+        "do a task - an observation, project or presentation - not from answers to "
+        "questions):",
+    ]
+    for o in observations:
+        when = o["observed_at"].strftime("%d %b %Y") if o.get("observed_at") else ""
+        head = f"  - {o['title']} ({o['kind']}{', ' + when if when else ''}): "
+        lines.append(f"{head}{o['indicator']} - {o['tier']}")
+        if o.get("note"):
+            lines.append(f"      teacher's note: {o['note']}")
+    lines.append(
+        "  Use these alongside the question results in Paragraphs 1 and 2. Where the "
+        "observed levels and the question results disagree, say so plainly rather "
+        "than choosing one. Describe them in your own words and do NOT put quotation "
+        "marks around any of this section: it is not curriculum text."
+    )
+    return "\n".join(lines)
+
+
 def build_prompt(
     learner: LearnerFacts,
     chunk_texts: list[str],
@@ -210,6 +245,7 @@ def build_prompt(
     language: str = "English",
     strict: bool = True,
     failure_pattern: dict | None = None,
+    observations: list[dict] | None = None,
 ) -> str:
     """The full prompt. `chunk_texts` are curriculum chunks as stored."""
     context = "\n\n".join(chunk_texts)
@@ -243,7 +279,7 @@ LEARNER PERFORMANCE:
 - KICD rubric level: {learner.tier}
 {evidence_line}
 - Flagged as at-risk for {learner.consecutive_flags} consecutive assessments
-{failure_block(failure_pattern)}
+{failure_block(failure_pattern)}{observation_block(observations)}
 
 The KICD rubric levels are: {", ".join(RUBRIC_LEVELS)}
 

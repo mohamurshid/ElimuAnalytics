@@ -47,7 +47,7 @@ PORTABLE_TABLES = [
         "school", "teacher", "refresh_token", "classroom", "student", "strand",
         "item", "assessment_batch", "response", "ability_score",
         "gap_flag", "report", "class_strand", "generation_run", "quiz_set",
-        "google_identity",
+        "google_identity", "rubric_indicator", "observation_task", "rubric_score",
     )
 ]
 

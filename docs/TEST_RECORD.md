@@ -17,7 +17,7 @@ Every correction points at the commit that made it, so it can be inspected.
 
 ## 1. Automated tests
 
-**534 backend tests** (pytest), plus frontend lint, type check and a
+**537 backend tests** (pytest), plus frontend lint, type check and a
 production build. Run locally with `tasks ci` (backend) and `tasks webci`
 (frontend); GitHub Actions runs CI on every push. All pass at the time of
 writing.
@@ -43,7 +43,7 @@ stand-ins, so the suite is free, offline and repeatable.
 | `test_accounts.py` | 20 | Setup codes (single use, expiry, throttling, one answer for every wrong case); sessions end at once; a school keeps a head teacher; a Google-only teacher sets a first password |
 | `test_google_auth.py` | 23 | Google sign-in: staff list is the gate, linking, state, nonce, each ID-token claim, PKCE, cancellation; a sign-in returns to the configured address it started on (laptop or tunnel), never another |
 | `test_quizzes.py` | 16 | Quiz selection (spread across difficulty, least-answered first, deterministic), saved quiz sets, numbering after withdrawal |
-| `test_refresh.py` | 16 | Rotating refresh tokens, reuse detection, cross-site refusal |
+| `test_refresh.py` | 19 | Rotating refresh tokens, reuse detection, cross-site refusal; a phone at the laptop's network address can renew its session through the frontend proxy, a foreign site still cannot |
 | `test_class_strands.py` | 14 | What a class is assessed on; strands shared across schools; removing keeps every answer |
 | `test_export.py` | 14 | PDF export: text extracted and checked, glyph handling |
 | `test_new_school.py` | 13 | `tasks newschool`: school and head teacher created with no password and a hashed one-time code that opens the account; the new school sees only its own staff; mistakes and repeats change nothing |
@@ -103,6 +103,7 @@ stand-ins, so the suite is free, offline and repeatable.
 | F42 | Quiz answers after a dropped connection (tested 29 October by blocking the save request) | No answers lost | Both quiz screens held answers only in the page; a dropped connection, reload or flat battery lost them. A reload in a device quiz also left quiz mode | Answers kept on the device until the server confirms; three attempts per save; "Not saved yet" card to save or discard; resent under the original batch id (a resend was answered "already recorded, nothing changed"); a reload stays in quiz mode with the PIN | 9fc842e |
 | F43 | Restoring unsaved paper marks (found live, 29 October) | Marks reopen where they were made | The page reopened on the first strand, not the one with unsaved marks; a dropped connection showed the browser's "Failed to fetch" | Opens the strand with kept marks; "No connection to the server." on every page | 9fc842e |
 | F44 | Evidence other than questions (supervisor feedback, 16 November) | The KICD designs assess by observation, projects and presentations as well as written tests | Every level in the system came from answered questions; the 924 KICD rubric rows in the corpus were never read, and about a third of the Grade 4-6 indicators cannot be answered by choosing an option | Observed tasks judged against the KICD rubric (four levels, teacher's note), kept apart from the ability estimate; two tasks short of Meets add a learner to Support as its own source; levels and notes reach the report prompt. Checked live on PostgreSQL: rubric loaded (924 rows), a Heat Transfer task made from its two KICD indicators, a learner given Meets and Approaches and saved, shown on the class page as one learner at Meets and on the learner's page; a Grade 5 English sub-strand correctly offered no KICD rubric | 207beac |
+| F45 | Phones at the laptop's Wi-Fi address, no tunnel (17 November, reproduced with a browser at a non-localhost address) | A teacher's phone signs in and stays signed in | The page loaded without its scripts: next.config passed the host with its port to allowedDevOrigins, which compares hostnames, so the sign-in form submitted itself as a GET with the password in the address. Once fixed, every reload signed the teacher out: the refresh Origin check compared against the backend's own address behind the proxy and refused the phone's | The laptop's private IPv4 addresses are allowed at start-up and PUBLIC_URL is compared by hostname; refresh accepts the browser's own origin from X-Forwarded-Host and X-Forwarded-Proto, a foreign origin still refused (3 tests); tasks lan prints the address | Pending |
 
 ---
 

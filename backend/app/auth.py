@@ -200,6 +200,19 @@ def _check_origin(request: Request) -> None:
     remember to allowlist itself is a trap - one this project fell into: the
     demonstration page at :8000 was refused because the list held only the
     frontend's :3000.
+
+    **Through the frontend's proxy, "own origin" is the address the browser
+    used.** The page and its /api calls reach this server through Next.js,
+    which forwards them from 127.0.0.1 and records the browser's host in
+    X-Forwarded-Host (17 November). A teacher on the laptop is at localhost,
+    which the list holds; a phone on the same Wi-Fi is at the laptop's
+    network address, which no fixed list can hold, because the router hands
+    out a new one. Without this, every reload on a phone was refused and the
+    teacher was sent back to sign in. A cross-site page cannot borrow it: the
+    proxy writes the header from the host the browser asked for, which is
+    this application's, so a foreign Origin still never matches; and a page
+    sending the header itself straight to this server triggers a CORS
+    preflight, which only the allowlisted origins pass.
     """
     origin = request.headers.get("origin")
     if not origin:
@@ -207,6 +220,11 @@ def _check_origin(request: Request) -> None:
     same_origin = str(request.base_url).rstrip("/")
     if origin == same_origin or origin in ALLOWED_ORIGINS:
         return
+    forwarded_host = request.headers.get("x-forwarded-host", "").split(",")[0].strip()
+    if forwarded_host:
+        proto = request.headers.get("x-forwarded-proto", "").split(",")[0].strip()
+        if origin == f"{proto or request.url.scheme}://{forwarded_host}":
+            return
     raise HTTPException(status_code=403, detail="Cross-origin refresh refused")
 
 

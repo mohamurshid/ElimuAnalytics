@@ -258,3 +258,47 @@ def test_the_applications_own_origin_is_allowed(client, account):
         "/api/auth/refresh", headers={"Origin": str(client.base_url).rstrip("/")}
     )
     assert r.status_code == 200, r.text
+
+
+def test_a_phone_on_the_laptops_network_address_can_refresh(client, account):
+    """The page reaches the API through the Next.js proxy, which records the
+    host the browser used. A phone at the laptop's Wi-Fi address is that
+    application's own origin, not a foreign one (17 November)."""
+    sign_in(client, account)
+    r = client.post(
+        "/api/auth/refresh",
+        headers={
+            "Origin": "http://192.168.1.20:3000",
+            "X-Forwarded-Host": "192.168.1.20:3000",
+            "X-Forwarded-Proto": "http",
+        },
+    )
+    assert r.status_code == 200, r.text
+
+
+def test_a_foreign_origin_through_the_proxy_is_still_refused(client, account):
+    """A page on another site, sending its request to the laptop: the proxy
+    records the laptop's host, so the foreign Origin does not match it."""
+    sign_in(client, account)
+    r = client.post(
+        "/api/auth/refresh",
+        headers={
+            "Origin": "http://evil.example",
+            "X-Forwarded-Host": "192.168.1.20:3000",
+            "X-Forwarded-Proto": "http",
+        },
+    )
+    assert r.status_code == 403
+
+
+def test_the_forwarded_scheme_must_match_too(client, account):
+    sign_in(client, account)
+    r = client.post(
+        "/api/auth/refresh",
+        headers={
+            "Origin": "https://192.168.1.20:3000",
+            "X-Forwarded-Host": "192.168.1.20:3000",
+            "X-Forwarded-Proto": "http",
+        },
+    )
+    assert r.status_code == 403

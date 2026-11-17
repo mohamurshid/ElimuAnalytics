@@ -346,3 +346,40 @@ Closing the `tasks tunnel` window closes the address; nothing is reachable
 from outside after that. Answers given on a phone are kept on the phone until
 saved, so a dropped connection loses nothing: the next visit to the quiz page
 offers **Save them now**.
+
+---
+
+## 9. Phones on the same Wi-Fi (no tunnel)
+
+When the teachers are in the same room as the laptop, their phones can use the
+laptop directly over the Wi-Fi, with no ngrok and no account anywhere.
+
+Two windows, as usual:
+
+```cmd
+tasks run
+tasks web
+```
+
+Then, in a third:
+
+```cmd
+tasks lan
+```
+
+It prints the address to give the teachers, e.g. `http://192.168.1.20:3000`.
+The frontend allows the laptop's own network addresses by itself, read when
+`tasks web` starts, so after joining a different network restart `tasks web`.
+
+- **A phone cannot connect.** Windows must treat the Wi-Fi as a *Private*
+  network (Settings > Network & internet > Wi-Fi > the network), and Node.js
+  must be allowed through Windows Defender Firewall on Private networks (the
+  prompt the first time `tasks web` runs, or Allow an app through firewall).
+  A phone hotspot from the laptop works the same way. Some guest or school
+  networks keep devices apart (client isolation); then use the tunnel in
+  section 8 instead.
+- **Google sign-in** does not work on this address: Google only returns to
+  `localhost` or an `https` address. Teachers sign in with their email and the
+  password they chose with their setup code.
+- **Set JWT_SECRET** before real teachers use it (Step 3 of section 2), so sessions are
+  not signed with the published development key.

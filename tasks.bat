@@ -14,6 +14,7 @@ REM   tasks query   retrieve against the corpus: tasks query "text" "Grade 5" "S
 REM   tasks run     start the backend development server
 REM   tasks web     start the Next.js frontend (http://localhost:3000)
 REM   tasks tunnel  open the PUBLIC_URL ngrok address to the frontend, for phones (UAT)
+REM   tasks lan     show the address phones on the same Wi-Fi open, no tunnel needed
 REM   tasks webci   frontend lint, typecheck and build
 REM   tasks ci      everything CI runs, locally, before you push
 REM   tasks gen     measure question generation (plan only; add --go to call the API)
@@ -118,6 +119,16 @@ cd frontend
 npm run dev
 goto end
 
+:lan
+echo Phones on the same Wi-Fi as this laptop open:
+powershell -NoProfile -Command "Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.IPAddress -match '^(10|192\.168|172\.(1[6-9]|2[0-9]|3[01]))\.' } | ForEach-Object { '   http://' + $_.IPAddress + ':3000' }"
+echo.
+echo Start "tasks run" and "tasks web" first (restart "tasks web" if this address is new).
+echo No address, or a phone cannot connect: set the Wi-Fi to a Private network in Windows
+echo and allow Node.js through Windows Defender Firewall on Private networks.
+echo Sign in with the email and password; Google sign-in works only on localhost or a tunnel.
+goto end
+
 :tunnel
 if "%PUBLIC_URL%"=="" (
   echo PUBLIC_URL is not set. Run once:  setx PUBLIC_URL https://your-name.ngrok-free.app
@@ -155,7 +166,7 @@ echo CI checks FAILED. Fix before pushing.
 exit /b 1
 
 :help
-echo Usage: tasks [setup^|test^|lint^|fix^|seed^|newschool^|extract^|ingest^|rubrics^|check^|query^|gen^|run^|web^|tunnel^|webci^|ci]
+echo Usage: tasks [setup^|test^|lint^|fix^|seed^|newschool^|extract^|ingest^|rubrics^|check^|query^|gen^|run^|web^|tunnel^|lan^|webci^|ci]
 goto end
 
 :end

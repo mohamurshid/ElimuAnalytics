@@ -199,7 +199,7 @@ export default function ClassPage() {
         actions={
           <ButtonLink href={`/classrooms/${classId}/roll`} variant="secondary">
             <Icon name="users" />
-            Manage learners
+            Learners
           </ButtonLink>
         }
       />

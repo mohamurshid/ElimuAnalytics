@@ -65,7 +65,7 @@ export default function StaffPage() {
     return (
       <>
         <PageHeader back={{ href: "/profile", label: "Profile" }} title="Teachers" />
-        <Note>Only a head teacher can manage teachers&rsquo; accounts.</Note>
+        <Note>Only a head teacher can add teachers or change their accounts.</Note>
       </>
     );
   }
@@ -197,7 +197,7 @@ function RolePicker({ value, onChange }: { value: Role; onChange: (r: Role) => v
   return (
     <Select label="Role" value={value} onChange={(e) => onChange(e.target.value as Role)}>
       <option value="teacher">Teacher</option>
-      <option value="school_admin">Head teacher - can also manage teachers and classes</option>
+      <option value="school_admin">Head teacher - can also add teachers and classes</option>
     </Select>
   );
 }

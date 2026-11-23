@@ -115,11 +115,11 @@ export default function ProfilePage() {
             <div className="min-w-0 flex-1">
               <h2 className="text-base font-semibold text-ink">Teachers at your school</h2>
               <p className="mt-0.5 text-sm text-ink-muted">
-                Add teachers, give them setup codes, and manage their accounts.
+                Add teachers, give them setup codes, and turn their accounts off or on.
               </p>
             </div>
             <ButtonLink href="/staff" variant="secondary">
-              Manage teachers <Icon name="chevronRight" className="size-4" />
+              Teachers <Icon name="chevronRight" className="size-4" />
             </ButtonLink>
           </Card>
         )}

@@ -45,6 +45,12 @@
  * The session itself - quiz, who has answered, the PIN - is kept for the tab
  * (sessionStorage), so a reload, by a child or by accident, comes back in
  * quiz mode instead of quietly leaving it.
+ *
+ * **A practice set is one learner's quiz** (November). Opened from the
+ * learner's page with `?practice=<quiz>&learner=<student>`, the session asks
+ * the questions the server chose from that learner's level, and only that
+ * learner is offered the device. Everything else - the PIN, the lock, saving
+ * the answers - is the same as a class quiz.
  */
 
 import { useParams, useRouter } from "next/navigation";
@@ -89,6 +95,8 @@ type SavedSession = {
   answers: Answer[];
   batchId: string;
   pin: string;
+  /** Set for a practice set: the one learner it was chosen for. */
+  only?: string | null;
 };
 
 const sessionKey = (classId: string) => `elimu.quizmode.${classId}`;
@@ -158,6 +166,38 @@ export default function AdministerPage() {
 
   const inSession = phase !== "setup";
 
+  // A practice set opened from a learner's page, read once from the address.
+  // Like the saved session above, this page only renders in the browser.
+  const [practice] = useState<{ quizId: string; studentId: string } | null>(() => {
+    try {
+      const query = new URLSearchParams(window.location.search);
+      const quizId = query.get("practice");
+      const studentId = query.get("learner");
+      return quizId && studentId ? { quizId, studentId } : null;
+    } catch {
+      return null; // no window: not in a browser, so no practice set to open
+    }
+  });
+  const [practiceSet, setPracticeSet] = useState<QuizSet | null>(null);
+  const [only, setOnly] = useState<string | null>(restored?.only ?? null);
+  useEffect(() => {
+    if (!practice) return;
+    let cancelled = false;
+    api
+      .get<QuizSet>(`/api/quizzes/${practice.quizId}`)
+      .then((set) => {
+        if (cancelled) return;
+        setPracticeSet(set);
+        setStrandId(set.strand_id);
+      })
+      .catch((e) => {
+        if (!cancelled) setError(errorMessage(e, "Could not load the practice set"));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [practice]);
+
   /* --- keep the session for this tab ----------------------------------- */
   useEffect(() => {
     if (!inSession || !quiz) {
@@ -173,12 +213,13 @@ export default function AdministerPage() {
         answers,
         batchId,
         pin: sessionPin,
+        only,
       };
       sessionStorage.setItem(sessionKey(classId), JSON.stringify(saved));
     } catch {
       // Storage unavailable: the session lives in the page, as before.
     }
-  }, [inSession, quiz, strandId, answered, done, answers, batchId, sessionPin, classId]);
+  }, [inSession, quiz, strandId, answered, done, answers, batchId, sessionPin, only, classId]);
 
   /* --- trap the back button ------------------------------------------- */
   useEffect(() => {
@@ -255,12 +296,16 @@ export default function AdministerPage() {
     try {
       // A saved quiz: the server chooses the questions once, so every
       // learner handed the device in this session gets the same set.
+      // A practice set was chosen already, for one learner; a class quiz is
+      // chosen now.
       const [loaded, taken] = await Promise.all([
-        api.post<QuizSet>(`/api/classrooms/${classId}/quizzes`, {
-          strand_id: strandId,
-          length,
-          mode: "device",
-        }),
+        practiceSet
+          ? api.get<QuizSet>(`/api/quizzes/${practiceSet.quiz_id}`)
+          : api.post<QuizSet>(`/api/classrooms/${classId}/quizzes`, {
+              strand_id: strandId,
+              length,
+              mode: "device",
+            }),
         api.get<AnsweredPairs>(`/api/assessments/answered/${classId}/${strandId}`),
       ]);
       if (loaded.items.length === 0) {
@@ -277,6 +322,7 @@ export default function AdministerPage() {
       setBatchId(newBatchId());
       setSessionPin(pin);
       setPin("");
+      setOnly(practiceSet && practice ? practice.studentId : null);
       setPhase("roster");
     } catch (e) {
       setError(errorMessage(e, "Could not load the quiz"));
@@ -450,6 +496,9 @@ export default function AdministerPage() {
     ? `${classroom.grade}${classroom.name ? ` ${classroom.name}` : ""}`
     : "Classroom";
   const chosen = strands.find((s) => s.strand_id === strandId);
+  // A practice set is offered only to the learner it was chosen for.
+  const roster = only ? roll.filter((s) => s.student_id === only) : roll;
+  const practiceFor = practice ? roll.find((s) => s.student_id === practice.studentId) : undefined;
 
   /* --- setup: the only phase with a way out ---------------------------- */
   if (!inSession) {
@@ -492,6 +541,19 @@ export default function AdministerPage() {
         {ready && strands.length > 0 && (
           <Card className="mt-4 p-4 sm:p-6">
             <form onSubmit={start} className="space-y-5">
+              {practiceSet ? (
+                <div>
+                  <p className="text-[15px] font-semibold text-ink">
+                    Practice set{practiceFor ? ` for ${practiceFor.name}` : ""}
+                  </p>
+                  <p className="mt-1 text-sm text-ink-muted">
+                    {practiceSet.strand} · {practiceSet.items.length}{" "}
+                    {practiceSet.items.length === 1 ? "question" : "questions"} chosen
+                    from this learner’s level. Only they will be offered the device.
+                  </p>
+                </div>
+              ) : (
+              <>
               <Select
                 label="Strand"
                 value={strandId}
@@ -520,6 +582,8 @@ export default function AdministerPage() {
                 onChange={setLength}
                 available={chosen?.active_items}
               />
+              </>
+              )}
 
               <Field
                 label="Choose a 4-digit PIN"
@@ -538,7 +602,7 @@ export default function AdministerPage() {
                 className="w-full sm:w-auto"
               >
                 <Icon name="phone" className="size-5" />
-                {busy ? "Starting…" : "Start quiz"}
+                {busy ? "Starting…" : practiceSet ? "Start practice" : "Start quiz"}
               </Button>
             </form>
           </Card>
@@ -571,7 +635,7 @@ export default function AdministerPage() {
             </div>
 
             <ul className="mt-5 grid grid-cols-2 gap-2 sm:grid-cols-3">
-              {roll.map((student) => {
+              {roster.map((student) => {
                 const left = remainingFor(student).length;
                 const justFinished = done.has(student.student_id);
                 const nothingLeft = left === 0;
@@ -614,7 +678,7 @@ export default function AdministerPage() {
               })}
             </ul>
 
-            {roll.every((s) => remainingFor(s).length === 0) && (
+            {roster.every((s) => remainingFor(s).length === 0) && (
               <div className="mt-4">
                 <Note>
                   Every learner has already answered every question in this quiz. Each

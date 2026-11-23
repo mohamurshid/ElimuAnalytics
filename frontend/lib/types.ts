@@ -234,7 +234,7 @@ export type Quiz = {
  *  and the device. Like Quiz, it carries no key. */
 export type QuizSet = Quiz & {
   quiz_id: string;
-  mode: "device" | "paper";
+  mode: "device" | "paper" | "practice";
   created_at: string | null;
   /** Each item's number in the quiz as made - unchanged when one is withdrawn,
    *  so column 4 of the grid is still question 4 on the printed sheet. */
@@ -243,11 +243,26 @@ export type QuizSet = Quiz & {
   withdrawn: number;
 };
 
+/** A few questions chosen for one learner from their own level: those the
+ *  2-PL model gives them about a 70% chance of answering. No key. */
+export type PracticeSet = {
+  quiz_id: string;
+  class_id: string;
+  student_id: string;
+  strand_id: string;
+  strand: string;
+  theta: number;
+  tier: string;
+  target: number;
+  items: { item_id: string; question_text: string; chance: number }[];
+  uncalibrated: number;
+};
+
 export type QuizSummary = {
   quiz_id: string;
   strand_id: string;
   strand: string;
-  mode: "device" | "paper";
+  mode: "device" | "paper" | "practice";
   questions: number;
   created_at: string | null;
 };

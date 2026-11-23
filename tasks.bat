@@ -9,6 +9,7 @@ REM   tasks newschool  create a school and its first head teacher (asks, or --sc
 REM   tasks extract rebuild the curriculum corpus JSON from the KICD PDFs
 REM   tasks ingest  load the KICD curriculum corpus into curriculum_chunk
 REM   tasks rubrics load the KICD rubric indicators the observation grid marks against
+REM   tasks demopractice  add demo questions and simulated answers so practice sets can be shown
 REM   tasks check   verify pgvector retrieval against numpy on the stored vectors
 REM   tasks query   retrieve against the corpus: tasks query "text" "Grade 5" "Science and Technology"
 REM   tasks run     start the backend development server
@@ -82,6 +83,12 @@ goto end
 call .venv\Scripts\activate
 cd backend
 python -m app.ingest_rubrics %2 %3
+goto end
+
+:demopractice
+call .venv\Scripts\activate
+cd backend
+python -m app.demo_practice
 goto end
 
 :check
@@ -166,7 +173,7 @@ echo CI checks FAILED. Fix before pushing.
 exit /b 1
 
 :help
-echo Usage: tasks [setup^|test^|lint^|fix^|seed^|newschool^|extract^|ingest^|rubrics^|check^|query^|gen^|run^|web^|tunnel^|lan^|webci^|ci]
+echo Usage: tasks [setup^|test^|lint^|fix^|seed^|newschool^|extract^|ingest^|rubrics^|demopractice^|check^|query^|gen^|run^|web^|tunnel^|lan^|webci^|ci]
 goto end
 
 :end

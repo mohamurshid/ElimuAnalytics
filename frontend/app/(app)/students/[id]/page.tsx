@@ -50,9 +50,9 @@ import { Legend } from "@/components/Heatmap";
 import { Icon } from "@/components/Icon";
 import { LevelAvatar, LevelChip } from "@/components/Level";
 import { ObservedLevels } from "@/components/ObservedLevels";
-import { Badge, Button, Card, Empty, Loading, Note, PageHeader } from "@/components/ui";
+import { Badge, Button, ButtonLink, Card, Empty, Loading, Note, PageHeader } from "@/components/ui";
 import { api, ApiError, downloadFile, errorMessage } from "@/lib/api";
-import type { LearnerDiagnostics, Report } from "@/lib/types";
+import type { LearnerDiagnostics, PracticeSet, Report } from "@/lib/types";
 
 const MINIMUM = 5;
 
@@ -228,6 +228,66 @@ function ReportCard({
   );
 }
 
+/**
+ * A practice set: the questions the 2-PL model gives this learner about a 70%
+ * chance of answering - within reach, not yet secure. Chosen by the model from
+ * approved questions the learner has not answered, so it moves with them:
+ * answers are recorded like any others, and the next set is chosen from the
+ * new level.
+ */
+function PracticeCard({ set, learner }: { set: PracticeSet; learner: string }) {
+  const first = learner.split(" ")[0];
+  const target = Math.round(set.target * 100);
+  // The nearest questions are always returned, but "about 70%" is only true
+  // when the bank has questions near this learner's level. Said plainly when
+  // it does not, rather than labelling a 13% question as within reach.
+  const best = Math.max(...set.items.map((i) => i.chance));
+  const tooHard = best < set.target - 0.15;
+  const tooEasy = Math.min(...set.items.map((i) => i.chance)) > set.target + 0.15;
+  return (
+    <section className="mt-4 rounded-xl bg-surface p-4">
+      <p className="text-[15px] font-semibold text-ink">
+        Practice set for {first}: {set.items.length}{" "}
+        {set.items.length === 1 ? "question" : "questions"}
+      </p>
+      <p className="mt-1 text-sm text-ink-muted">
+        {tooHard
+          ? `None of the questions ${first} has not yet answered is near a ${target}% chance for ${first}, so these are the closest — harder than ideal. The percentage is ${first}’s predicted chance of getting each right; more questions at ${first}’s level would help.`
+          : tooEasy
+            ? `Every question left is easier than ${first} needs, so these are the closest to a ${target}% chance. Harder questions on this sub-strand would stretch ${first} further.`
+            : `Chosen from ${first}’s level on this sub-strand: the questions closest to a ${target}% chance of getting right — within reach, but not yet secure. The percentage is ${first}’s predicted chance for each.`}
+      </p>
+      <ol className="mt-3 space-y-2">
+        {set.items.map((item, n) => (
+          <li key={item.item_id} className="flex gap-3 text-[15px] leading-snug text-ink">
+            <span className="w-5 shrink-0 tabular-nums text-ink-subtle">{n + 1}.</span>
+            <span className="min-w-0 flex-1">{item.question_text}</span>
+            <span className="shrink-0 text-sm tabular-nums text-ink-muted">
+              {Math.round(item.chance * 100)}%
+            </span>
+          </li>
+        ))}
+      </ol>
+      {set.uncalibrated > 0 && (
+        <p className="mt-3 text-sm text-ink-subtle">
+          {set.uncalibrated} newer {set.uncalibrated === 1 ? "question was" : "questions were"}{" "}
+          left out: they have no difficulty yet. Recalibrate once some learners have
+          answered them.
+        </p>
+      )}
+      <div className="mt-4">
+        <ButtonLink
+          variant="primary"
+          href={`/classrooms/${set.class_id}/administer?practice=${set.quiz_id}&learner=${set.student_id}`}
+        >
+          <Icon name="phone" className="size-4" />
+          Give on this device
+        </ButtonLink>
+      </div>
+    </section>
+  );
+}
+
 export default function LearnerPage() {
   const { id } = useParams<{ id: string }>();
   const [data, setData] = useState<LearnerDiagnostics | null>(null);
@@ -239,6 +299,11 @@ export default function LearnerPage() {
   const [open, setOpen] = useState<string | null>(null);
   const [stalled, setStalled] = useState(false);
   const [downloading, setDownloading] = useState<string | null>(null);
+  // Practice sets made in this visit, by strand. Each is saved on the server
+  // as a quiz, so the device session asks exactly these questions.
+  const [practice, setPractice] = useState<Record<string, PracticeSet>>({});
+  const [choosing, setChoosing] = useState<string | null>(null);
+  const [practiceError, setPracticeError] = useState<{ strand: string; text: string } | null>(null);
   // Only to re-render the elapsed counter; the value is never read.
   const [, setTick] = useState(0);
 
@@ -416,6 +481,28 @@ export default function LearnerPage() {
     }
   }
 
+  /** Choose a practice set for this learner from their level on the strand. */
+  async function makePractice(strandId: string) {
+    if (choosing) return;
+    setChoosing(strandId);
+    setPracticeError(null);
+    try {
+      const set = await api.post<PracticeSet>(`/api/students/${id}/practice`, {
+        strand_id: strandId,
+      });
+      setPractice((prev) => ({ ...prev, [strandId]: set }));
+    } catch (e) {
+      // A 409 carries the server's own sentence: no level yet, or nothing
+      // left that can be placed. Shown as it is, under the strand it is about.
+      setPracticeError({
+        strand: strandId,
+        text: errorMessage(e, "Could not choose a practice set"),
+      });
+    } finally {
+      setChoosing(null);
+    }
+  }
+
   async function save(report: Report) {
     setDownloading(report.report_id);
     setReportError(null);
@@ -558,6 +645,19 @@ export default function LearnerPage() {
                           </>
                         )}
 
+                        <Button
+                          variant="ghost"
+                          disabled={choosing !== null}
+                          onClick={() => makePractice(cell.strand_id)}
+                        >
+                          <Icon name="book" className="size-4" />
+                          {choosing === cell.strand_id
+                            ? "Choosing…"
+                            : practice[cell.strand_id]
+                              ? "Choose again"
+                              : "Practice set"}
+                        </Button>
+
                         {busy && (
                           <span className="w-full text-sm text-ink-muted">
                             English and Kiswahili, about half a minute. Leaving
@@ -565,6 +665,16 @@ export default function LearnerPage() {
                           </span>
                         )}
                       </div>
+                    )}
+
+                    {practiceError?.strand === cell.strand_id && (
+                      <div className="mt-3">
+                        <Note tone="warn">{practiceError.text}</Note>
+                      </div>
+                    )}
+
+                    {practice[cell.strand_id] && (
+                      <PracticeCard set={practice[cell.strand_id]} learner={data.name} />
                     )}
 
                     {expanded && report && (

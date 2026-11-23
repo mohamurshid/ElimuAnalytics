@@ -42,6 +42,7 @@ from .irt import ResponseMatrixError
 from .items import router as items_router
 from .models import Teacher
 from .observations import router as observations_router
+from .practice import router as practice_router
 from .quizzes import router as quizzes_router
 from .reporting import router as reports_router
 from .security import ALLOWED_ORIGINS, secret_is_default
@@ -105,6 +106,7 @@ app.include_router(class_strands_router)
 app.include_router(generation_router)
 app.include_router(quizzes_router)
 app.include_router(observations_router)
+app.include_router(practice_router)
 app.include_router(staff_router)
 app.include_router(google_router)
 app.include_router(reports_router)

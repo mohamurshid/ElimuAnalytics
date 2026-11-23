@@ -59,6 +59,10 @@ RUBRIC_LEVELS = [name for _cut, name in TIER_CUTS]
 # by a number, cannot do it in 200. A limit that is always breached teaches the
 # model to ignore limits.
 MAX_WORDS = 250
+# A report that also carries next steps (Paragraph 4) needs room for them.
+# Only reports with a practice plan get the longer limit, so a report without
+# one is the prompt the earlier measurements describe, word for word.
+PLAN_WORDS = 330
 
 # claude-sonnet-5-5 was dropped after the 14 October run: 9.5x the cost of
 # haiku-5-5 ($0.009944 against $0.001139 for the same Kiswahili report) for an
@@ -180,6 +184,10 @@ def failure_block(pattern: dict | None) -> str:
         lines.append(f"  - {item['question']}")
         lines.append(f"      chose:   {item['chose']}")
         lines.append(f"      correct: {item['correct']}")
+        # The note a teacher approved for this wrong option, when the
+        # question has one: what choosing it usually means.
+        if item.get("misconception"):
+            lines.append(f"      usually means: {item['misconception']}")
 
     if pattern.get("unreported_failures"):
         lines.append(
@@ -238,6 +246,54 @@ def observation_block(observations: list[dict] | None) -> str:
     return "\n".join(lines)
 
 
+def practice_block(practice: list[dict] | None) -> str:
+    """The questions the IRT model chose for this learner to practise next.
+
+    Returns "" when there are none, and the report is then the three-paragraph
+    report it always was. The question wording is not curriculum text, so,
+    like the observations, it must not be quoted.
+    """
+    if not practice:
+        return ""
+    lines = [
+        "",
+        "PRACTICE QUESTIONS CHOSEN FOR THIS LEARNER (approved questions the learner "
+        "has not answered, chosen by the IRT model because the learner's predicted "
+        "chance of answering each correctly is near 70% - within reach but not yet "
+        "secure; the predicted chance is shown):",
+    ]
+    for p in practice:
+        lines.append(f"  - {p['question']} ({round(p['chance'] * 100)}%)")
+    lines.append(
+        "  Refer to these by what they ask, never by a number, and do NOT put "
+        "quotation marks around them: they are not curriculum text."
+    )
+    return "\n".join(lines)
+
+
+def next_steps_instruction(tier: str) -> str:
+    """Paragraph 4, adapted to the learner's level."""
+    if tier in ("Below expectation", "Approaches expectation"):
+        order = (
+            "Because the learner is not yet at Meets expectation, the teacher should "
+            "first re-teach the idea behind the misconception or weakest observed "
+            "indicator using the Paragraph 3 activity, and only then give the practice "
+            "questions."
+        )
+    else:
+        order = (
+            "Because the learner is at or above Meets expectation, the practice "
+            "questions are a stretch: the teacher can give them straight away and use "
+            "the Paragraph 3 activity to extend the learner."
+        )
+    return (
+        "Paragraph 4: Next steps for this learner. " + order + " Name the practice "
+        "questions above by what they ask. Then say what the teacher should look for "
+        "to know the gap is closing: which misconception or observed indicator to "
+        "check again, and at which next quiz or observed task."
+    )
+
+
 def build_prompt(
     learner: LearnerFacts,
     chunk_texts: list[str],
@@ -246,6 +302,7 @@ def build_prompt(
     strict: bool = True,
     failure_pattern: dict | None = None,
     observations: list[dict] | None = None,
+    practice: list[dict] | None = None,
 ) -> str:
     """The full prompt. `chunk_texts` are curriculum chunks as stored."""
     context = "\n\n".join(chunk_texts)
@@ -265,6 +322,12 @@ def build_prompt(
     )
 
     design_grade = learner.curriculum_grade or learner.grade
+    # Next steps only when there is something to practise; otherwise the
+    # prompt is unchanged from the one the report measurements describe.
+    plan = bool(practice)
+    shape = "4-paragraph" if plan else "3-paragraph"
+    words = PLAN_WORDS if plan else MAX_WORDS
+    paragraph_4 = f"\n{next_steps_instruction(learner.tier)}" if plan else ""
 
     return f"""{opening}
 
@@ -279,20 +342,20 @@ LEARNER PERFORMANCE:
 - KICD rubric level: {learner.tier}
 {evidence_line}
 - Flagged as at-risk for {learner.consecutive_flags} consecutive assessments
-{failure_block(failure_pattern)}{observation_block(observations)}
+{failure_block(failure_pattern)}{observation_block(observations)}{practice_block(practice)}
 
 The KICD rubric levels are: {", ".join(RUBRIC_LEVELS)}
 
-Write a 3-paragraph report addressed to the class teacher:
+Write a {shape} report addressed to the class teacher:
 Paragraph 1: Summarise the learner's current standing against the KICD rubric level.
 Paragraph 2: Identify the specific gap, referencing the Specific Learning Outcomes
              from the curriculum context above.
 Paragraph 3: Recommend ONE concrete classroom activity, drawn directly from the
-             Suggested Learning Experiences in the curriculum context.
+             Suggested Learning Experiences in the curriculum context.{paragraph_4}
 {citation_line}
 {NO_GENDER}
 
-{language_line} Maximum {MAX_WORDS} words. Do not invent curriculum content that is
+{language_line} Maximum {words} words. Do not invent curriculum content that is
 not present in the context above. If the curriculum context does not cover this
 learner's sub-strand, say so explicitly instead of writing a recommendation."""
 

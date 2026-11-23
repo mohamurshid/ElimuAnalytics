@@ -21,6 +21,7 @@ from app.reports import (
     MAX_WORDS,
     MODEL,
     NO_GENDER,
+    PLAN_WORDS,
     PRICING,
     RUBRIC_LEVELS,
     STRICT_CITATION,
@@ -29,6 +30,7 @@ from app.reports import (
     build_prompt,
     failure_block,
     generate,
+    practice_block,
     price,
     report_text,
     set_generator,
@@ -520,3 +522,56 @@ def test_the_rule_travels_with_the_citation_requirement():
 
     assert "reserved for that citation" in strict
     assert "reserved for that citation" not in loose
+
+
+# --------------------------------------------------------------------------
+# Next steps: the practice set and the misconceptions behind wrong options
+# --------------------------------------------------------------------------
+PRACTICE = [
+    {"question": "Why do people wear woollen clothes on a cold morning?", "chance": 0.68},
+    {"question": "How does the sun's heat reach the earth?", "chance": 0.55},
+]
+
+
+def test_without_a_practice_set_the_report_is_the_three_paragraph_one():
+    prompt = build_prompt(CHEBET, [CHUNK])
+    assert "Paragraph 4" not in prompt and "PRACTICE QUESTIONS" not in prompt
+    assert f"Maximum {MAX_WORDS} words" in prompt
+    assert build_prompt(CHEBET, [CHUNK], practice=[]) == prompt
+
+
+def test_a_practice_set_adds_next_steps_and_room_for_them():
+    prompt = build_prompt(CHEBET, [CHUNK], practice=PRACTICE)
+    assert "Write a 4-paragraph report" in prompt
+    assert "Paragraph 4: Next steps for this learner." in prompt
+    assert f"Maximum {PLAN_WORDS} words" in prompt
+    for p in PRACTICE:
+        assert p["question"] in prompt
+    assert "(68%)" in prompt
+
+
+def test_the_practice_questions_are_never_to_be_quoted():
+    """Question wording is not curriculum text: a quoted one would be scored
+    as a fabricated citation and refuse the whole report."""
+    block = practice_block(PRACTICE)
+    assert "do NOT put quotation marks around them" in block
+    assert "never by a number" in block
+    assert practice_block(None) == "" and practice_block([]) == ""
+
+
+def test_next_steps_are_adapted_to_the_level():
+    below = build_prompt(CHEBET, [CHUNK], practice=PRACTICE)
+    assert "first re-teach" in below
+    meets = LearnerFacts(**{**CHEBET.__dict__, "theta": 0.6, "tier": "Meets expectation"})
+    above = build_prompt(meets, [CHUNK], practice=PRACTICE)
+    assert "a stretch" in above and "first re-teach" not in above
+
+
+def test_a_wrong_option_carries_its_approved_misconception():
+    pattern = {**PATTERN, "failed_items": [
+        {**PATTERN["failed_items"][0], "misconception": "Thinks cloth passes heat well"},
+        PATTERN["failed_items"][1],
+    ]}
+    block = failure_block(pattern)
+    assert "usually means: Thinks cloth passes heat well" in block
+    assert block.count("usually means") == 1  # only where there is a note

@@ -89,6 +89,7 @@ from .db import get_session, get_session_factory
 from .irt import ResponseMatrixError
 from .models import Report, Strand, Student, Teacher
 from .observations import learner_observations
+from .practice import current_estimate, plan_for
 from .reports import LearnerFacts, build_prompt, generate
 from .retrieval import retrieve
 
@@ -449,6 +450,15 @@ def _generate_into(
         session, student.student_id, strand.strand_id
     )
     observed = learner_observations(session, student.student_id, strand.strand_id)
+    # The questions the Practice set button would choose for this learner now,
+    # so the report's next steps and the set the teacher gives are the same.
+    # Taken from the class estimate, as the button takes it.
+    estimate = current_estimate(session, student.student_id, student.class_id, strand.strand_id)
+    practice = (
+        plan_for(session, student.student_id, strand.strand_id, float(estimate["theta"]))
+        if estimate and estimate["theta"] is not None
+        else []
+    )
     strand_name, sub_strand = split_strand_name(strand.name)
 
     facts = LearnerFacts(
@@ -484,7 +494,7 @@ def _generate_into(
                 generate,
                 build_prompt(
                     facts, chunk_texts, language=language, failure_pattern=pattern,
-                    observations=observed,
+                    observations=observed, practice=practice,
                 ),
             )
             for language in languages

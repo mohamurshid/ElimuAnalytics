@@ -362,12 +362,17 @@ def learner_failure_pattern(
         ):
             unreported += 1
             continue
+        notes = item.misconceptions or []
+        note = notes[chosen] if chosen < len(notes) else None
         failed_items.append(
             {
                 "item_id": item.item_id,
                 "question": item.question_text,
                 "chose": options[chosen],
                 "correct": options[key],
+                # What choosing this option usually means, as written on the
+                # question and approved by a teacher. None where there is none.
+                "misconception": note if isinstance(note, str) and note.strip() else None,
             }
         )
 

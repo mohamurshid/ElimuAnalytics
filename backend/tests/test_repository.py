@@ -37,7 +37,7 @@ from app.repository import (
 )
 from app.seed import NAMED, QUESTION_BANK, simulated_choices, simulated_responses
 from girth import INVALID_RESPONSE
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
@@ -322,3 +322,23 @@ def test_random_distractors_do_not_form_a_planted_pattern():
         if len(wrong) > 1:
             spread_seen += 1
     assert spread_seen >= len(QUESTION_BANK) - 2
+
+
+def test_a_wrong_answer_carries_the_misconception_noted_for_its_option(session):
+    """The report's next steps lean on these notes, so they must come through
+    for the option actually chosen, and only where a note exists."""
+    student = session.students[0]
+    wrong = session.scalars(
+        select(Response).where(Response.student_id == student.student_id,
+                               Response.correctness.is_(False))
+    ).first()
+    item = session.get(Item, wrong.item_id)
+    notes = [None] * len(item.options)
+    notes[wrong.selected_option] = "Thinks heat only moves by touch"
+    item.misconceptions = notes
+    session.commit()
+
+    pattern = learner_failure_pattern(session, student.student_id, session.strand_id)
+    by_item = {f["item_id"]: f for f in pattern["failed_items"]}
+    assert by_item[item.item_id]["misconception"] == "Thinks heat only moves by touch"
+    assert all(f["misconception"] is None for i, f in by_item.items() if i != item.item_id)

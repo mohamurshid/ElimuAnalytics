@@ -955,3 +955,48 @@ def test_the_filename_survives_an_awkward_name():
     assert filename_for("Chebet K.", None).startswith("report-chebet-k-")
     assert filename_for("   ", None).startswith("report-learner-")
     assert filename_for("O'Brien-Smith", None).startswith("report-o-brien-smith-")
+
+
+# --------------------------------------------------------------------------
+# Next steps name the practice set the button would choose
+# --------------------------------------------------------------------------
+def test_next_steps_name_the_practice_set_the_button_would_choose(
+    client, head, heat, session  # noqa: F811
+):
+    from app.models import Item
+
+    for n, item in enumerate(session.scalars(select(Item).order_by(Item.item_id))):
+        item.difficulty_b, item.discrimination_a = -1.5 + n * 0.25, 1.2
+    fresh = Item(strand_id=heat.strand_id, question_text="Which surface absorbs most heat?",
+                 options=["White", "Black"], correct_option=1, status="approved",
+                 difficulty_b=-2.4, discrimination_a=1.0)
+    session.add(fresh)
+    session.commit()
+
+    prompts: list[str] = []
+
+    def spy(**kwargs):
+        prompts.append(kwargs["messages"][0]["content"])
+        return response(GROUNDED_REPORT)
+
+    set_generator(spy)
+    post(client, chebet(session), heat, head)
+    assert len(prompts) == 2
+    for prompt in prompts:
+        assert "PRACTICE QUESTIONS CHOSEN FOR THIS LEARNER" in prompt
+        assert "Which surface absorbs most heat?" in prompt
+        assert "Paragraph 4" in prompt
+
+
+def test_with_nothing_left_to_practise_the_report_is_unchanged(
+    client, head, heat, session  # noqa: F811
+):
+    prompts: list[str] = []
+
+    def spy(**kwargs):
+        prompts.append(kwargs["messages"][0]["content"])
+        return response(GROUNDED_REPORT)
+
+    set_generator(spy)
+    post(client, chebet(session), heat, head)
+    assert prompts and all("Paragraph 4" not in p for p in prompts)

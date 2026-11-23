@@ -133,7 +133,36 @@ class PracticeOut(BaseModel):
     uncalibrated: int
 
 
-def _theta(session: Session, student_id: uuid.UUID, class_id: uuid.UUID,
+def unanswered(session: Session, student_id: uuid.UUID, strand_id: uuid.UUID) -> list[Item]:
+    """Approved questions on the strand this learner has not answered and
+    that a device can mark (options and a key)."""
+    taken = set(
+        session.scalars(select(Response.item_id).where(Response.student_id == student_id))
+    )
+    return [
+        i for i in session.scalars(
+            select(Item).where(Item.strand_id == strand_id, Item.status.in_(SERVED))
+        )
+        if i.item_id not in taken and i.options and i.correct_option is not None
+    ]
+
+
+def plan_for(session: Session, student_id: uuid.UUID, strand_id: uuid.UUID,
+             theta: float, length: int = DEFAULT_LENGTH) -> list[dict]:
+    """The practice set a report recommends: the same choice the Practice set
+    button makes for the same data, as question text and predicted chance.
+    Nothing is saved; the teacher makes the set from the learner's page."""
+    fresh = unanswered(session, student_id, strand_id)
+    by_id = {str(i.item_id): i for i in fresh}
+    chosen = choose_practice(
+        theta, [Calibrated(str(i.item_id), i.difficulty_b, i.discrimination_a) for i in fresh],
+        length,
+    )
+    return [{"question": by_id[item_id].question_text, "chance": round(p, 2)}
+            for item_id, p in chosen]
+
+
+def current_estimate(session: Session, student_id: uuid.UUID, class_id: uuid.UUID,
            strand_id: uuid.UUID) -> dict | None:
     """This learner's current estimate on the strand, computed as the heatmap
     computes it: one calibration (or the stored parameters) for the class."""
@@ -163,7 +192,7 @@ def make_practice(
     if not student.is_active:
         raise HTTPException(status_code=409, detail="This learner has been withdrawn.")
 
-    estimate = _theta(session, student.student_id, student.class_id, body.strand_id)
+    estimate = current_estimate(session, student.student_id, student.class_id, body.strand_id)
     if estimate is None or estimate["theta"] is None:
         answered = estimate["answered"] if estimate else 0
         raise HTTPException(
@@ -176,18 +205,8 @@ def make_practice(
         )
     theta = float(estimate["theta"])
 
-    taken = set(
-        session.scalars(
-            select(Response.item_id).where(Response.student_id == student.student_id)
-        )
-    )
     # On a device the server marks the tap, so a question needs options and a key.
-    fresh = [
-        i for i in session.scalars(
-            select(Item).where(Item.strand_id == body.strand_id, Item.status.in_(SERVED))
-        )
-        if i.item_id not in taken and i.options and i.correct_option is not None
-    ]
+    fresh = unanswered(session, student.student_id, body.strand_id)
     chosen = choose_practice(
         theta,
         [Calibrated(str(i.item_id), i.difficulty_b, i.discrimination_a) for i in fresh],

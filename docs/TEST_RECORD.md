@@ -17,7 +17,7 @@ Every correction points at the commit that made it, so it can be inspected.
 
 ## 1. Automated tests
 
-**537 backend tests** (pytest), plus frontend lint, type check and a
+**563 backend tests** (pytest), plus frontend lint, type check and a
 production build. Run locally with `tasks ci` (backend) and `tasks webci`
 (frontend); GitHub Actions runs CI on every push. All pass at the time of
 writing.
@@ -28,9 +28,9 @@ stand-ins, so the suite is free, offline and repeatable.
 
 | Suite | Tests | What it holds the system to |
 |---|---:|---|
-| `test_reporting.py` | 53 | Report generation end to end: pending row, background fill, failures written on the row, stale rows, strand grade used for retrieval |
+| `test_reporting.py` | 55 | Report generation end to end: pending row, background fill, failures written on the row, stale rows, strand grade used for retrieval; next steps name the practice set the button would choose, and are absent when nothing is left to practise |
 | `test_observations.py` | 29 | Observed tasks on the KICD rubric: rubric rows load once and refresh in place without touching recorded levels; indicators offered for the strand's grade and learning area, best match first, plus the school's own; levels saved idempotently and all or nothing; school scoping; two observed tasks short of Meets add a learner to Support and a corrected level removes them; the report prompt carries levels without inviting a quotation |
-| `test_reports.py` | 44 | The report prompt: verbatim-citation rule, no gendered pronouns, evidence thresholds, word limit, failure pattern |
+| `test_reports.py` | 49 | The report prompt: verbatim-citation rule, no gendered pronouns, evidence thresholds, word limit, failure pattern; next steps only with a practice set, adapted to the level, practice questions never quoted; each wrong option's approved misconception |
 | `test_classrooms.py` | 36 | Classes and learners, school scoping, withdraw-not-delete, grade must be exactly "Grade 1"-"Grade 6" |
 | `test_curriculum.py` | 31 | Corpus normalisation (PDF glyph repair), curriculum-head cut |
 | `test_generation.py` | 28 | AI question writing: drafts only, every server check, near-copies, option shuffle, daily cap, failures |
@@ -47,7 +47,9 @@ stand-ins, so the suite is free, offline and repeatable.
 | `test_class_strands.py` | 14 | What a class is assessed on; strands shared across schools; removing keeps every answer |
 | `test_export.py` | 14 | PDF export: text extracted and checked, glyph handling |
 | `test_new_school.py` | 13 | `tasks newschool`: school and head teacher created with no password and a hashed one-time code that opens the account; the new school sees only its own staff; mistakes and repeats change nothing |
-| `test_repository.py` | 16 | Response matrix rules from Phase 0 (items x students, 0/1, missing not NaN); two recordings on the same answers are one assessment |
+| `test_repository.py` | 17 | Response matrix rules from Phase 0 (items x students, 0/1, missing not NaN); two recordings on the same answers are one assessment; a wrong answer carries the misconception noted for the option chosen |
+| `test_practice.py` | 16 | Practice sets: the 2-PL chance, the questions nearest 0.7, secure (0.95 or more), uncalibrated and inverted questions left out, most likely first, the same set for the same data; only unanswered approved questions, never a key, no set without a level, school scoping, and the next set moves with the learner's answers |
+| `test_demo_practice.py` | 2 | `tasks demopractice`: half the demonstration class answers the new questions, the kept-back learner can be given a set, and a second run changes nothing |
 | `test_retrieval.py` | 10 | Retrieval pre-filter and floor |
 | `test_login_throttle.py` | 9 | Sign-in throttling by account and address |
 | `test_irt.py` | 9 | 2-PL estimation and KICD tier cut-offs |
@@ -104,6 +106,8 @@ stand-ins, so the suite is free, offline and repeatable.
 | F43 | Restoring unsaved paper marks (found live, 29 October) | Marks reopen where they were made | The page reopened on the first strand, not the one with unsaved marks; a dropped connection showed the browser's "Failed to fetch" | Opens the strand with kept marks; "No connection to the server." on every page | 9fc842e |
 | F44 | Evidence other than questions (supervisor feedback, 16 November) | The KICD designs assess by observation, projects and presentations as well as written tests | Every level in the system came from answered questions; the 924 KICD rubric rows in the corpus were never read, and about a third of the Grade 4-6 indicators cannot be answered by choosing an option | Observed tasks judged against the KICD rubric (four levels, teacher's note), kept apart from the ability estimate; two tasks short of Meets add a learner to Support as its own source; levels and notes reach the report prompt. Checked live on PostgreSQL: rubric loaded (924 rows), a Heat Transfer task made from its two KICD indicators, a learner given Meets and Approaches and saved, shown on the class page as one learner at Meets and on the learner's page; a Grade 5 English sub-strand correctly offered no KICD rubric | 207beac |
 | F45 | Phones at the laptop's Wi-Fi address, no tunnel (17 November, reproduced with a browser at a non-localhost address) | A teacher's phone signs in and stays signed in | The page loaded without its scripts: next.config passed the host with its port to allowedDevOrigins, which compares hostnames, so the sign-in form submitted itself as a GET with the password in the address. Once fixed, every reload signed the teacher out: the refresh Origin check compared against the backend's own address behind the proxy and refused the phone's | The laptop's private IPv4 addresses are allowed at start-up and PUBLIC_URL is compared by hostname; refresh accepts the browser's own origin from X-Forwarded-Host and X-Forwarded-Proto, a foreign origin still refused (3 tests); tasks lan prints the address | 742bf65 |
+| F46 | Practice set for one learner (23 November, demonstration class, live) | The questions nearest a 70% chance for the learner, given on the device to that learner only; the answers move the level and the next set | Worked end to end: only the learner was offered the device, 5 answers were recorded, the estimate rested on 22 answers instead of 17 and the next set was different. Three faults on the screen: the questions were ordered by difficulty, so the chances read 47, 35, 13, 33, 28%; the card said "about 70%" when the nearest question for a learner at theta -1.93 was 47%; and a second set included questions at 99-100% | Ordered by the learner's own chance; the card says plainly when nothing is near 70%; questions at 95% or more are left out as already secure (1 test). `tasks demopractice` added 10 questions with simulated answers from 19 learners so the rest could be given sets | 711bd56 |
+| F47 | Next steps in a report (23 November, live, Claude Haiku 5.5) | A fourth paragraph naming the practice set, ordered by level, saying what to check next; still grounded | Two reports for the same learner, both with next steps in English and Kiswahili, re-teaching first because the learner is below Meets, naming the five practice questions without quoting them and tying them to the misconception and the next observed task. One GROUNDED in both languages (0.345 US cents, 18 s); one refused because the Kiswahili paragraph 2 quoted the option the learner chose, which the prompt already forbids | None to the prompt: the refusal is the grounding check doing its job; listed in section 4 | 8a1bc09 |
 
 ---
 
@@ -227,3 +231,4 @@ F1 on "correct" cannot tell the model from always guessing correct at this base 
 | Model exceeds the advisory word limit (265 vs 200 before the limit was raised to 250) | Limit advisory; recorded |
 | The Support list says "below expectation", but the rule flags any ability below 0, which includes Approaches expectation (11 of 19 flagged on 5 November) | Wording or threshold to be decided |
 | Questions with discrimination below 0.3 are not excluded from the active bank, as Section 3.2.3 specifies (170 of 900 Riiid questions, 16 November) | Flag after each recalibration and send to teacher review |
+| A report can be refused when the Kiswahili text quotes the option a learner chose (1 of 2 live reports with next steps, F47) | Regenerate; measure over more runs and strengthen the instruction if it recurs |

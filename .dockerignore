@@ -1,0 +1,9 @@
+# Backend build context is the repository root; send only what the image copies.
+*
+!alembic.ini
+!backend/requirements.txt
+!backend/alembic
+!backend/app
+!data/kicd/kicd_curriculum_chunks_full.json
+!frontend/legacy
+**/__pycache__

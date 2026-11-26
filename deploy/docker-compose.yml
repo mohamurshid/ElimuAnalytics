@@ -1,0 +1,67 @@
+# Production stack on one server: PostgreSQL + pgvector, the API, the Next.js
+# app, and Caddy in front for HTTPS. Secrets come from deploy/.env on the
+# server (chmod 600), which is never committed - see deploy/README.md.
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: elimu
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set in .env}
+      POSTGRES_DB: elimu
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U elimu -d elimu"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  backend:
+    image: elimu-backend:latest
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+psycopg://elimu:${POSTGRES_PASSWORD}@db:5432/elimu
+      JWT_SECRET: ${JWT_SECRET:?set in .env}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      APP_URL: https://${SITE_HOST}
+      ALLOWED_ORIGINS: https://${SITE_HOST}
+      GOOGLE_REDIRECT_URI: https://${SITE_HOST}/api/auth/google/callback
+      COOKIE_SECURE: "1"
+      # Caddy replaces X-Forwarded-For with the real client address, so the
+      # login throttle counts per teacher rather than per proxy.
+      TRUST_PROXY_HEADER: "1"
+      # The embedding model is baked into the image; never ask the Hub.
+      HF_HUB_OFFLINE: "1"
+
+  frontend:
+    image: elimu-frontend:latest
+    restart: unless-stopped
+    depends_on:
+      - backend
+
+  caddy:
+    image: caddy:2.10
+    restart: unless-stopped
+    depends_on:
+      - frontend
+      - backend
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      SITE_HOST: ${SITE_HOST:?set in .env}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:
